@@ -14,6 +14,7 @@ export interface Api {
 
   send(agentId: string, text: string): Promise<void>
   stop(agentId: string): Promise<void>
+  retry(agentId: string): Promise<void>
   clearChat(agentId: string): Promise<void>
 
   newSession(name?: string): Promise<void>
@@ -41,7 +42,7 @@ export type ApiMethod = keyof Api
 export const API_METHODS: ApiMethod[] = [
   'init', 'pickProject', 'openProject', 'closeProject', 'saveMultimineMd',
   'saveAgent', 'deleteAgent', 'setPosition',
-  'send', 'stop', 'clearChat',
+  'send', 'stop', 'retry', 'clearChat',
   'newSession', 'switchSession', 'renameSession', 'deleteSession', 'duplicateSession',
   'answer', 'decide',
   'updateSettings', 'setKey', 'detectClis', 'refreshModels', 'testMcp',

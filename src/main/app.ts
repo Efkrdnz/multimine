@@ -127,6 +127,13 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     })
   }
 
+  async retry(agentId: string): Promise<void> {
+    const { engine } = this.need()
+    void engine.retry(agentId)?.then((r) => {
+      if (r.error && r.error !== 'Stopped.') this.o.emit({ type: 'toast', level: 'error', text: `${this.project?.get(agentId)?.name ?? agentId}: ${r.error.slice(0, 300)}` })
+    })
+  }
+
   async stop(agentId: string): Promise<void> {
     this.engine?.stop(agentId)
   }

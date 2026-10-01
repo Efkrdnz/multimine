@@ -53,8 +53,8 @@ function ChatPanel({ agentId }: { agentId: string }) {
             {isMm ? 'Tell Mastermind what you want to build. It will route the work to your team.' : `Chat with ${agent.name} directly.`}
           </div>
         )}
-        {messages.map((m) => (
-          <MessageView key={m.id} m={m} />
+        {messages.map((m, i) => (
+          <MessageView key={m.id} m={m} last={i === messages.length - 1 && !busy} />
         ))}
         <div ref={end} className="h-2" />
       </div>

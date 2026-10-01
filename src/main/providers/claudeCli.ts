@@ -7,6 +7,16 @@ import { hardStop } from './guard'
 const WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']
 const READ_TOOLS = ['Read', 'Glob', 'Grep', 'LS', 'WebSearch', 'WebFetch', 'TodoWrite']
 
+const LOGIN_HELP =
+  'Your Claude login has expired or is missing. Open a terminal, run `claude`, type `/login` and sign in with your subscription, then press Retry here.'
+
+/** Claude Code's auth failures, said as what to do about them. Anything else passes through. */
+export function friendlyClaudeError(raw: string): string {
+  if (/authenticat|oauth|\b401\b|not logged in|invalid api key|please run \/login|credentials/i.test(raw)) return `${LOGIN_HELP}\n\n(${raw.trim()})`
+  if (/rate.?limit|usage limit|\b429\b/i.test(raw)) return `Your Claude subscription hit its usage limit. Wait for it to reset, or switch this agent to another model or provider.\n\n(${raw.trim()})`
+  return raw
+}
+
 /** A shell command that only looks at things. Anything else is refused to a read-only agent. */
 export function readOnlyCommand(cmd: string): boolean {
   if (/[;&|]\s*(rm|mv|cp|chmod|chown|dd|mkfs|curl|wget)\b|>|\btee\b/.test(cmd)) return false
@@ -116,12 +126,16 @@ export class ClaudeCliProvider implements ProviderAdapter {
           case 'assistant': {
             const m = msg.message
             const sawDeltas = m?.id && streamed.has(m.id)
+            if (msg.error) {
+              // a synthetic message carrying an API error: its text is the error, not a reply
+              yield { type: 'error', message: friendlyClaudeError(`${msg.error}: ${(m?.content ?? []).map((b: any) => b.text ?? '').join(' ')}`) }
+              break
+            }
             for (const block of m?.content ?? []) {
               if (block.type === 'tool_use') yield { type: 'tool-start', id: block.id, name: block.name, input: block.input }
               else if (!sawDeltas && block.type === 'text') yield { type: 'text', delta: block.text }
               else if (!sawDeltas && block.type === 'thinking') yield { type: 'thinking', delta: block.thinking }
             }
-            if (msg.error) yield { type: 'error', message: `Claude: ${msg.error}` }
             break
           }
           case 'user': {
@@ -139,13 +153,13 @@ export class ClaudeCliProvider implements ProviderAdapter {
               outputTokens: u.output_tokens ?? 0,
               costUsd: msg.total_cost_usd
             }
-            if (msg.subtype !== 'success') yield { type: 'error', message: (msg.errors ?? [msg.subtype]).join('; ') }
+            if (msg.subtype !== 'success' || msg.is_error) yield { type: 'error', message: friendlyClaudeError((msg.errors ?? [msg.result ?? msg.subtype]).join('; ')) }
             break
           }
         }
       }
     } catch (e) {
-      if (!req.signal.aborted) yield { type: 'error', message: (e as Error).message ?? String(e) }
+      if (!req.signal.aborted) yield { type: 'error', message: friendlyClaudeError((e as Error).message ?? String(e)) }
     }
   }
 }

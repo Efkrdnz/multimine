@@ -179,6 +179,23 @@ export class Engine {
     return next
   }
 
+  /** Runs the agent's last incoming message again (after a failed turn: an expired login, a dropped connection). */
+  retry(agentId: string): Promise<TurnResult> | null {
+    const last = [...(this.chats[agentId] ?? [])].reverse().find((m) => m.role === 'user')
+    if (!last) return null
+    const kind: BusKind = last.text.startsWith('## Task from') ? 'delegate' : last.text.startsWith('## Context update request') ? 'context' : 'message'
+    const copy: ChatMessage = { ...last, id: newId('u'), ts: Date.now() }
+    this.upsert(copy, true)
+    void this.persist(copy)
+    const prev = this.queues.get(agentId) ?? Promise.resolve()
+    const next = prev.then(() => this.runTurn(agentId, copy, kind))
+    this.queues.set(
+      agentId,
+      next.catch(() => undefined)
+    )
+    return next
+  }
+
   stop(agentId: string): void {
     this.controllers.get(agentId)?.abort()
   }

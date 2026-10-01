@@ -4,7 +4,7 @@ import { clampEffort } from '@shared/effort'
 import { roleTemplate } from '@shared/templates'
 import { effortOptions } from '../../src/main/providers/aiSdk'
 import { codexArgs, codexEvents, codexPrompt, winQuote } from '../../src/main/providers/codexCli'
-import { readOnlyCommand } from '../../src/main/providers/claudeCli'
+import { friendlyClaudeError, readOnlyCommand } from '../../src/main/providers/claudeCli'
 import { hardStop } from '../../src/main/providers/guard'
 import { findMediaUrls, kindOf } from '../../src/main/media/capture'
 import { buildSystemPrompt, CONTEXT_PROTOCOL } from '../../src/main/orchestrator/prompts'
@@ -102,6 +102,16 @@ describe('codex cli', () => {
   it('sends the system prompt only on a fresh thread', () => {
     expect(codexPrompt({ system: 'SYS', history: [], prompt: 'hi' })).toContain('SYS')
     expect(codexPrompt({ system: 'SYS', history: [], prompt: 'hi', resumeId: 't' })).toBe('hi')
+  })
+})
+
+describe('claude errors', () => {
+  it('turns an expired login into what to do about it', () => {
+    const m = friendlyClaudeError('Claude Code returned an error result: Failed to authenticate: OAuth session expired and could not be refreshed')
+    expect(m).toContain('/login')
+    expect(m).toContain('Retry')
+    expect(friendlyClaudeError('usage limit reached')).toContain('usage limit')
+    expect(friendlyClaudeError('something else')).toBe('something else')
   })
 })
 

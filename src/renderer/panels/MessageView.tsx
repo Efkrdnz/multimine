@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { AlertTriangle, Brain, CheckCircle2, ChevronRight, Loader2, Wrench, XCircle } from 'lucide-react'
+import { AlertTriangle, Brain, CheckCircle2, ChevronRight, Loader2, RotateCcw, Wrench, XCircle } from 'lucide-react'
 import type { ChatMessage, ToolCallView } from '@shared/types'
-import { EMPTY_LIST, useStore } from '../state/store'
+import { EMPTY_LIST, api, useStore } from '../state/store'
 import { MediaView } from './MediaView'
 
 export function Markdown({ text }: { text: string }) {
@@ -51,7 +51,7 @@ function ToolCard({ t }: { t: ToolCallView }) {
   )
 }
 
-export function MessageView({ m }: { m: ChatMessage }) {
+export function MessageView({ m, last = false }: { m: ChatMessage; last?: boolean }) {
   const agents = useStore((s) => s.project?.agents ?? EMPTY_LIST)
   const media = useStore((s) => s.media)
   const [thinkOpen, setThinkOpen] = useState(false)
@@ -89,7 +89,12 @@ export function MessageView({ m }: { m: ChatMessage }) {
       {m.streaming && !m.text && !m.tools?.length && !m.thinking && <Loader2 size={16} className="animate-spin text-violet-300" />}
       {m.error && (
         <div className="mt-2 flex gap-2 rounded-lg border border-red-400/30 bg-red-950/40 px-3 py-2 text-xs text-red-100">
-          <AlertTriangle size={14} className="mt-0.5 shrink-0" /> <span className="whitespace-pre-wrap">{m.error}</span>
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" /> <span className="flex-1 whitespace-pre-wrap">{m.error}</span>
+          {last && m.error !== 'Stopped.' && (
+            <button className="btn shrink-0 self-start !py-1" onClick={() => void api().retry(m.agentId)} data-testid="retry">
+              <RotateCcw size={12} /> Retry
+            </button>
+          )}
         </div>
       )}
       {m.usage && !m.streaming && (

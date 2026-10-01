@@ -55,8 +55,9 @@ npm run dist       # installer for your OS (electron-builder)
 ```
 
 If your npm asks about install scripts, approve esbuild once (`npm install-scripts approve esbuild`);
-it is the only package that needs one. Electron downloads its own binary the first time you run
-`npm run dev`.
+it is the only package that needs one. The first `npm run dev` (or `npm start`) downloads the
+Electron binary (`scripts/ensure-electron.mjs`); behind a proxy, set `HTTPS_PROXY` or
+`ELECTRON_MIRROR`.
 
 Open a project folder (your Minecraft mod, say). The first time, Multimine creates `multimine.md`,
 `.multimine/` and a Mastermind, and offers a starting team.

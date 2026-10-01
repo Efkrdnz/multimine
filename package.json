@@ -9,11 +9,14 @@
   "type": "module",
   "scripts": {
     "dev": "electron-vite dev",
+    "predev": "node scripts/ensure-electron.mjs",
     "build": "electron-vite build",
     "start": "electron-vite preview",
+    "prestart": "node scripts/ensure-electron.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "test:e2e": "npm run build && playwright test",
+    "pretest:e2e": "node scripts/ensure-electron.mjs",
     "dist": "npm run build && electron-builder"
   },
   "dependencies": {

@@ -97,11 +97,22 @@ export function codexPrompt(req: Pick<TurnRequest, 'system' | 'history' | 'promp
   return `${req.system}${history}\n\n# Message\n${req.prompt}`
 }
 
+/**
+ * On Windows `codex` is a .cmd shim, which Node only runs through a shell, and a shell gets the
+ * arguments joined by spaces as they are. Quote each one the way the Rust argv parser reads it.
+ */
+export function winQuote(arg: string): string {
+  if (arg && !/[\s"^&|<>()%!]/.test(arg)) return arg
+  return `"${arg.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, '$1$1')}"`
+}
+
 /** ChatGPT subscription agents: `codex exec --json`, on the user's own Codex login. */
 export class CodexCliProvider implements ProviderAdapter {
   async *run(req: TurnRequest): AsyncIterable<AgentEvent> {
     const exe = req.executable || 'codex'
-    const child = spawn(exe, codexArgs(req), { cwd: req.cwd, shell: process.platform === 'win32', env: process.env })
+    const win = process.platform === 'win32'
+    const args = codexArgs(req)
+    const child = spawn(win ? winQuote(exe) : exe, win ? args.map(winQuote) : args, { cwd: req.cwd, shell: win, env: process.env })
     const onAbort = () => child.kill()
     req.signal.addEventListener('abort', onAbort, { once: true })
     let stderr = ''

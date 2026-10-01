@@ -1,0 +1,211 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@500;700&display=swap');
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Space Grotesk', 'Inter', ui-sans-serif, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --color-void: #04050d;
+  --color-ink: #0b0d1f;
+  --color-panel: rgb(13 15 36 / 0.78);
+  --color-line: rgb(165 180 252 / 0.14);
+  --color-glow: #a855f7;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: #04050d;
+  color: #e5e7ff;
+  font-family: var(--font-sans);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+.glass {
+  background: linear-gradient(180deg, rgb(20 22 52 / 0.82), rgb(10 11 30 / 0.86));
+  border: 1px solid rgb(165 180 252 / 0.14);
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.4),
+    0 18px 60px -12px rgb(0 0 0 / 0.7),
+    inset 0 1px 0 rgb(255 255 255 / 0.05);
+  backdrop-filter: blur(18px) saturate(1.3);
+}
+
+.glow-text {
+  background: linear-gradient(90deg, #f0abfc, #a5b4fc 45%, #67e8f9);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(165 180 252 / 0.25) transparent;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 0.6rem;
+  padding: 0.38rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid rgb(165 180 252 / 0.18);
+  background: rgb(99 102 241 / 0.12);
+  color: #e0e7ff;
+  transition: all 0.15s;
+}
+.btn:hover:not(:disabled) {
+  background: rgb(99 102 241 / 0.26);
+  border-color: rgb(165 180 252 / 0.4);
+}
+.btn:disabled {
+  opacity: 0.4;
+}
+.btn-primary {
+  background: linear-gradient(90deg, #7c3aed, #4f46e5);
+  border-color: transparent;
+  box-shadow: 0 0 20px -4px #7c3aed;
+}
+.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(90deg, #8b5cf6, #6366f1);
+}
+.btn-danger {
+  background: rgb(239 68 68 / 0.14);
+  border-color: rgb(248 113 113 / 0.3);
+  color: #fecaca;
+}
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+}
+
+.field {
+  width: 100%;
+  border-radius: 0.55rem;
+  border: 1px solid rgb(165 180 252 / 0.16);
+  background: rgb(4 5 18 / 0.6);
+  padding: 0.45rem 0.65rem;
+  font-size: 0.85rem;
+  color: #eef2ff;
+  outline: none;
+}
+.field:focus {
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 3px rgb(139 92 246 / 0.2);
+}
+.label {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #a5b4fc;
+}
+
+.md {
+  font-size: 0.86rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.md p {
+  margin: 0.35rem 0;
+}
+.md h1,
+.md h2,
+.md h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  margin: 0.8rem 0 0.35rem;
+  color: #f5f3ff;
+}
+.md h1 {
+  font-size: 1.15rem;
+}
+.md h2 {
+  font-size: 1.02rem;
+}
+.md h3 {
+  font-size: 0.93rem;
+}
+.md ul,
+.md ol {
+  padding-left: 1.2rem;
+  margin: 0.3rem 0;
+}
+.md ul {
+  list-style: disc;
+}
+.md ol {
+  list-style: decimal;
+}
+.md code {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  background: rgb(139 92 246 / 0.16);
+  border-radius: 0.3rem;
+  padding: 0.05rem 0.3rem;
+}
+.md pre {
+  background: rgb(0 0 0 / 0.45);
+  border: 1px solid rgb(165 180 252 / 0.12);
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  overflow-x: auto;
+  margin: 0.5rem 0;
+}
+.md pre code {
+  background: none;
+  padding: 0;
+}
+.md table {
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+  font-size: 0.8rem;
+}
+.md th,
+.md td {
+  border: 1px solid rgb(165 180 252 / 0.18);
+  padding: 0.25rem 0.5rem;
+}
+.md a {
+  color: #93c5fd;
+  text-decoration: underline;
+}
+.md blockquote {
+  border-left: 3px solid #8b5cf6;
+  padding-left: 0.7rem;
+  color: #c7d2fe;
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgb(251 146 60 / 0.6);
+  }
+  100% {
+    box-shadow: 0 0 0 14px rgb(251 146 60 / 0);
+  }
+}
+.automation-on {
+  background: linear-gradient(90deg, #ea580c, #dc2626);
+  border-color: transparent;
+  animation: pulse-ring 1.6s infinite;
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rise {
+  animation: rise 0.22s ease-out;
+}

@@ -24,16 +24,17 @@
     "@ai-sdk/openai-compatible": "^1.0.58",
     "@ai-sdk/xai": "^2.0.99",
     "@anthropic-ai/claude-agent-sdk": "^0.3.287",
+    "@anthropic-ai/sdk": "^0.131.0",
     "@modelcontextprotocol/sdk": "^1.31.0",
     "ai": "^5.0.271",
     "yaml": "^2.9.1",
-    "zod": "^4.6.5",
-    "@anthropic-ai/sdk": "^0.131.0"
+    "zod": "^4.6.5"
   },
   "overrides": {
     "baseline-browser-mapping": "2.11.26"
   },
   "devDependencies": {
+    "@google/model-viewer": "^4.3.1",
     "@playwright/test": "1.56",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^22.20.4",
@@ -43,6 +44,7 @@
     "electron": "^44.5.1",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
+    "lucide-react": "^1.49.0",
     "pixi.js": "^8.21.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

@@ -161,8 +161,17 @@ export class Engine {
 
   /** Queues a turn for an agent. Turns of one agent never overlap; different agents run in parallel. */
   send(agentId: string, body: string, from = 'user', kind: BusKind = 'message'): Promise<TurnResult> {
+    // the incoming message is shown at once, even while the agent is still busy with an earlier turn
+    const agent = this.d.project.get(agentId)
+    const fromName = from === 'user' ? 'user' : (this.d.project.get(from)?.name ?? from)
+    const prompt = from === 'user' ? body : inboundPrompt(fromName, kind === 'delegate' ? 'delegate' : kind === 'context' ? 'context' : 'message', body)
+    const userMsg: ChatMessage = { id: newId('u'), agentId, role: 'user', from, text: prompt, ts: Date.now() }
+    if (agent) {
+      this.upsert(userMsg, true)
+      void this.persist(userMsg)
+    }
     const prev = this.queues.get(agentId) ?? Promise.resolve()
-    const next = prev.then(() => this.runTurn(agentId, body, from, kind))
+    const next = prev.then(() => this.runTurn(agentId, userMsg, kind))
     this.queues.set(
       agentId,
       next.catch(() => undefined)
@@ -174,8 +183,11 @@ export class Engine {
     this.controllers.get(agentId)?.abort()
   }
 
-  private history(agentId: string): HistoryItem[] {
-    return (this.chats[agentId] ?? [])
+  /** The conversation before `before` (the message this turn answers; later queued ones are not history yet). */
+  private history(agentId: string, before: ChatMessage): HistoryItem[] {
+    const all = this.chats[agentId] ?? []
+    const upto = all.findIndex((m) => m.id === before.id)
+    return (upto >= 0 ? all.slice(0, upto) : all)
       .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.text.trim())
       .slice(-40)
       .map((m) => ({ role: m.role as 'user' | 'assistant', text: m.text }))
@@ -228,17 +240,13 @@ export class Engine {
     await this.d.sessions.save(this.session)
   }
 
-  private async runTurn(agentId: string, body: string, from: string, kind: BusKind): Promise<TurnResult> {
+  private async runTurn(agentId: string, userMsg: ChatMessage, kind: BusKind): Promise<TurnResult> {
     const agent = this.d.project.get(agentId)
     if (!agent) return { text: '', reports: [], error: `No agent ${agentId}` }
     const sessionId = this.session.id
-    const fromName = from === 'user' ? 'user' : (this.d.project.get(from)?.name ?? from)
-    const prompt = from === 'user' ? body : inboundPrompt(fromName, kind === 'delegate' ? 'delegate' : kind === 'context' ? 'context' : 'message', body)
-
-    const userMsg: ChatMessage = { id: newId('u'), agentId, role: 'user', from, text: from === 'user' ? body : prompt, ts: Date.now() }
-    const history = this.history(agentId)
-    this.upsert(userMsg, true)
-    await this.persist(userMsg)
+    const from = userMsg.from
+    const prompt = userMsg.text
+    const history = this.history(agentId, userMsg)
 
     const ctx: TurnContext = { from, kind, reports: [] }
     this.turns.set(agentId, ctx)

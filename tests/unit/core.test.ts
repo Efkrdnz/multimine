@@ -3,7 +3,7 @@ import { parseAgentFile, serializeAgentFile, slugify } from '@shared/agentFile'
 import { clampEffort } from '@shared/effort'
 import { roleTemplate } from '@shared/templates'
 import { effortOptions } from '../../src/main/providers/aiSdk'
-import { codexArgs, codexEvents, codexPrompt } from '../../src/main/providers/codexCli'
+import { codexArgs, codexEvents, codexPrompt, winQuote } from '../../src/main/providers/codexCli'
 import { readOnlyCommand } from '../../src/main/providers/claudeCli'
 import { hardStop } from '../../src/main/providers/guard'
 import { findMediaUrls, kindOf } from '../../src/main/media/capture'
@@ -91,6 +91,12 @@ describe('codex cli', () => {
     expect(events.map((e) => e.type)).toEqual(['resume', 'tool-start', 'tool-end', 'thinking', 'text', 'tool-start', 'tool-end', 'usage'])
     expect(events[0]).toEqual({ type: 'resume', id: 'th_1' })
     expect(codexEvents('{"type":"turn.failed","error":{"message":"quota"}}')).toEqual([{ type: 'error', message: 'quota' }])
+  })
+
+  it('quotes arguments for the Windows shell', () => {
+    expect(winQuote('exec')).toBe('exec')
+    expect(winQuote('C:\\My Mods\\magic')).toBe('"C:\\My Mods\\magic"')
+    expect(winQuote('model_reasoning_effort="high"')).toBe('"model_reasoning_effort=\\"high\\""')
   })
 
   it('sends the system prompt only on a fresh thread', () => {

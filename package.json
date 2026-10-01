@@ -31,7 +31,8 @@
     "zod": "^4.6.5"
   },
   "overrides": {
-    "baseline-browser-mapping": "2.11.26"
+    "baseline-browser-mapping": "2.11.26",
+    "esbuild": "0.28.2"
   },
   "devDependencies": {
     "@google/model-viewer": "^4.3.1",

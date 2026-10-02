@@ -6,10 +6,12 @@ import { PluginHost } from './PluginHost'
 import { PluginIcon } from './PluginIcon'
 
 const Sketcher = lazy(() => import('./sketcher/Sketcher').then((m) => ({ default: m.Sketcher })))
+const AssetBoard = lazy(() => import('./assets/AssetBoard').then((m) => ({ default: m.AssetBoard })))
 
 /** Native (built-in) tools render as part of the app; everything they do still goes through the plugin API. */
 const NATIVE: Record<string, React.ComponentType<{ plugin: PluginInfo }>> = {
-  'ui-sketcher': Sketcher
+  'ui-sketcher': Sketcher,
+  'asset-board': AssetBoard
 }
 
 function ToolFrame({ plugin, active }: { plugin: PluginInfo; active: boolean }) {

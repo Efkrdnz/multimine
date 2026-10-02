@@ -15,6 +15,16 @@ export const BUILTIN: PluginManifest[] = [
     icon: { glyph: 'PenTool', gradient: ['#f472b6', '#8b5cf6'] },
     window: { width: 1280, height: 820 },
     permissions: ['team:read', 'agents:message', 'project:read', 'project:write', 'media:read', 'media:write']
+  },
+  {
+    id: 'asset-board',
+    name: 'Asset Board',
+    version: '1.0.0',
+    api: 1,
+    description: 'Track the art and sound the project needs, have the Asset Creator make it, review it, and drop the approved file into place.',
+    icon: { glyph: 'Boxes', gradient: ['#f59e0b', '#ef4444'] },
+    window: { width: 1240, height: 780 },
+    permissions: ['team:read', 'agents:message', 'project:read', 'project:write', 'media:read']
   }
 ]
 

@@ -14,6 +14,7 @@ test('the workstation runs end to end on mock agents', async () => {
   writeFileSync(join(project, 'README.md'), '# My Minecraft mod\n')
   // enough for the UI Sketcher to know a NeoForge mod when it sees one
   writeFileSync(join(project, 'build.gradle'), "plugins { id 'net.neoforged.moddev' version '2.0.0' }\n")
+  writeFileSync(join(project, 'gradle.properties'), 'mod_id=manamod\n')
   const app = await electron.launch({
     // SwiftShader: CI machines have no GPU, and the space scene is WebGL
     args: [resolve('out/main/index.js'), '--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--project', project],
@@ -273,6 +274,54 @@ test('the workstation runs end to end on mock agents', async () => {
   await expect.poll(busText, { timeout: 10_000 }).toContain('Combat HUD')
   await page.getByTestId('toolwin-ui-sketcher').getByTitle('Close').click()
 
+  // the Asset Board: a sprite wanted and requested; the Asset Creator's result lands in the gallery as
+  // asset:<id>, becomes a candidate, and approving it puts a 16x16 PNG where the mod keeps item textures
+  await page.getByTestId('tools').click()
+  await page.getByTestId('tool-asset-board').click()
+  await expect(page.getByTestId('asset-board')).toBeVisible()
+  for (const [name, kind] of [['Mana Shard', 'sprite'], ['Rune Bricks', 'texture'], ['Spell Cast', 'sound']] as const) {
+    await page.getByTestId('ab-new-name').fill(name)
+    await page.getByTestId('ab-new-kind').selectOption(kind)
+    await page.getByTestId('ab-add').click()
+  }
+  await page.getByTestId('ab-card-mana-shard').click()
+  await expect(page.getByTestId('ab-path')).toHaveValue('src/main/resources/assets/manamod/textures/item/mana_shard.png')
+  await page.getByTestId('ab-notes').fill('A glowing blue crystal shard, held as an item.')
+  await page.getByTestId('ab-request').click()
+  await expect(page.getByTestId('ab-col-in-progress')).toContainText('Mana Shard')
+  await expect.poll(busText, { timeout: 10_000 }).toContain('Mana Shard')
+  await page.getByTestId('ab-card-rune-bricks').click()
+  await page.getByTestId('ab-request').click()
+  await page.getByTestId('ab-card-mana-shard').click()
+  // stand in for the Asset Creator: a 64x64 crystal shown in the gallery with the board's title
+  await page.evaluate(async () => {
+    const c = (globalThis as any).document.createElement('canvas')
+    c.width = c.height = 64
+    const g = c.getContext('2d')
+    g.fillStyle = '#1e3a8a'
+    g.beginPath()
+    g.moveTo(32, 4); g.lineTo(52, 30); g.lineTo(32, 60); g.lineTo(12, 30); g.closePath(); g.fill()
+    g.fillStyle = '#60a5fa'
+    g.beginPath()
+    g.moveTo(32, 10); g.lineTo(44, 30); g.lineTo(32, 50); g.closePath(); g.fill()
+    await (globalThis as any).mm.api.pluginCall('ui-sketcher', 'media.show', [c.toDataURL('image/png'), 'asset:mana-shard glowing crystal'])
+  })
+  await expect(page.getByTestId('ab-col-review')).toContainText('Mana Shard', { timeout: 10_000 })
+  await expect(page.getByTestId('ab-candidate')).toHaveCount(1)
+  await page.getByTestId('ab-style').click()
+  await page.getByTestId('ab-style-text').fill('16x16 pixel art in the vanilla palette, dark outlines')
+  await page.waitForTimeout(500)
+  await shot(page, '24-asset-board')
+  await page.getByTestId('ab-approve').click()
+  const shard = join(project, 'src', 'main', 'resources', 'assets', 'manamod', 'textures', 'item', 'mana_shard.png')
+  await expect.poll(() => existsSync(shard), { timeout: 10_000 }).toBe(true)
+  expect([readFileSync(shard).readUInt32BE(16), readFileSync(shard).readUInt32BE(20)]).toEqual([16, 16])
+  await expect(page.getByTestId('ab-col-done')).toContainText('Mana Shard')
+  await expect.poll(() => JSON.parse(readFileSync(join(project, '.multimine', 'assets', 'board.json'), 'utf8')).assets.find((a: any) => a.id === 'mana-shard')?.status, { timeout: 10_000 }).toBe('approved')
+  await page.waitForTimeout(300)
+  await shot(page, '25-asset-board-done')
+  await page.getByTestId('toolwin-asset-board').getByTitle('Close', { exact: true }).click()
+
   // a fallback chain in the agent editor
   await page.getByTestId('add-agent').click()
   await page.getByTestId('agent-name').fill('Fallback Demo')
@@ -280,12 +329,12 @@ test('the workstation runs end to end on mock agents', async () => {
   await page.getByTestId('agent-fallback-add').click()
   await page.getByTestId('agent-fallback').scrollIntoViewIfNeeded()
   await page.waitForTimeout(300)
-  await shot(page, '24-fallback-chain')
+  await shot(page, '26-fallback-chain')
   await page.keyboard.press('Escape')
 
   await page.getByTestId('settings').click()
   await page.waitForTimeout(800)
-  await shot(page, '25-settings')
+  await shot(page, '27-settings')
   await page.keyboard.press('Escape')
 
   expect(existsSync(join(project, '.multimine', 'sessions'))).toBe(true)

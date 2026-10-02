@@ -25,29 +25,25 @@ import {
   type SketchElement
 } from '@shared/sketch/model'
 import { detectTarget, inventoryStamp, TARGET_IDS, TARGETS, type TargetId } from '@shared/sketch/targets'
-import { api, useStore } from '../../state/store'
+import { useStore } from '../../state/store'
+import { errText, usePluginApi } from '../pluginApi'
 import { fitView, SketchCanvas, type View } from './Canvas'
 import { Mockup } from './Mockup'
 import { toPng } from './paint'
 import { Layers, Palette, Properties } from './Panels'
 import { Revisions } from './Revisions'
 
+type Tab = 'design' | 'mockup' | 'revisions'
+type Member = { id: string; name: string; role: string }
+
+
 /**
  * The UI Sketcher. It is built into the app but holds no privileges of its own: every file it writes,
  * every message it sends and every picture it shows goes through the same permission-checked plugin
  * API a third-party tool gets.
  */
-export function useSketcherApi(id: string) {
-  return useCallback(<T,>(method: string, ...args: unknown[]) => api().pluginCall(id, method, args) as Promise<T>, [id])
-}
-
-type Tab = 'design' | 'mockup' | 'revisions'
-type Member = { id: string; name: string; role: string }
-
-const errText = (e: unknown) => String((e as Error)?.message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
-
 export function Sketcher({ plugin }: { plugin: PluginInfo }) {
-  const call = useSketcherApi(plugin.manifest.id)
+  const call = usePluginApi(plugin.manifest.id)
   const toast = useStore((s) => s.toast)
   const [sketch, setSketch] = useState<Sketch | null>(null)
   const [savedJson, setSavedJson] = useState('')

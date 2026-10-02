@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { MainEvent } from '@shared/types'
 import { validateManifest } from '../../src/main/plugins/manifest'
 import { servePlugin } from '../../src/main/plugins/protocol'
+import { BUILTIN } from '../../src/main/plugins/registry'
 import { MultimineApp } from '../../src/main/app'
 
 const good = { id: 'hello', name: 'Hello', version: '1.0.0', api: 1, entry: 'index.html', permissions: ['team:read', 'agents:message'] }
@@ -50,9 +51,10 @@ describe('plugin system', () => {
     await rm(dir, { recursive: true, force: true })
   })
 
-  it('lists the built-in Sketcher enabled, installs a plugin disabled with nothing granted', async () => {
+  it('lists the built-in tools enabled, installs a plugin disabled with nothing granted', async () => {
     const before = await app.pluginList()
-    expect(before.plugins.map((p) => [p.manifest.id, p.enabled, p.native])).toEqual([['ui-sketcher', true, true]])
+    expect(before.plugins.map((p) => [p.manifest.id, p.enabled, p.native])).toEqual(BUILTIN.map((m) => [m.id, true, true]))
+    expect(BUILTIN.map((m) => m.id)).toContain('ui-sketcher')
     await app.pluginInstall(resolve('examples/plugins/hello'))
     const hello = (await app.pluginList()).plugins.find((p) => p.manifest.id === 'hello')!
     expect(hello.enabled).toBe(false)

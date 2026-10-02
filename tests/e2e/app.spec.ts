@@ -12,6 +12,8 @@ test('the workstation runs end to end on mock agents', async () => {
   const project = join(root, 'my-mod')
   mkdirSync(project)
   writeFileSync(join(project, 'README.md'), '# My Minecraft mod\n')
+  // enough for the UI Sketcher to know a NeoForge mod when it sees one
+  writeFileSync(join(project, 'build.gradle'), "plugins { id 'net.neoforged.moddev' version '2.0.0' }\n")
   const app = await electron.launch({
     // SwiftShader: CI machines have no GPU, and the space scene is WebGL
     args: [resolve('out/main/index.js'), '--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--project', project],
@@ -183,7 +185,8 @@ test('the workstation runs end to end on mock agents', async () => {
   await page.waitForTimeout(300)
   await shot(page, '19-sketcher-minecraft')
   await page.getByTestId('sk-tab-mockup').click()
-  await expect(page.getByTestId('sk-mockup').locator('img')).toBeVisible()
+  await expect(page.getByAltText('Mockup')).toBeVisible()
+  await expect(page.getByTestId('sk-size')).toHaveCount(4)
   await page.waitForTimeout(300)
   await shot(page, '20-sketch-mockup')
   await page.getByTestId('sk-tab-design').click()
@@ -215,6 +218,59 @@ test('the workstation runs end to end on mock agents', async () => {
   await shot(page, '21-sketch-revision')
   await page.getByTestId('sk-revision-send').click()
   await expect.poll(() => existsSync(join(sketchDir, 'revision-1.png')), { timeout: 10_000 }).toBe(true)
+
+  // a Godot HUD: game elements anchored where they are drawn, previewed on every screen, briefed for Godot
+  await page.getByTestId('sk-tab-design').click()
+  await page.getByTestId('sk-new').click()
+  await page.getByTestId('sk-preset-godot').click()
+  await page.getByTestId('sk-name').fill('Combat HUD')
+  const cv = (await page.getByTestId('sketch-canvas').boundingBox())!
+  const z = Math.min((cv.width - 48) / 1920, (cv.height - 48) / 1080)
+  const hud = (ux: number, uy: number) => [cv.x + (cv.width - 1920 * z) / 2 + ux * z, cv.y + (cv.height - 1080 * z) / 2 + uy * z] as const
+  await page.getByTestId('sk-tool-bar').click()
+  await page.mouse.move(...hud(48, 992))
+  await page.mouse.down()
+  await page.mouse.move(...hud(240, 1010), { steps: 4 })
+  await page.mouse.move(...hud(424, 1024), { steps: 4 })
+  await page.mouse.up()
+  await page.getByTestId('sk-prop-name').fill('Health')
+  await page.getByTestId('sk-tool-bar').click()
+  await page.mouse.move(...hud(48, 944))
+  await page.mouse.down()
+  await page.mouse.move(...hud(424, 968), { steps: 6 })
+  await page.mouse.up()
+  await page.getByTestId('sk-prop-name').fill('Mana')
+  for (const [i, key] of ['Q', 'E', 'R'].entries()) {
+    await page.getByTestId('sk-tool-ability').click()
+    await page.mouse.click(...hud(832 + i * 96, 960))
+    await page.getByTestId('sk-prop-text').fill(key)
+  }
+  await page.getByTestId('sk-prop-value').fill('0.4')
+  await page.getByTestId('sk-tool-minimap').click()
+  await page.mouse.click(...hud(1640, 48))
+  await page.getByTestId('sk-tool-crosshair').click()
+  await page.mouse.click(...hud(936, 516))
+  await page.getByTestId('sk-tool-dialogue').click()
+  await page.mouse.click(...hud(410, 680))
+  await page.getByTestId('sk-tool-toast').click()
+  await page.mouse.click(...hud(1456, 600))
+  await page.getByTestId('sk-look-styled').click()
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(400)
+  await shot(page, '22-godot-hud')
+  await page.getByTestId('sk-tab-mockup').click()
+  await expect(page.getByTestId('sk-size')).toHaveCount(6)
+  await page.getByTestId('sk-size').nth(3).click()
+  await page.waitForTimeout(400)
+  await shot(page, '23-godot-sizes')
+  await page.getByTestId('sk-send').click()
+  await page.getByTestId('sk-send-go').click()
+  const hudDir = join(project, '.multimine', 'sketches', 'combat-hud')
+  await expect.poll(() => existsSync(join(hudDir, 'sketch.json')), { timeout: 10_000 }).toBe(true)
+  const hudJson = JSON.parse(readFileSync(join(hudDir, 'sketch.json'), 'utf8'))
+  expect(hudJson).toMatchObject({ target: 'godot', engine: 'Godot' })
+  expect(JSON.stringify(hudJson.tree)).toContain('"anchor":"top-right"')
+  await expect.poll(busText, { timeout: 10_000 }).toContain('Combat HUD')
   await page.getByTestId('toolwin-ui-sketcher').getByTitle('Close').click()
 
   // a fallback chain in the agent editor
@@ -224,12 +280,12 @@ test('the workstation runs end to end on mock agents', async () => {
   await page.getByTestId('agent-fallback-add').click()
   await page.getByTestId('agent-fallback').scrollIntoViewIfNeeded()
   await page.waitForTimeout(300)
-  await shot(page, '22-fallback-chain')
+  await shot(page, '24-fallback-chain')
   await page.keyboard.press('Escape')
 
   await page.getByTestId('settings').click()
   await page.waitForTimeout(800)
-  await shot(page, '23-settings')
+  await shot(page, '25-settings')
   await page.keyboard.press('Escape')
 
   expect(existsSync(join(project, '.multimine', 'sessions'))).toBe(true)

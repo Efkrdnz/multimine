@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Check, FilePlus, FolderOpen, Grid3x3, Maximize, Redo2, Save, Send, Undo2, ZoomIn, ZoomOut } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Check, FilePlus, FolderOpen, Grid3x3, Maximize, Redo2, Save, ScanLine, Send, Undo2, ZoomIn, ZoomOut } from 'lucide-react'
 import type { PluginInfo } from '@shared/types'
 import { sketchBrief, sketchDir, SKETCH_ROOT } from '@shared/sketch/brief'
-import { drawSketch, lookOf } from '@shared/sketch/draw'
+import { drawSketch, lookOf, STYLE_LABEL } from '@shared/sketch/draw'
 import {
   add,
   byId,
@@ -24,9 +24,10 @@ import {
   type Sketch,
   type SketchElement
 } from '@shared/sketch/model'
-import { inventoryStamp, PRESET_IDS, PRESETS, type PresetId } from '@shared/sketch/presets'
+import { detectTarget, inventoryStamp, TARGET_IDS, TARGETS, type TargetId } from '@shared/sketch/targets'
 import { api, useStore } from '../../state/store'
 import { fitView, SketchCanvas, type View } from './Canvas'
+import { Mockup } from './Mockup'
 import { toPng } from './paint'
 import { Layers, Palette, Properties } from './Panels'
 import { Revisions } from './Revisions'
@@ -55,6 +56,8 @@ export function Sketcher({ plugin }: { plugin: PluginInfo }) {
   const [view, setView] = useState<View | null>(null)
   const [styled, setStyled] = useState(false)
   const [showGrid, setShowGrid] = useState(true)
+  const [showSafe, setShowSafe] = useState(true)
+  const [detected, setDetected] = useState<TargetId | null | undefined>(undefined)
   const [tab, setTab] = useState<Tab>('design')
   const [menu, setMenu] = useState<'new' | 'open' | 'send' | null>(null)
   const [, bump] = useState(0)
@@ -64,8 +67,21 @@ export function Sketcher({ plugin }: { plugin: PluginInfo }) {
   const root = useRef<HTMLDivElement>(null)
   const canvasBox = useRef<HTMLDivElement>(null)
 
-  // reopen the last sketch, or start a Minecraft one
+  // what the project is (Godot, Unity, Unreal, a Minecraft mod, a web app), read off its root
   useEffect(() => {
+    void (async () => {
+      try {
+        const root = await call<{ name: string; dir: boolean }[]>('files.list', '')
+        setDetected(await detectTarget(root.map((e) => (e.dir ? `${e.name}/` : e.name)), (n) => call<string>('files.read', n).catch(() => null)))
+      } catch {
+        setDetected(null)
+      }
+    })()
+  }, [call])
+
+  // reopen the last sketch, or start one for what the project is
+  useEffect(() => {
+    if (detected === undefined) return
     let live = true
     void (async () => {
       let sk: Sketch | null = null
@@ -76,14 +92,16 @@ export function Sketcher({ plugin }: { plugin: PluginInfo }) {
         sk = null
       }
       if (!live) return
-      const start = sk ?? newSketch('Untitled', 'minecraft')
+      const start = sk ?? newSketch('Untitled', detected ?? 'web')
       setSketch(start)
       setSavedJson(sk ? JSON.stringify(sk) : '')
     })()
     return () => {
       live = false
     }
-  }, [call])
+    // only once, when detection is in
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detected === undefined])
 
   const commit = useCallback(
     (next: Sketch, mergeKey?: string) => {
@@ -115,7 +133,7 @@ export function Sketcher({ plugin }: { plugin: PluginInfo }) {
     async (sk: Sketch, quiet = false): Promise<string | null> => {
       const dir = sketchDir(sk.name)
       try {
-        const p = PRESETS[sk.preset]
+        const p = TARGETS[sk.target]
         await call('files.write', `${dir}/sketch.json`, exportJson(sk))
         await call('files.write', `${dir}/sketch.png`, toPng(drawSketch(sk, 'wireframe'), sk.canvas.w, sk.canvas.h, p.scale), 'base64')
         await call('files.write', `${dir}/mockup.png`, toPng(drawSketch(sk, p.style), sk.canvas.w, sk.canvas.h, p.scale), 'base64')
@@ -148,7 +166,7 @@ export function Sketcher({ plugin }: { plugin: PluginInfo }) {
 
   const drawn = (type: ElementType | 'inventory', r: Rect) => {
     if (!sketch) return
-    const p = PRESETS[sketch.preset]
+    const p = TARGETS[sketch.target]
     let next = sketch
     let ids: string[] = []
     if (type === 'inventory') {
@@ -189,7 +207,7 @@ export function Sketcher({ plugin }: { plugin: PluginInfo }) {
     if (!selection.length) {
       if (mod && k === 'v') {
         done()
-        const res = paste(sketch, clip.current, PRESETS[sketch.preset].grid * 4)
+        const res = paste(sketch, clip.current, TARGETS[sketch.target].grid * 4)
         if (res.ids.length) (commit(res.sketch), setSelection(res.ids))
       }
       return
@@ -197,14 +215,14 @@ export function Sketcher({ plugin }: { plugin: PluginInfo }) {
     if (e.key === 'Delete' || e.key === 'Backspace') return done(), commit(remove(sketch, selection)), setSelection([])
     if (mod && k === 'd') {
       done()
-      const res = duplicate(sketch, selection, PRESETS[sketch.preset].grid * 4)
+      const res = duplicate(sketch, selection, TARGETS[sketch.target].grid * 4)
       return commit(res.sketch), setSelection(res.ids)
     }
     if (mod && k === 'c') return done(), void (clip.current = copy(sketch, selection))
     if (mod && k === 'x') return done(), void (clip.current = copy(sketch, selection)), commit(remove(sketch, selection)), setSelection([])
     if (mod && k === 'v') {
       done()
-      const res = paste(sketch, clip.current, PRESETS[sketch.preset].grid * 4)
+      const res = paste(sketch, clip.current, TARGETS[sketch.target].grid * 4)
       return res.ids.length ? (commit(res.sketch), setSelection(res.ids)) : undefined
     }
     if (e.key === ']' || e.key === '[') {
@@ -216,7 +234,7 @@ export function Sketcher({ plugin }: { plugin: PluginInfo }) {
     const arrows: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
     if (arrows[e.key]) {
       done()
-      const step = e.shiftKey ? Math.max(2, PRESETS[sketch.preset].grid * 4) : 1
+      const step = e.shiftKey ? Math.max(2, TARGETS[sketch.target].grid * 4) : 1
       const [dx, dy] = arrows[e.key]
       commit(settle(move(sketch, selection, dx * step, dy * step), selection), `nudge:${selection.join()}`)
     }
@@ -232,14 +250,9 @@ export function Sketcher({ plugin }: { plugin: PluginInfo }) {
   }
   const fit = () => sketch && canvasBox.current && setView(fitView(sketch, canvasBox.current.clientWidth, canvasBox.current.clientHeight))
 
-  const mockup = useMemo(() => {
-    if (!sketch || tab !== 'mockup') return ''
-    const p = PRESETS[sketch.preset]
-    return `data:image/png;base64,${toPng(drawSketch(sketch, p.style), sketch.canvas.w, sketch.canvas.h, p.scale)}`
-  }, [sketch, tab])
 
   if (!sketch) return <div className="p-6 text-sm text-indigo-300/70">Opening the sketcher...</div>
-  const preset = PRESETS[sketch.preset]
+  const preset = TARGETS[sketch.target]
   const dirty = JSON.stringify(sketch) !== savedJson
 
   return (
@@ -259,7 +272,7 @@ export function Sketcher({ plugin }: { plugin: PluginInfo }) {
           <button className="btn btn-ghost !px-2 !py-1" title="New sketch" onClick={() => setMenu(menu === 'new' ? null : 'new')} data-testid="sk-new">
             <FilePlus size={14} />
           </button>
-          {menu === 'new' && <NewMenu onPick={(name, p) => (setSketch(newSketch(name, p)), history.current.clear(), setSavedJson(''), setSelection([]), setView(null), setMenu(null), bump((n) => n + 1))} onClose={() => setMenu(null)} />}
+          {menu === 'new' && <NewMenu detected={detected ?? null} onPick={(name, p) => (setSketch(newSketch(name, p)), history.current.clear(), setSavedJson(''), setSelection([]), setView(null), setMenu(null), bump((n) => n + 1))} onClose={() => setMenu(null)} />}
         </div>
         <div className="relative">
           <button className="btn btn-ghost !px-2 !py-1" title="Open a saved sketch" onClick={() => setMenu(menu === 'open' ? null : 'open')} data-testid="sk-open">
@@ -284,13 +297,18 @@ export function Sketcher({ plugin }: { plugin: PluginInfo }) {
         <div className="flex rounded-lg border border-white/10 p-0.5 text-[11px]">
           {(['wireframe', 'styled'] as const).map((m) => (
             <button key={m} onClick={() => setStyled(m === 'styled')} className={`rounded-md px-2 py-0.5 ${styled === (m === 'styled') ? 'bg-violet-500/40 text-white' : 'text-indigo-300/80'}`} data-testid={`sk-look-${m}`}>
-              {m === 'wireframe' ? 'Wireframe' : preset.style === 'minecraft' ? 'Minecraft' : 'Styled'}
+              {m === 'wireframe' ? 'Wireframe' : STYLE_LABEL[preset.style]}
             </button>
           ))}
         </div>
         <button className={`btn btn-ghost !px-2 !py-1 ${showGrid ? 'text-violet-300' : ''}`} title={`Grid (${preset.grid} ${preset.units})`} onClick={() => setShowGrid(!showGrid)}>
           <Grid3x3 size={14} />
         </button>
+        {preset.safeArea > 0 && (
+          <button className={`btn btn-ghost !px-2 !py-1 ${showSafe ? 'text-violet-300' : ''}`} title={`Title-safe area (${Math.round(preset.safeArea * 100)}% in from each edge): keep text and important HUD inside it`} onClick={() => setShowSafe(!showSafe)} data-testid="sk-safe">
+            <ScanLine size={14} />
+          </button>
+        )}
         <button className="btn btn-ghost !px-1.5 !py-1" title="Zoom out" onClick={() => zoomBy(1 / 1.25)}>
           <ZoomOut size={14} />
         </button>
@@ -343,6 +361,7 @@ export function Sketcher({ plugin }: { plugin: PluginInfo }) {
               look={lookOf(sketch, styled)}
               grid={preset.grid}
               showGrid={showGrid}
+              safeArea={showSafe ? preset.safeArea : 0}
               selection={selection}
               tool={tool}
               view={view}
@@ -365,15 +384,7 @@ export function Sketcher({ plugin }: { plugin: PluginInfo }) {
         </div>
       )}
 
-      {tab === 'mockup' && (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-[#070816] p-4" data-testid="sk-mockup">
-          <img src={mockup} alt="Mockup" className="max-h-full max-w-full object-contain shadow-2xl" style={{ imageRendering: preset.style === 'minecraft' ? 'pixelated' : 'auto' }} />
-          <div className="text-[11px] text-indigo-300/70">
-            {preset.style === 'minecraft' ? 'Drawn in the vanilla palette from scratch - no game textures or fonts - at GUI scale 3.' : 'A quick styled preview of the intent; the builder follows the project\'s own look.'}{' '}
-            {Math.round(sketch.canvas.w * preset.scale)} x {Math.round(sketch.canvas.h * preset.scale)} px.
-          </div>
-        </div>
-      )}
+      {tab === 'mockup' && <Mockup sketch={sketch} />}
 
       {tab === 'revisions' && <Revisions sketch={sketch} call={call} />}
     </div>
@@ -396,23 +407,34 @@ function Popover({ children, onClose, align = 'left' }: { children: React.ReactN
   )
 }
 
-function NewMenu({ onPick, onClose }: { onPick: (name: string, p: PresetId) => void; onClose: () => void }) {
+function NewMenu({ detected, onPick, onClose }: { detected: TargetId | null; onPick: (name: string, p: TargetId) => void; onClose: () => void }) {
   const [name, setName] = useState('Untitled')
   return (
     <Popover onClose={onClose}>
       <div className="w-64 space-y-2" data-testid="sk-new-menu">
         <div className="label">New sketch</div>
         <input autoFocus className="field !py-1 !text-xs" value={name} onChange={(e) => setName(e.target.value.slice(0, 80))} />
-        <div className="grid gap-1">
-          {PRESET_IDS.map((id) => (
-            <button key={id} className="flex items-center justify-between rounded-lg border border-white/10 px-2.5 py-1.5 text-left text-xs hover:border-violet-400/40 hover:bg-white/5" onClick={() => onPick(name.trim() || 'Untitled', id)} data-testid={`sk-preset-${id}`}>
-              <span className="font-semibold">{PRESETS[id].label}</span>
-              <span className="font-mono text-[10px] text-indigo-300/70">
-                {PRESETS[id].canvas.w}x{PRESETS[id].canvas.h}
-              </span>
-            </button>
-          ))}
-        </div>
+        {(['game', 'app'] as const).map((family) => (
+          <div key={family} className="grid gap-1">
+            <div className="text-[9.5px] font-bold uppercase tracking-widest text-indigo-300/60">{family === 'game' ? 'Games' : 'Apps'}</div>
+            {TARGET_IDS.filter((id) => TARGETS[id].family === family).map((id) => (
+              <button
+                key={id}
+                className={`flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-left text-xs hover:border-violet-400/40 hover:bg-white/5 ${id === detected ? 'border-violet-400/50 bg-violet-500/10' : 'border-white/10'}`}
+                onClick={() => onPick(name.trim() || 'Untitled', id)}
+                data-testid={`sk-preset-${id}`}
+              >
+                <span className="font-semibold">
+                  {TARGETS[id].label}
+                  {id === detected && <span className="ml-1.5 rounded bg-violet-500/30 px-1 py-px text-[9px] font-bold uppercase tracking-wide text-violet-100">this project</span>}
+                </span>
+                <span className="font-mono text-[10px] text-indigo-300/70">
+                  {TARGETS[id].canvas.w}x{TARGETS[id].canvas.h}
+                </span>
+              </button>
+            ))}
+          </div>
+        ))}
       </div>
     </Popover>
   )

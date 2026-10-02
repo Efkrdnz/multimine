@@ -1,5 +1,5 @@
 import { slug, summary, type Sketch } from './model'
-import { PRESETS } from './presets'
+import { TARGETS } from './targets'
 
 export const SKETCH_ROOT = '.multimine/sketches'
 
@@ -22,16 +22,16 @@ export function uiCreator(team: readonly Member[]): Member | undefined {
  * exactly, capture the real thing, show it.
  */
 export function sketchBrief(sk: Sketch, team: readonly Member[], note: string): string {
-  const p = PRESETS[sk.preset]
+  const t = TARGETS[sk.target]
   const dir = sketchDir(sk.name)
   const creator = uiCreator(team)
   return [
-    `UI sketch "${sk.name}" from the UI Sketcher - ${p.label}, ${sk.canvas.w}x${sk.canvas.h} ${p.units}.`,
+    `UI sketch "${sk.name}" from the UI Sketcher - ${t.label}, designed at ${sk.canvas.w}x${sk.canvas.h} ${t.units}, to hold at ${t.screens.map((s) => `${s.w}x${s.h}`).join(', ')}.`,
     note.trim() ? `\nFrom the user: ${note.trim()}\n` : '',
     'Files:',
-    `- ${dir}/sketch.json - the source of truth: tree[] with exact positions (relative to each parent) and sizes, text, anchors, states and notes`,
+    `- ${dir}/sketch.json - the source of truth: tree[] with exact positions (relative to each parent), sizes, anchors and stretch, text, states and notes`,
     `- ${dir}/sketch.png - the wireframe`,
-    `- ${dir}/mockup.png - a styled preview of the intent (procedural, not the real look)`,
+    `- ${dir}/mockup.png - a styled preview of the intent (a stand-in look, not the project's art)`,
     '',
     'Outline:',
     summary(sk),
@@ -39,9 +39,11 @@ export function sketchBrief(sk: Sketch, team: readonly Member[], note: string): 
     creator
       ? `Please delegate this to ${creator.name} (\`${creator.id}\`).`
       : 'There is no UI Creator yet: create one with `create_agent` (role `ui-creator`), then delegate this to it.',
-    'Its task, in this order:',
-    `1. Implement the GUI from ${dir}/sketch.json exactly, following how the project already builds screens of this kind${p.style === 'minecraft' ? ' (units are GUI pixels; a slot is 18)' : ''}.`,
-    '2. Run the project\'s own way of seeing it (multimine.md and the context map say how; for a Minecraft mod, a dev-client launch with an automatic screenshot) and `show_media` the real screenshot.',
+    `Its task, in this order (if multimine.md or the context map say how this project builds or captures UI, that wins over these defaults):`,
+    `1. Build it for ${t.engine}:`,
+    ...t.build.map((l) => `   - ${l}`),
+    '2. Look at the real thing:',
+    ...t.capture.map((l) => `   - ${l}`),
     '3. Report the files changed, the capture command and the screenshot path, and anything it could not do as drawn.'
   ]
     .filter((l) => l !== '')

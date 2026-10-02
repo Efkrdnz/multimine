@@ -1,4 +1,4 @@
-import { PRESETS, PRESET_IDS, starter, type PresetId } from './presets'
+import { starter, TARGET_IDS, TARGETS, type TargetId } from './targets'
 
 /**
  * A UI sketch: a flat list of typed boxes in absolute canvas units. A box's parent is the container
@@ -6,10 +6,37 @@ import { PRESETS, PRESET_IDS, starter, type PresetId } from './presets'
  * among siblings (later is on top). Everything here is pure, so the editor, the exporter and the
  * tests share one set of rules.
  */
-export const ELEMENT_TYPES = ['window', 'panel', 'group', 'button', 'label', 'textfield', 'slot', 'slotgrid', 'image', 'list', 'slider', 'checkbox', 'progress', 'tooltip'] as const
+export const ELEMENT_TYPES = [
+  'window',
+  'panel',
+  'group',
+  'button',
+  'label',
+  'textfield',
+  'slot',
+  'slotgrid',
+  'image',
+  'icon',
+  'list',
+  'tabs',
+  'dropdown',
+  'slider',
+  'checkbox',
+  'toggle',
+  'progress',
+  'tooltip',
+  'modal',
+  'bar',
+  'ability',
+  'minimap',
+  'dialogue',
+  'crosshair',
+  'joystick',
+  'toast'
+] as const
 export type ElementType = (typeof ELEMENT_TYPES)[number]
 
-export const CONTAINERS: ReadonlySet<ElementType> = new Set(['window', 'panel', 'group', 'list'])
+export const CONTAINERS: ReadonlySet<ElementType> = new Set(['window', 'panel', 'group', 'list', 'modal'])
 
 export const ANCHORS = ['top-left', 'top', 'top-right', 'left', 'center', 'right', 'bottom-left', 'bottom', 'bottom-right'] as const
 export type Anchor = (typeof ANCHORS)[number]
@@ -30,7 +57,36 @@ export const TYPE_LABEL: Record<ElementType, string> = {
   slider: 'Slider',
   checkbox: 'Checkbox',
   progress: 'Progress',
-  tooltip: 'Tooltip'
+  tooltip: 'Tooltip',
+  icon: 'Icon',
+  tabs: 'Tabs',
+  dropdown: 'Dropdown',
+  toggle: 'Toggle',
+  modal: 'Modal',
+  bar: 'Bar',
+  ability: 'Ability',
+  minimap: 'Minimap',
+  dialogue: 'Dialogue',
+  crosshair: 'Crosshair',
+  joystick: 'Joystick',
+  toast: 'Toast'
+}
+
+/** Where an anchor sits on each axis: 0 the start, 0.5 the middle, 1 the end. */
+export function anchorPoint(a: Anchor): { x: number; y: number } {
+  return { x: a.endsWith('left') ? 0 : a.endsWith('right') ? 1 : 0.5, y: a.startsWith('top') ? 0 : a.startsWith('bottom') ? 1 : 0.5 }
+}
+
+const ANCHOR_AT: Anchor[][] = [
+  ['top-left', 'top', 'top-right'],
+  ['left', 'center', 'right'],
+  ['bottom-left', 'bottom', 'bottom-right']
+]
+
+/** The anchor an element most likely means: the third of its parent its centre is in, on each axis. */
+export function guessAnchor(r: Rect, parent: Rect): Anchor {
+  const third = (v: number, start: number, size: number) => (size <= 0 ? 0 : Math.max(0, Math.min(2, Math.floor(((v - start) / size) * 3))))
+  return ANCHOR_AT[third(r.y + r.h / 2, parent.y, parent.h)][third(r.x + r.w / 2, parent.x, parent.w)]
 }
 
 export interface SketchElement {
@@ -49,16 +105,20 @@ export interface SketchElement {
   /** Slot grid columns and rows. */
   cols?: number
   rows?: number
-  /** Slider and progress fill, 0..1. */
+  /** Slider, progress and bar fill, ability cooldown, 0..1. */
   value?: number
+  /** A bar's fill colour. */
+  color?: string
+  /** Grows with its parent on that axis, keeping both margins. */
+  stretch?: { x?: boolean; y?: boolean }
   hidden?: boolean
   locked?: boolean
 }
 
 export interface Sketch {
-  schema: 1
+  schema: 2
   name: string
-  preset: PresetId
+  target: TargetId
   canvas: { w: number; h: number }
   elements: SketchElement[]
 }
@@ -76,7 +136,31 @@ export function newElementId(): string {
   return `e${Date.now().toString(36)}${counter.toString(36)}`
 }
 
-const HAS_TEXT: ReadonlySet<ElementType> = new Set(['window', 'button', 'label', 'textfield', 'checkbox', 'tooltip'])
+const DEFAULT_TEXT: Partial<Record<ElementType, string>> = {
+  window: '',
+  button: 'Button',
+  label: 'Label',
+  textfield: '',
+  checkbox: 'Option',
+  toggle: 'Option',
+  tooltip: 'Tooltip',
+  tabs: 'General, Audio, Video',
+  dropdown: 'Choose...',
+  modal: 'Title',
+  dialogue: 'Elder|The bridge is out. You will have to find another way.',
+  toast: 'Quest updated',
+  ability: 'Q'
+}
+
+/** A bar's colour from what it is called: health is red, mana blue, stamina green, experience gold. */
+export function barColor(name: string): string {
+  const n = name.toLowerCase()
+  if (/mana|magic|energy/.test(n)) return '#3b82f6'
+  if (/stamina|food|hunger/.test(n)) return '#22c55e'
+  if (/xp|exp|level/.test(n)) return '#eab308'
+  if (/shield|armou?r/.test(n)) return '#94a3b8'
+  return '#ef4444'
+}
 
 function fill(d: Partial<SketchElement> & Pick<SketchElement, 'type' | 'x' | 'y' | 'w' | 'h'>, parent: string | null): SketchElement {
   const el: SketchElement = {
@@ -93,12 +177,19 @@ function fill(d: Partial<SketchElement> & Pick<SketchElement, 'type' | 'x' | 'y'
     notes: d.notes ?? ''
   }
   if (d.text !== undefined) el.text = d.text
-  else if (HAS_TEXT.has(d.type)) el.text = d.type === 'textfield' || d.type === 'window' ? '' : d.type === 'checkbox' ? 'Option' : TYPE_LABEL[d.type]
+  else if (DEFAULT_TEXT[d.type] !== undefined) el.text = DEFAULT_TEXT[d.type]
   if (d.type === 'slotgrid') {
     el.cols = d.cols ?? 9
     el.rows = d.rows ?? 3
   }
   if (d.type === 'slider' || d.type === 'progress') el.value = d.value ?? 0.5
+  if (d.type === 'bar') {
+    el.value = d.value ?? 0.75
+    el.color = d.color ?? barColor(el.name)
+  }
+  if (d.type === 'ability') el.value = d.value ?? 0
+  if (d.type === 'toggle') el.value = d.value ?? 1
+  if (d.stretch?.x || d.stretch?.y) el.stretch = { ...(d.stretch.x ? { x: true } : {}), ...(d.stretch.y ? { y: true } : {}) }
   if (d.hidden) el.hidden = true
   if (d.locked) el.locked = true
   return el
@@ -115,9 +206,9 @@ export function slug(name: string): string {
   )
 }
 
-export function newSketch(name: string, preset: PresetId): Sketch {
-  let sk: Sketch = { schema: 1, name, preset, canvas: { ...PRESETS[preset].canvas }, elements: [] }
-  for (const d of starter(preset)) sk = add(sk, d).sketch
+export function newSketch(name: string, target: TargetId): Sketch {
+  let sk: Sketch = { schema: 2, name, target, canvas: { ...TARGETS[target].canvas }, elements: [] }
+  for (const d of starter(target)) sk = add(sk, d).sketch
   return sk
 }
 
@@ -161,7 +252,9 @@ export function depth(sk: Sketch, e: SketchElement): number {
 /** Adds an element; unless a parent is given, it goes into whatever container is under its centre. */
 export function add(sk: Sketch, d: Partial<SketchElement> & Pick<SketchElement, 'type' | 'x' | 'y' | 'w' | 'h'>, parent?: string | null): { sketch: Sketch; id: string } {
   const p = parent !== undefined ? parent : (containerAt(sk, d.x + d.w / 2, d.y + d.h / 2)?.id ?? null)
-  const el = fill(d, p)
+  // unless told, an element is anchored to the part of its parent it was put in
+  const pe = p ? byId(sk, p) : undefined
+  const el = fill({ ...d, anchor: d.anchor ?? guessAnchor(d, pe ?? { x: 0, y: 0, ...sk.canvas }) }, p)
   return { sketch: { ...sk, elements: [...sk.elements, el] }, id: el.id }
 }
 
@@ -365,6 +458,8 @@ export interface SketchNode {
   cols?: number
   rows?: number
   value?: number
+  color?: string
+  stretch?: { x?: boolean; y?: boolean }
   children?: SketchNode[]
 }
 
@@ -379,6 +474,8 @@ export function tree(sk: Sketch): SketchNode[] {
         if (e.notes.trim()) n.notes = e.notes.trim()
         if (e.cols !== undefined) (n.cols = e.cols), (n.rows = e.rows)
         if (e.value !== undefined) n.value = e.value
+        if (e.color) n.color = e.color
+        if (e.stretch) n.stretch = { ...e.stretch }
         const kids = build(e)
         if (kids.length) n.children = kids
         return n
@@ -388,16 +485,18 @@ export function tree(sk: Sketch): SketchNode[] {
 
 /** What lands in `sketch.json`: the sketch itself plus the tree an implementer reads. */
 export function exportJson(sk: Sketch): string {
-  const p = PRESETS[sk.preset]
+  const t = TARGETS[sk.target]
   return JSON.stringify(
     {
-      schema: 1,
+      schema: 2,
       name: sk.name,
-      preset: sk.preset,
-      target: p.label,
-      units: p.units,
+      target: sk.target,
+      engine: t.engine,
+      units: t.units,
       canvas: sk.canvas,
-      note: 'tree[] is the GUI to build: x/y are relative to the parent, abs is the position on the canvas. elements[] is the editable form the UI Sketcher reopens.',
+      screens: t.screens,
+      uiScale: t.uiScale,
+      note: 'tree[] is the GUI to build: x/y are relative to the parent, abs is the position on the canvas. anchor is the point of the parent an element keeps its distance to (stretch: it keeps both margins on that axis) - honour them so the layout holds at every screen in screens[]. elements[] is the editable form the UI Sketcher reopens.',
       tree: tree(sk),
       elements: sk.elements
     },
@@ -410,10 +509,12 @@ export function exportJson(sk: Sketch): string {
 export function parseSketch(raw: unknown): Sketch | null {
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
-  const preset = PRESET_IDS.includes(o.preset as PresetId) ? (o.preset as PresetId) : null
-  if (!preset || !Array.isArray(o.elements)) return null
+  // schema 1 called the target a preset; its ids are target ids
+  const named = (o.target ?? o.preset) as TargetId
+  const target = TARGET_IDS.includes(named) ? named : null
+  if (!target || !Array.isArray(o.elements)) return null
   const c = o.canvas as { w?: unknown; h?: unknown } | undefined
-  const canvas = { w: Number(c?.w) > 0 ? Number(c!.w) : PRESETS[preset].canvas.w, h: Number(c?.h) > 0 ? Number(c!.h) : PRESETS[preset].canvas.h }
+  const canvas = { w: Number(c?.w) > 0 ? Number(c!.w) : TARGETS[target].canvas.w, h: Number(c?.h) > 0 ? Number(c!.h) : TARGETS[target].canvas.h }
   const elements: SketchElement[] = []
   const ids = new Set<string>()
   for (const r of o.elements as Record<string, unknown>[]) {
@@ -437,6 +538,8 @@ export function parseSketch(raw: unknown): Sketch | null {
         cols: r.cols !== undefined ? Math.max(1, Math.min(64, num(r.cols, 1))) : undefined,
         rows: r.rows !== undefined ? Math.max(1, Math.min(64, num(r.rows, 1))) : undefined,
         value: r.value !== undefined ? Math.max(0, Math.min(1, num(r.value))) : undefined,
+        color: typeof r.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(r.color) ? r.color : undefined,
+        stretch: r.stretch && typeof r.stretch === 'object' ? { x: (r.stretch as { x?: unknown }).x === true, y: (r.stretch as { y?: unknown }).y === true } : undefined,
         hidden: r.hidden === true,
         locked: r.locked === true
       },
@@ -455,7 +558,39 @@ export function parseSketch(raw: unknown): Sketch | null {
       seen.add(p)
     }
   }
-  return { schema: 1, name: typeof o.name === 'string' && o.name.trim() ? o.name.slice(0, 80) : 'Sketch', preset, canvas, elements }
+  return { schema: 2, name: typeof o.name === 'string' && o.name.trim() ? o.name.slice(0, 80) : 'Sketch', target, canvas, elements }
+}
+
+/**
+ * The sketch laid out on a canvas of another size, the way an engine resolves anchors: each element
+ * keeps its distance to its anchor point in its parent (the canvas for the top level), and an element
+ * that stretches on an axis keeps both margins there instead.
+ */
+export function layoutAt(sk: Sketch, w: number, h: number): Sketch {
+  const before = new Map<string, Rect>(sk.elements.map((e) => [e.id, e]))
+  const after = new Map<string, Rect>()
+  const root: Rect = { x: 0, y: 0, ...sk.canvas }
+  const rootNew: Rect = { x: 0, y: 0, w, h }
+  const axis = (start: number, size: number, p0: number, ps: number, n0: number, ns: number, at: number, stretch: boolean) => {
+    if (stretch) {
+      const lead = start - p0
+      const trail = p0 + ps - (start + size)
+      return { s: n0 + lead, z: Math.max(1, ns - lead - trail) }
+    }
+    const offset = start - (p0 + ps * at)
+    return { s: n0 + ns * at + offset, z: size }
+  }
+  for (const e of drawOrder(sk)) {
+    const p = e.parent ? before.get(e.parent) : undefined
+    const pn = e.parent ? after.get(e.parent) : undefined
+    const P = p ?? root
+    const N = pn ?? rootNew
+    const a = anchorPoint(e.anchor)
+    const x = axis(e.x, e.w, P.x, P.w, N.x, N.w, a.x, !!e.stretch?.x)
+    const y = axis(e.y, e.h, P.y, P.h, N.y, N.h, a.y, !!e.stretch?.y)
+    after.set(e.id, { x: Math.round(x.s), y: Math.round(y.s), w: Math.round(x.z), h: Math.round(y.z) })
+  }
+  return { ...sk, canvas: { w, h }, elements: sk.elements.map((e) => ({ ...e, ...after.get(e.id)! })) }
 }
 
 /** One line per element, indented by depth: the summary a message carries so the reader need not open the file first. */
@@ -464,7 +599,15 @@ export function summary(sk: Sketch, max = 60): string {
   const walk = (nodes: SketchNode[], d: number) => {
     for (const n of nodes) {
       if (lines.length >= max) return
-      const extra = [n.text ? `"${n.text}"` : '', n.cols ? `${n.cols}x${n.rows}` : '', n.states?.length ? `[${n.states.join(', ')}]` : '', n.notes ? `- ${n.notes.replace(/\s+/g, ' ').slice(0, 80)}` : '']
+      const stretch = [n.stretch?.x ? 'x' : '', n.stretch?.y ? 'y' : ''].join('')
+      const extra = [
+        n.text ? `"${n.text}"` : '',
+        n.cols ? `${n.cols}x${n.rows}` : '',
+        n.anchor !== 'top-left' ? `@${n.anchor}` : '',
+        stretch ? `stretch-${stretch}` : '',
+        n.states?.length ? `[${n.states.join(', ')}]` : '',
+        n.notes ? `- ${n.notes.replace(/\s+/g, ' ').slice(0, 80)}` : ''
+      ]
         .filter(Boolean)
         .join(' ')
       lines.push(`${'  '.repeat(d)}- ${n.type} ${n.name !== TYPE_LABEL[n.type] ? `"${n.name}" ` : ''}${n.w}x${n.h} at ${n.x},${n.y}${extra ? ` ${extra}` : ''}`)

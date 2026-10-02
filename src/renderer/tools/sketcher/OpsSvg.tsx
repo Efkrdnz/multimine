@@ -37,6 +37,8 @@ export const OpsSvg = memo(function OpsSvg({ ops }: { ops: readonly Op[] }) {
               shapeRendering={o.r ? undefined : 'crispEdges'}
             />
           )
+        if (o.k === 'circle') return <circle key={i} cx={o.cx} cy={o.cy} r={Math.max(0, o.r)} fill={o.fill ?? 'none'} stroke={o.stroke} strokeWidth={o.stroke ? (o.lw ?? 1) : undefined} />
+        if (o.k === 'pie') return <path key={i} d={piePath(o.cx, o.cy, o.r, o.from, o.to)} fill={o.fill} />
         if (o.k === 'line') return <line key={i} x1={o.x1} y1={o.y1} x2={o.x2} y2={o.y2} stroke={o.color} strokeWidth={o.lw} strokeDasharray={o.dash} />
         const t = (dx: number, color: string) => (
           <text
@@ -70,3 +72,12 @@ export const OpsSvg = memo(function OpsSvg({ ops }: { ops: readonly Op[] }) {
     </>
   )
 })
+
+/** A sector from `from` to `to` turns, clockwise from twelve o'clock. */
+function piePath(cx: number, cy: number, r: number, from: number, to: number): string {
+  if (to - from >= 0.999) return `M ${cx - r} ${cy} a ${r} ${r} 0 1 0 ${2 * r} 0 a ${r} ${r} 0 1 0 ${-2 * r} 0`
+  const at = (t: number) => [cx + r * Math.sin(t * Math.PI * 2), cy - r * Math.cos(t * Math.PI * 2)]
+  const [x1, y1] = at(from)
+  const [x2, y2] = at(to)
+  return `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${to - from > 0.5 ? 1 : 0} 1 ${x2} ${y2} Z`
+}

@@ -1,16 +1,43 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, Eye, EyeOff, Lock, Unlock } from 'lucide-react'
 import { displayName } from '@shared/sketch/draw'
-import { ANCHORS, byId, children, CONTAINERS, ELEMENT_TYPES, STATES, TYPE_LABEL, type Anchor, type ElementType, type Sketch, type SketchElement } from '@shared/sketch/model'
-import { PRESETS } from '@shared/sketch/presets'
+import { ANCHORS, barColor, byId, children, CONTAINERS, STATES, TYPE_LABEL, type Anchor, type ElementType, type Sketch, type SketchElement } from '@shared/sketch/model'
+import { TARGETS } from '@shared/sketch/targets'
 import { TypeIcon } from './icons'
 
 /** The element palette: pick a type, then drag on the canvas (or click for its default size). */
 export function Palette({ sketch, tool, setTool }: { sketch: Sketch; tool: ElementType | 'inventory' | null; setTool: (t: ElementType | 'inventory' | null) => void }) {
-  const mc = sketch.preset === 'minecraft'
+  const mc = sketch.target === 'minecraft'
+  const t = TARGETS[sketch.target]
+  const groups: [string, ElementType[]][] = [
+    ['', t.elements.filter((x) => !GAME_TYPES.has(x))],
+    [t.family === 'game' ? 'Game' : '', t.elements.filter((x) => GAME_TYPES.has(x))]
+  ]
   return (
-    <div className="grid grid-cols-4 gap-1">
-      {ELEMENT_TYPES.map((t) => (
+    <div className="space-y-2">
+      {groups.map(([title, types]) =>
+        types.length ? (
+          <div key={title || 'common'}>
+            {title && <div className="mb-1 text-[9.5px] font-bold uppercase tracking-widest text-indigo-300/60">{title}</div>}
+            <div className="grid grid-cols-4 gap-1">{types.map((x) => tile(x))}</div>
+          </div>
+        ) : null
+      )}
+      {mc && (
+        <button
+          title="Player inventory: 3x9 slots and the hotbar, as vanilla places them in a 176-wide container"
+          onClick={() => setTool(tool === 'inventory' ? null : 'inventory')}
+          className={`w-full rounded-lg border px-2 py-1.5 text-[11px] transition ${tool === 'inventory' ? 'border-violet-400/70 bg-violet-500/25 text-white' : 'border-white/5 bg-white/[0.03] text-indigo-200/90 hover:border-violet-400/30'}`}
+          data-testid="sk-tool-inventory"
+        >
+          + Player inventory stamp
+        </button>
+      )}
+    </div>
+  )
+
+  function tile(t: ElementType) {
+    return (
         <button
           key={t}
           title={`${TYPE_LABEL[t]} - drag on the canvas, or click for the default size`}
@@ -21,20 +48,24 @@ export function Palette({ sketch, tool, setTool }: { sketch: Sketch; tool: Eleme
           <TypeIcon type={t} />
           <span className="max-w-full truncate">{TYPE_LABEL[t]}</span>
         </button>
-      ))}
-      {mc && (
-        <button
-          title="Player inventory: 3x9 slots and the hotbar, as vanilla places them in a 176-wide container"
-          onClick={() => setTool(tool === 'inventory' ? null : 'inventory')}
-          className={`col-span-4 rounded-lg border px-2 py-1.5 text-[11px] transition ${tool === 'inventory' ? 'border-violet-400/70 bg-violet-500/25 text-white' : 'border-white/5 bg-white/[0.03] text-indigo-200/90 hover:border-violet-400/30'}`}
-          data-testid="sk-tool-inventory"
-        >
-          + Player inventory stamp
-        </button>
-      )}
-    </div>
-  )
+    )
+  }
 }
+
+const GAME_TYPES: ReadonlySet<ElementType> = new Set(['bar', 'ability', 'slot', 'slotgrid', 'minimap', 'dialogue', 'crosshair', 'joystick', 'toast'])
+
+const TEXT_HINT: Partial<Record<ElementType, string>> = {
+  tabs: 'Tab names, separated by commas',
+  dialogue: 'Speaker|line',
+  ability: 'Key',
+  bar: 'Label over the bar (optional)',
+  window: 'Title (optional)',
+  modal: 'Title'
+}
+
+const VALUE_LABEL: Partial<Record<ElementType, string>> = { ability: 'Cooldown', toggle: 'On' }
+
+const BAR_COLOURS = ['#ef4444', '#3b82f6', '#22c55e', '#eab308', '#a855f7', '#94a3b8']
 
 /** The element tree: select, show/hide, lock, collapse. */
 export function Layers({ sketch, selection, onSelect, onToggle }: { sketch: Sketch; selection: string[]; onSelect: (ids: string[], additive: boolean) => void; onToggle: (id: string, field: 'hidden' | 'locked') => void }) {
@@ -111,7 +142,7 @@ function Num({ label, value, onChange, step = 1, min, max }: { label: string; va
  * selected. Every edit is one undo step (typing in a field merges into the step it started).
  */
 export function Properties({ sketch, selection, onPatch, onSketch }: { sketch: Sketch; selection: string[]; onPatch: (id: string, patch: Partial<SketchElement>) => void; onSketch: (patch: Partial<Sketch>) => void }) {
-  const units = PRESETS[sketch.preset].units
+  const units = TARGETS[sketch.target].units
   if (selection.length > 1) return <div className="p-3 text-xs text-indigo-300/80">{selection.length} elements selected. Drag to move them together; Delete removes them; Ctrl+D duplicates.</div>
   const e = selection.length === 1 ? byId(sketch, selection[0]) : undefined
   if (!e) {
@@ -123,7 +154,7 @@ export function Properties({ sketch, selection, onPatch, onSketch }: { sketch: S
             <Num label="W" value={sketch.canvas.w} min={16} onChange={(w) => onSketch({ canvas: { ...sketch.canvas, w: Math.max(16, Math.round(w)) } })} />
             <Num label="H" value={sketch.canvas.h} min={16} onChange={(h) => onSketch({ canvas: { ...sketch.canvas, h: Math.max(16, Math.round(h)) } })} />
           </div>
-          {sketch.preset === 'minecraft' && <div className="mt-1.5 text-[10.5px] leading-snug text-indigo-300/60">427 x 240 is a 1280x720 window at GUI scale 3, the size most screens are judged at.</div>}
+          {sketch.target === 'minecraft' && <div className="mt-1.5 text-[10.5px] leading-snug text-indigo-300/60">427 x 240 is a 1280x720 window at GUI scale 3, the size most screens are judged at.</div>}
         </div>
         <div className="text-[11px] leading-relaxed text-indigo-300/70">
           Pick an element and drag on the canvas. Drop elements into a window, panel, layer or list to nest them; moving a container moves its contents.
@@ -133,7 +164,11 @@ export function Properties({ sketch, selection, onPatch, onSketch }: { sketch: S
       </div>
     )
   }
-  const set = (patch: Partial<SketchElement>) => onPatch(e.id, patch)
+  const set = (patch: Partial<SketchElement>) => {
+    // a bar still wearing the colour its old name gave it takes the colour of its new one
+    if (e.type === 'bar' && patch.name !== undefined && e.color === barColor(e.name)) patch = { ...patch, color: barColor(patch.name) }
+    onPatch(e.id, patch)
+  }
   const parent = e.parent ? byId(sketch, e.parent) : undefined
   return (
     <div className="space-y-3 p-3" data-testid="sk-properties">
@@ -148,7 +183,7 @@ export function Properties({ sketch, selection, onPatch, onSketch }: { sketch: S
       </div>
       {e.text !== undefined && (
         <div>
-          <div className="label">Text</div>
+          <div className="label">{TEXT_HINT[e.type] ?? 'Text'}</div>
           <input className="field !py-1 !text-xs" value={e.text} onChange={(ev) => set({ text: ev.target.value.slice(0, 500) })} data-testid="sk-prop-text" />
         </div>
       )}
@@ -170,19 +205,48 @@ export function Properties({ sketch, selection, onPatch, onSketch }: { sketch: S
           </div>
         </div>
       )}
-      {e.value !== undefined && (
+      {e.value !== undefined &&
+        (e.type === 'toggle' ? (
+          <label className="flex items-center gap-2 text-xs text-indigo-200">
+            <input type="checkbox" checked={e.value >= 0.5} onChange={(ev) => set({ value: ev.target.checked ? 1 : 0 })} /> On
+          </label>
+        ) : (
+          <div>
+            <div className="label">
+              {VALUE_LABEL[e.type] ?? 'Fill'} {Math.round(e.value * 100)}%
+            </div>
+            <input type="range" min={0} max={1} step={0.01} value={e.value} onChange={(ev) => set({ value: Number(ev.target.value) })} className="w-full accent-violet-500" data-testid="sk-prop-value" />
+          </div>
+        ))}
+      {e.type === 'bar' && (
         <div>
-          <div className="label">Fill {Math.round(e.value * 100)}%</div>
-          <input type="range" min={0} max={1} step={0.01} value={e.value} onChange={(ev) => set({ value: Number(ev.target.value) })} className="w-full accent-violet-500" />
+          <div className="label">Colour</div>
+          <div className="flex items-center gap-1.5">
+            {BAR_COLOURS.map((c) => (
+              <button key={c} title={c} onClick={() => set({ color: c })} className={`h-5 w-5 rounded-full border-2 ${e.color === c ? 'border-white' : 'border-transparent'}`} style={{ background: c }} />
+            ))}
+            <input type="color" value={e.color ?? barColor(e.name)} onChange={(ev) => set({ color: ev.target.value })} className="h-5 w-7 cursor-pointer rounded bg-transparent" />
+          </div>
         </div>
       )}
       <div>
         <div className="label">Anchor</div>
-        <div className="grid w-[84px] grid-cols-3 gap-0.5">
-          {ANCHORS.map((a: Anchor) => (
-            <button key={a} title={a} onClick={() => set({ anchor: a })} className={`h-5 rounded-sm border ${e.anchor === a ? 'border-violet-400 bg-violet-500/60' : 'border-white/10 bg-white/5 hover:bg-white/10'}`} />
-          ))}
+        <div className="flex items-start gap-3">
+          <div className="grid w-[84px] grid-cols-3 gap-0.5">
+            {ANCHORS.map((a: Anchor) => (
+              <button key={a} title={a} onClick={() => set({ anchor: a })} className={`h-5 rounded-sm border ${e.anchor === a ? 'border-violet-400 bg-violet-500/60' : 'border-white/10 bg-white/5 hover:bg-white/10'}`} data-testid={`sk-anchor-${a}`} />
+            ))}
+          </div>
+          <div className="space-y-1 text-[11px] text-indigo-200/90">
+            {(['x', 'y'] as const).map((ax) => (
+              <label key={ax} className="flex items-center gap-1.5">
+                <input type="checkbox" checked={!!e.stretch?.[ax]} onChange={(ev) => set({ stretch: { ...e.stretch, [ax]: ev.target.checked } })} />
+                Stretch {ax === 'x' ? 'across' : 'down'}
+              </label>
+            ))}
+          </div>
         </div>
+        <div className="mt-1 text-[10px] leading-snug text-indigo-300/60">The point of its parent it keeps its distance to when the screen size changes. See the Mockup tab.</div>
       </div>
       {!CONTAINERS.has(e.type) || e.type === 'list' ? (
         <div>

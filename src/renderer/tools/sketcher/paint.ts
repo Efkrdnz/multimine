@@ -30,6 +30,18 @@ export function paint(ctx: CanvasRenderingContext2D, ops: readonly Op[], scale: 
         ctx.stroke()
         ctx.setLineDash([])
       }
+    } else if (o.k === 'circle') {
+      ctx.beginPath()
+      ctx.arc(o.cx, o.cy, Math.max(0, o.r), 0, Math.PI * 2)
+      if (o.fill) (ctx.fillStyle = o.fill), ctx.fill()
+      if (o.stroke) (ctx.strokeStyle = o.stroke), (ctx.lineWidth = o.lw ?? 1), ctx.stroke()
+    } else if (o.k === 'pie') {
+      ctx.beginPath()
+      ctx.moveTo(o.cx, o.cy)
+      ctx.arc(o.cx, o.cy, Math.max(0, o.r), o.from * Math.PI * 2 - Math.PI / 2, o.to * Math.PI * 2 - Math.PI / 2)
+      ctx.closePath()
+      ctx.fillStyle = o.fill
+      ctx.fill()
     } else if (o.k === 'line') {
       ctx.beginPath()
       ctx.setLineDash(o.dash ? [o.dash, o.dash] : [])

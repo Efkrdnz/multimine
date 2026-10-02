@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { drawSketch, type Look } from '@shared/sketch/draw'
 import { byId, containerAt, descendants, drawOrder, move, roots, snap, snapRect, type ElementType, type Guide, type Rect, type Sketch } from '@shared/sketch/model'
-import { PRESETS } from '@shared/sketch/presets'
+import { TARGETS } from '@shared/sketch/targets'
 import { OpsSvg } from './OpsSvg'
 
 export interface View {
@@ -60,6 +60,7 @@ export function SketchCanvas({
   look,
   grid,
   showGrid,
+  safeArea = 0,
   selection,
   tool,
   view,
@@ -74,6 +75,8 @@ export function SketchCanvas({
   look: Look
   grid: number
   showGrid: boolean
+  /** Title-safe inset as a fraction of each side; 0 draws nothing. */
+  safeArea?: number
   selection: string[]
   tool: ElementType | 'inventory' | null
   view: View | null
@@ -252,6 +255,25 @@ export function SketchCanvas({
               <rect x={0} y={0} width={sketch.canvas.w} height={sketch.canvas.h} fill="url(#sk-grid)" />
             </g>
           )}
+          {safeArea > 0 && (
+            <g pointerEvents="none" data-testid="sk-safe-area">
+              <rect
+                x={sketch.canvas.w * safeArea}
+                y={sketch.canvas.h * safeArea}
+                width={sketch.canvas.w * (1 - 2 * safeArea)}
+                height={sketch.canvas.h * (1 - 2 * safeArea)}
+                fill="none"
+                stroke="#f59e0b"
+                strokeOpacity={0.7}
+                strokeDasharray="6 5"
+                strokeWidth={1}
+                vectorEffect="non-scaling-stroke"
+              />
+              <text x={sketch.canvas.w * safeArea + 4 / z} y={sketch.canvas.h * safeArea - 4 / z} fontSize={10 / z} fill="#f59e0b" fillOpacity={0.85} fontFamily="system-ui, sans-serif">
+                title-safe area
+              </text>
+            </g>
+          )}
           {hover && !selection.includes(hover) && (() => {
             const e = byId(sketch, hover)
             return e ? <rect x={e.x} y={e.y} width={e.w} height={e.h} fill="none" stroke="#a78bfa" strokeOpacity={0.6} strokeWidth={1} vectorEffect="non-scaling-stroke" /> : null
@@ -284,7 +306,7 @@ export function SketchCanvas({
       </svg>
       {(single || preview) && (
         <div className="pointer-events-none absolute bottom-2 left-2 rounded-md bg-black/60 px-2 py-0.5 font-mono text-[10px] text-indigo-200">
-          {preview ? `${preview.w} x ${preview.h}` : single && `${single.x}, ${single.y}  ${single.w} x ${single.h} ${PRESETS[sketch.preset].units}`}
+          {preview ? `${preview.w} x ${preview.h}` : single && `${single.x}, ${single.y}  ${single.w} x ${single.h} ${TARGETS[sketch.target].units}`}
         </div>
       )}
     </div>

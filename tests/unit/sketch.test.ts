@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { add, byId, copy, descendants, drawOrder, duplicate, exportJson, History, move, newSketch, parseSketch, paste, remove, reorder, settle, slug, snapRect, summary, tree, update } from '@shared/sketch/model'
+import { add, anchorPoint, byId, ELEMENT_TYPES, guessAnchor, layoutAt, copy, descendants, drawOrder, duplicate, exportJson, History, move, newSketch, parseSketch, paste, remove, reorder, settle, slug, snapRect, summary, tree, update } from '@shared/sketch/model'
 import { cells, drawSketch } from '@shared/sketch/draw'
-import { MC_SLOT, PRESETS } from '@shared/sketch/presets'
+import { detectTarget, logicalSize, MC_SLOT, TARGETS } from '@shared/sketch/targets'
 import { revisionBrief, sketchBrief, uiCreator } from '@shared/sketch/brief'
 
 describe('sketch model', () => {
@@ -111,21 +111,22 @@ describe('sketch model', () => {
 describe('sketch drawing and briefs', () => {
   it('draws every element in every look, inside the canvas', () => {
     let sk = newSketch('All', 'minecraft')
-    const types = ['panel', 'group', 'button', 'label', 'textfield', 'slot', 'slotgrid', 'image', 'list', 'slider', 'checkbox', 'progress', 'tooltip'] as const
-    types.forEach((type, i) => (sk = add(sk, { type, x: 2 + (i % 6) * 60, y: 2 + Math.floor(i / 6) * 40, w: 50, h: 30 }, null).sketch))
-    for (const look of ['wireframe', 'minecraft', 'web', 'desktop'] as const) {
+    const types = ELEMENT_TYPES.filter((t) => t !== 'window')
+    types.forEach((type, i) => (sk = add(sk, { type, x: 2 + (i % 7) * 60, y: 2 + Math.floor(i / 7) * 40, w: 50, h: 30 }, null).sketch))
+    for (const look of ['wireframe', 'minecraft', 'web', 'desktop', 'game'] as const) {
       const ops = drawSketch(sk, look)
       const drawn = new Set(ops.map((o) => ('el' in o ? o.el : undefined)).filter(Boolean))
-      // groups are invisible in the styled looks
-      expect(drawn.size).toBeGreaterThanOrEqual(sk.elements.length - (look === 'wireframe' ? 0 : 1))
+      // groups are invisible in the styled looks; everything else draws something
+      for (const e of sk.elements) if (look === 'wireframe' || e.type !== 'group') expect(drawn.has(e.id), `${e.type} in ${look}`).toBe(true)
       for (const o of ops) if (o.k === 'rect') expect(o.x + o.w).toBeLessThanOrEqual(sk.canvas.w + 1)
+      for (const o of ops) for (const v of Object.values(o)) if (typeof v === 'number') expect(Number.isFinite(v)).toBe(true)
     }
     // hidden elements and everything inside them are left out
     const win = sk.elements.find((e) => e.type === 'window')!
     const hidden = drawSketch(update(sk, win.id, { hidden: true }), 'wireframe')
     expect(hidden.some((o) => 'el' in o && o.el === win.id)).toBe(false)
     expect(hidden.some((o) => 'el' in o && sk.elements.find((e) => e.id === o.el)?.parent === win.id)).toBe(false)
-    expect(PRESETS.minecraft.canvas.w * PRESETS.minecraft.scale).toBeGreaterThanOrEqual(1280)
+    expect(TARGETS.minecraft.canvas.w * TARGETS.minecraft.scale).toBeGreaterThanOrEqual(1280)
   })
 
   it('briefs Mastermind with the paths, the outline and the UI Creator', () => {
@@ -140,5 +141,74 @@ describe('sketch drawing and briefs', () => {
     expect(sketchBrief(sk, team, '')).toContain('delegate this to Pixel (`ui`)')
     expect(summary(sk).split('\n')[0]).toMatch(/^- window "Container" 176x166/)
     expect(revisionBrief(sk, '.multimine/sketches/furnace/revision-1.png', 'move the arrow')).toContain('move the arrow')
+  })
+})
+
+describe('sketch targets', () => {
+  it('knows a project by its root', async () => {
+    const none = async () => null
+    expect(await detectTarget(['project.godot', 'scenes/'], none)).toBe('godot')
+    expect(await detectTarget(['Assets/', 'ProjectSettings/', 'Packages/'], none)).toBe('unity')
+    expect(await detectTarget(['Shooter.uproject', 'Source/'], none)).toBe('unreal')
+    expect(await detectTarget(['build.gradle', 'src/'], async () => "plugins { id 'net.neoforged.moddev' }\nneoForge { version = '21.4' }")).toBe('minecraft')
+    expect(await detectTarget(['build.gradle'], async () => "apply plugin: 'java'")).toBeNull()
+    expect(await detectTarget(['package.json', 'src/'], none)).toBe('web')
+    expect(await detectTarget(['README.md'], none)).toBeNull()
+  })
+
+  it('opens a schema 1 sketch as schema 2', () => {
+    const old = { schema: 1, name: 'Old', preset: 'minecraft', canvas: { w: 427, h: 240 }, elements: [{ id: 'a', type: 'button', x: 1, y: 2, w: 3, h: 4, parent: null }] }
+    const sk = parseSketch(old)!
+    expect(sk).toMatchObject({ schema: 2, target: 'minecraft' })
+    expect(JSON.parse(exportJson(sk))).toMatchObject({ schema: 2, target: 'minecraft', engine: 'Minecraft', uiScale: 'minecraft' })
+  })
+
+  it('anchors what is drawn to the part of the screen it was drawn in', () => {
+    const canvas = { x: 0, y: 0, w: 1920, h: 1080 }
+    expect(guessAnchor({ x: 40, y: 980, w: 360, h: 28 }, canvas)).toBe('bottom-left')
+    expect(guessAnchor({ x: 1640, y: 40, w: 240, h: 240 }, canvas)).toBe('top-right')
+    expect(guessAnchor({ x: 936, y: 516, w: 48, h: 48 }, canvas)).toBe('center')
+    const sk = add(newSketch('Hud', 'godot'), { type: 'minimap', x: 1640, y: 40, w: 240, h: 240 }).sketch
+    expect(sk.elements[0].anchor).toBe('top-right')
+    expect(anchorPoint('bottom-right')).toEqual({ x: 1, y: 1 })
+  })
+
+  it('lays a HUD out on another screen the way an engine resolves anchors', () => {
+    let sk = newSketch('Hud', 'godot')
+    sk = add(sk, { type: 'minimap', x: 1640, y: 40, w: 240, h: 240 }).sketch // top-right
+    sk = add(sk, { type: 'bar', name: 'Health', x: 40, y: 1012, w: 360, h: 28 }).sketch // bottom-left
+    sk = add(sk, { type: 'crosshair', x: 936, y: 516, w: 48, h: 48 }).sketch // centre
+    sk = add(sk, { type: 'panel', x: 0, y: 0, w: 1920, h: 64, anchor: 'top', stretch: { x: true } }).sketch
+    const [map, bar, aim, strip] = layoutAt(sk, 2560, 1080).elements
+    expect(map).toMatchObject({ x: 2280, y: 40, w: 240 }) // kept 40 from the right edge
+    expect(bar).toMatchObject({ x: 40, y: 1012 })
+    expect(aim).toMatchObject({ x: 1256, y: 516 }) // still centred
+    expect(strip).toMatchObject({ x: 0, w: 2560 }) // stretched
+    // children follow their parent and keep their own anchor inside it
+    let mc = newSketch('Box', 'minecraft')
+    const win = mc.elements[0]
+    mc = layoutAt(mc, 480, 270)
+    const moved = mc.elements.find((e) => e.id === win.id)!
+    expect(moved.x).toBe(win.x + Math.round((480 - 427) / 2))
+    const hotbar = mc.elements.find((e) => e.name === 'Hotbar')!
+    expect([hotbar.x - moved.x, hotbar.y - moved.y]).toEqual([8, 142])
+  })
+
+  it('scales a UI the way each platform does', () => {
+    expect(logicalSize(TARGETS.godot, { w: 3840, h: 2160 })).toEqual({ w: 1920, h: 1080, scale: 2 })
+    expect(logicalSize(TARGETS.unity, { w: 3440, h: 1440 })).toMatchObject({ w: 2580, h: 1080 })
+    expect(logicalSize(TARGETS.minecraft, { w: 1280, h: 720 })).toEqual({ w: 426, h: 240, scale: 3 })
+    expect(logicalSize(TARGETS.minecraft, { w: 1920, h: 1080 })).toEqual({ w: 480, h: 270, scale: 4 })
+    expect(logicalSize(TARGETS.web, { w: 390, h: 844 })).toEqual({ w: 390, h: 844, scale: 1 })
+  })
+
+  it('briefs the builder for its engine', () => {
+    const godot = sketchBrief(newSketch('Hud', 'godot'), [], '')
+    expect(godot).toContain('Build it for Godot')
+    expect(godot).toContain('Control scene')
+    expect(godot).toContain('2560x1440')
+    expect(sketchBrief(newSketch('Hud', 'unity'), [], '')).toContain('UI Toolkit')
+    expect(sketchBrief(newSketch('Hud', 'unreal'), [], '')).toContain('UUserWidget')
+    expect(godot).toContain('multimine.md')
   })
 })

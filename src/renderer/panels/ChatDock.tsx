@@ -38,7 +38,11 @@ function ChatPanel({ agentId }: { agentId: string }) {
           <div className="truncate font-display text-[15px] font-bold">{agent.name}</div>
           <div className="truncate text-[11px] text-indigo-300/80">
             {ROLE_LABEL[agent.role]} · {agent.provider === 'mock' ? '' : `${SHORT_PROVIDER[agent.provider]} `}
-            {st?.temp ? (
+            {st?.fallback ? (
+              <span className="rounded bg-sky-400/20 px-1 font-semibold text-sky-200" title={`${st.fallback.reason}. Back to ${modelLabel(catalog, agent.provider, agent.model)} when it is available again.`}>
+                ↪ {SHORT_PROVIDER[st.fallback.provider as keyof typeof SHORT_PROVIDER]} {modelLabel(catalog, st.fallback.provider as typeof agent.provider, st.fallback.model)} (fallback)
+              </span>
+            ) : st?.temp ? (
               <span className="rounded bg-amber-400/20 px-1 font-semibold text-amber-200" title={`Economy mode: this ${st.temp.difficulty} task runs on a cheaper model. ${agent.name} goes back to ${modelLabel(catalog, agent.provider, agent.model)} · ${agent.effort} afterwards.`}>
                 ⚡ {modelLabel(catalog, agent.provider, st.temp.model)} · {st.temp.effort} (this task)
               </span>

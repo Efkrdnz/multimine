@@ -62,6 +62,8 @@ export type AgentEvent =
   | { type: 'resume'; id: string }
   | { type: 'usage'; inputTokens: number; outputTokens: number; costUsd?: number }
   | { type: 'error'; message: string }
+  /** The provider's own word on how close its user is to a usage limit (Claude subscriptions). */
+  | { type: 'limit'; state: 'ok' | 'near' | 'exhausted'; resetsAt?: number; detail?: string }
 
 export interface ProviderAdapter {
   run(req: TurnRequest): AsyncIterable<AgentEvent>

@@ -24,7 +24,7 @@ export interface Api {
   duplicateSession(id: string): Promise<void>
 
   answer(id: string, answers: Record<string, string>, note?: string): Promise<void>
-  decide(id: string, approved: boolean, note?: string): Promise<void>
+  decide(id: string, approved: boolean, note?: string, always?: boolean): Promise<void>
 
   updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>
   setKey(provider: string, key: string | null): Promise<string[]>

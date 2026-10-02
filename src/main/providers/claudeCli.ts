@@ -151,6 +151,13 @@ export class ClaudeCliProvider implements ProviderAdapter {
                 if (block.type === 'tool_result') yield { type: 'tool-end', id: block.tool_use_id, output: textOf(block.content), isError: !!block.is_error }
             break
           }
+          case 'rate_limit_event': {
+            const info = msg.rate_limit_info ?? {}
+            const state = info.status === 'rejected' ? 'exhausted' : info.status === 'allowed_warning' ? 'near' : 'ok'
+            const pct = typeof info.utilization === 'number' ? ` (${Math.round(info.utilization <= 1 ? info.utilization * 100 : info.utilization)}% used)` : ''
+            yield { type: 'limit', state, resetsAt: info.resetsAt, detail: `${String(info.rateLimitType ?? 'usage').replace(/_/g, ' ')} limit${pct}` }
+            break
+          }
           case 'result': {
             const u = msg.usage ?? {}
             yield {

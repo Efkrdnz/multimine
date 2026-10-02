@@ -6,6 +6,7 @@ import { readJson, writeJson } from './fsx'
 
 export const DEFAULT_SETTINGS: AppSettings = {
   automation: false,
+  defaultFallback: [],
   economy: { enabled: false, concise: true, downshift: true, tiers: DEFAULT_TIERS },
   handoffWaitMinutes: 10,
   council: {

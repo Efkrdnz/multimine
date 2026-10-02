@@ -6,8 +6,8 @@ designed against a core that has stopped moving.
 
 | # | Feature | Status |
 |---|---|---|
-| 1 | Mini IDE + editor-agnostic change tracking | planned in detail below |
-| 2 | Fallback providers | planned in detail below |
+| 1 | Mini IDE + editor-agnostic change tracking | done |
+| 2 | Fallback providers | done |
 | 3 | Plugin system | shaped below |
 | 4 | UI sketcher (the first plugin) | shaped below |
 

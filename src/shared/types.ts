@@ -51,6 +51,10 @@ export interface AgentSpec {
   planMode: boolean
   /** A live CLI session in the IDE's terminal: never saved, driven by the user, not delegated to. */
   terminal?: boolean
+  /** Where this agent continues when its provider is out of usage, in order. Empty: the default chain. */
+  fallback: FallbackHop[]
+  /** Switch onto a pay-per-use API key without asking first. */
+  fallbackPaidOk: boolean
   /**
    * Say yes to every permission prompt this agent raises. Pushing, publishing and destroying
    * history still ask (as a balloon over the agent). Off: every prompt asks.
@@ -58,6 +62,12 @@ export interface AgentSpec {
   autoApprove: boolean
   /** The purpose prompt: the markdown body of the agent file. */
   purpose: string
+}
+
+export interface FallbackHop {
+  provider: ProviderKind
+  model: string
+  effort: Effort
 }
 
 export type AgentStatus = 'idle' | 'thinking' | 'working' | 'waiting' | 'error'
@@ -160,6 +170,9 @@ export interface InboxItem {
   autoReason?: string
   /** A quick allow/deny for one action (a command, a push), shown as a balloon over the agent. */
   permission?: boolean
+  /** Offers a third answer, "always", remembered for the asking agent (e.g. paid fallbacks). */
+  alwaysLabel?: string
+  always?: boolean
 }
 
 export interface SessionMeta {
@@ -209,6 +222,8 @@ export interface EconomySettings {
 
 export interface AppSettings {
   automation: boolean
+  /** The fallback chain for agents that have none of their own. */
+  defaultFallback: FallbackHop[]
   economy: EconomySettings
   /** How long a handoff blocks its caller before the report is delivered later instead. */
   handoffWaitMinutes: number
@@ -313,7 +328,15 @@ export type MainEvent =
   | { type: 'sessions'; sessions: SessionMeta[]; active: string | null }
   | { type: 'chat-reset'; chats: Record<string, ChatMessage[]> }
   | { type: 'chat-upsert'; message: ChatMessage }
-  | { type: 'status'; agentId: string; status: AgentStatus; activity?: string; temp?: { model: string; effort: Effort; difficulty: string } }
+  | {
+      type: 'status'
+      agentId: string
+      status: AgentStatus
+      activity?: string
+      temp?: { model: string; effort: Effort; difficulty: string }
+      fallback?: { provider: ProviderKind; model: string; reason: string }
+    }
+  | { type: 'provider-health'; health: Record<string, { state: 'near' | 'exhausted'; until: number; reason: string }> }
   | { type: 'talk'; agentId: string }
   | { type: 'bus'; event: BusEvent }
   | { type: 'channels'; channels: Channel[] }

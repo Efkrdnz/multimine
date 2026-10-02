@@ -16,6 +16,8 @@ import {
   type BusEvent,
   type BusKind,
   type Channel,
+  type FallbackHop,
+  type ProviderKind,
   type ChatMessage,
   type InboxItem,
   type MainEvent,
@@ -34,6 +36,9 @@ import type { HistoryItem, ToolDef, ToolOutput, TurnRequest } from '../providers
 import { findMediaUrls, MediaStore } from '../media/capture'
 import type { McpHub } from '../mcp/hub'
 import { BOOTSTRAP_TASK, buildSystemPrompt, inboundPrompt } from './prompts'
+import { buildBrief } from './continuation'
+import { failureOf, isPaid, ProviderHealth, type Failure } from '../providers/limits'
+import { SHORT_PROVIDER, modelLabel } from '@shared/catalog'
 import { formatAnswers, Inbox, recommendedAnswers } from './inbox'
 import { runCouncil } from './council'
 import { insideProject, workspaceTools } from './workspace'
@@ -45,6 +50,8 @@ export interface EngineDeps {
   providers: ProviderRegistry
   emit: (e: MainEvent) => void
   hub?: McpHub
+  /** Which providers are out of usage: shared by every project, so one app-wide instance is passed in. */
+  health?: ProviderHealth
   /** The URL of an agent's endpoint on the local MCP bus (set once the bus server is up). */
   busUrl?: (agentId: string) => string | undefined
 }
@@ -98,14 +105,19 @@ export class Engine {
   /** Write-capable agents mid-turn, and when the last one stopped: the watcher's "an agent did it" window. */
   private writing = new Set<string>()
   private writingUntil = 0
+  /** Agents running their current task on a fallback provider, and why. */
+  private fallbacks = new Map<string, { provider: ProviderKind; model: string; reason: string }>()
   /** Agents running their current task on a cheaper model than their own (economy mode). */
   private temps = new Map<string, TempModel>()
   private flushTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private totals: Usage = { inputTokens: 0, outputTokens: 0, costUsd: 0 }
   private mediaStore: MediaStore
 
+  readonly health: ProviderHealth
+
   constructor(private readonly d: EngineDeps) {
     this.mediaStore = new MediaStore(d.project.paths.media)
+    this.health = d.health ?? new ProviderHealth((h) => d.emit({ type: 'provider-health', health: h }))
   }
 
   get project(): ProjectStore {
@@ -169,7 +181,7 @@ export class Engine {
 
   private setStatus(agentId: string, status: AgentStatus, activity?: string): void {
     this.status.set(agentId, status)
-    this.d.emit({ type: 'status', agentId, status, activity, temp: this.temps.get(agentId) })
+    this.d.emit({ type: 'status', agentId, status, activity, temp: this.temps.get(agentId), fallback: this.fallbacks.get(agentId) })
   }
 
   /**
@@ -306,15 +318,16 @@ export class Engine {
     await this.persist(msg)
   }
 
-  private resumeKey(agent: AgentSpec): string | undefined {
-    const raw = this.session.resume[agent.id]
+  /** A provider's own session for this agent in this session (Claude session_id, Codex thread). */
+  private resumeKey(agentId: string, provider: string): string | undefined {
+    const raw = this.session.resume[`${agentId}|${provider}`] ?? this.session.resume[agentId]
     if (!raw) return undefined
-    const [provider, ...rest] = raw.split(':')
-    return provider === agent.provider ? rest.join(':') : undefined
+    const [p, ...rest] = raw.split(':')
+    return p === provider ? rest.join(':') : undefined
   }
 
-  private async saveResume(agent: AgentSpec, id: string): Promise<void> {
-    this.session.resume[agent.id] = `${agent.provider}:${id}`
+  private async saveResume(agentId: string, provider: string, id: string): Promise<void> {
+    this.session.resume[`${agentId}|${provider}`] = `${provider}:${id}`
     this.session.updated = Date.now()
     await this.d.sessions.save(this.session)
   }
@@ -346,73 +359,56 @@ export class Engine {
     const reply: ChatMessage = { id: newId('r'), agentId, role: 'assistant', from: agentId, text: '', ts: Date.now(), streaming: true, tools: [] }
     this.upsert(reply, true)
 
-    const isCli = ProviderRegistry.isCli(agent.provider)
     const watchChanges = agent.permissions === 'write' && agent.role !== 'context-handler'
     if (agent.permissions === 'write') this.writing.add(agentId)
     const gitBefore = watchChanges ? await this.gitState() : null
-    const resumeId = this.resumeKey(agent)
-    let finalPrompt = prompt
-    if (agent.provider === 'claude-cli' && !resumeId && history.length) {
-      finalPrompt = `# Conversation so far\n${history.map((h) => `${h.role === 'user' ? 'User' : 'You'}: ${h.text}`).join('\n\n')}\n\n# Now\n${prompt}`
-    }
 
+    // The provider chain: the agent's own (or economy) model first, then its fallbacks. A provider
+    // already known to be out of usage is skipped at the start; one that runs out mid-task hands the
+    // task, with a brief of everything done so far, to the next - in the same reply bubble.
+    const hops = this.hopsFor(own, agent)
+    let i = this.startHop(hops)
+    let promptNow = prompt
+    let historyNow = history
+    let continuing = false
     let error: string | undefined
     try {
-      const req: TurnRequest = {
-        agent,
-        system: this.systemPrompt(agent),
-        history,
-        prompt: finalPrompt,
-        cwd: this.d.project.dir,
-        resumeId,
-        tools: await this.toolsFor(agent, isCli),
-        busUrl: isCli ? this.d.busUrl?.(agent.id) : undefined,
-        externalMcp: this.d.config.settings.mcpServers.filter((s) => agent.mcp.includes(s.id)),
-        apiKey: this.d.config.getKey(agent.provider),
-        baseUrl: this.d.config.settings.baseUrls[agent.provider],
-        executable: agent.provider === 'claude-cli' ? this.d.config.settings.claudePath : agent.provider === 'codex-cli' ? this.d.config.settings.codexPath : undefined,
-        signal: ctl.signal,
-        ask: (qs) => this.askUser(agent.id, qs).then((item) => item.answers ?? {}),
-        approvePlan: (plan) => this.requestApproval(agent.id, `${agent.name} wants to leave plan mode`, plan).then((i) => ({ approved: !!i.approved, note: i.note })),
-        approveAction: (title, detail, always) => this.approveAction(agent.id, title, detail, always)
-      }
-      for await (const ev of this.d.providers.get(agent.provider).run(req)) {
-        if (sessionId !== this.session.id) break
-        switch (ev.type) {
-          case 'text':
-            reply.text += ev.delta
-            this.setStatusOnce(agentId, 'working')
-            this.d.emit({ type: 'talk', agentId })
-            break
-          case 'thinking':
-            reply.thinking = (reply.thinking ?? '') + ev.delta
-            this.setStatusOnce(agentId, 'thinking')
-            break
-          case 'tool-start':
-            reply.tools!.push({ id: ev.id, name: ev.name, input: ev.input, status: 'running' })
-            this.setStatus(agentId, 'working', ev.name.replace(/^mcp__multimine__/, ''))
-            break
-          case 'tool-end': {
-            const t = reply.tools!.find((x) => x.id === ev.id)
-            if (t) Object.assign(t, { output: clip(ev.output), status: ev.isError ? 'error' : 'done' })
-            if (isCli && t && !t.name.includes('multimine')) void this.captureFromText(agent.id, ev.output, t.name)
-            break
-          }
-          case 'resume':
-            await this.saveResume(agent, ev.id)
-            break
-          case 'usage':
-            reply.usage = { inputTokens: ev.inputTokens, outputTokens: ev.outputTokens, costUsd: ev.costUsd }
-            this.totals.inputTokens += ev.inputTokens
-            this.totals.outputTokens += ev.outputTokens
-            this.totals.costUsd = (this.totals.costUsd ?? 0) + (ev.costUsd ?? 0)
-            this.d.emit({ type: 'usage', total: { ...this.totals } })
-            break
-          case 'error':
-            error = ev.message
-            break
+      for (;;) {
+        const hop = hops[i]
+        const hopAgent: AgentSpec = { ...agent, provider: hop.provider, model: hop.model, effort: hop.effort }
+        if (i > 0) {
+          const why = continuing ? `${this.label(hops[i - 1])} ran out` : `${this.label(hops[0])} is ${this.health.get(hops[0].provider)?.state === 'near' ? 'near its limit' : 'out of usage'}`
+          this.fallbacks.set(agentId, { provider: hop.provider, model: hop.model, reason: why })
+          this.setStatus(agentId, this.status.get(agentId) ?? 'thinking')
         }
-        this.upsert(reply)
+        error = await this.runHop(hopAgent, promptNow, historyNow, !continuing, reply, ctl, sessionId)
+        if (!error || ctl.signal.aborted || sessionId !== this.session.id) break
+        const failure = failureOf(error)
+        if (!failure) break
+        this.health.mark(hop.provider, 'exhausted', error.slice(0, 200), failure)
+        const next = this.nextHop(hops, i)
+        if (next < 0) break
+        if (isPaid(hops[next].provider) && !own.fallbackPaidOk && !(await this.approvePaidFallback(own, hops[i], hops[next], failure))) {
+          error = `${this.label(hop)} is out of usage and the paid fallback (${this.label(hops[next])}) was declined.`
+          break
+        }
+        this.d.emit({ type: 'toast', level: 'info', text: `${own.name}: ${this.label(hop)} ${failure === 'auth' ? 'is not signed in' : 'is out of usage'} - continuing on ${this.label(hops[next])}` })
+        promptNow = buildBrief({
+          task: prompt,
+          history,
+          tools: reply.tools ?? [],
+          partial: reply.text,
+          ...(await this.gitDiffBrief()),
+          previous: this.label(hop),
+          reason: failure === 'auth' ? 'its login or key stopped working' : failure === 'rate' ? 'it was rate limited' : 'it ran out of usage'
+        })
+        historyNow = []
+        continuing = true
+        reply.text += `${reply.text ? '\n\n' : ''}---\n↪ *Switched to ${this.label(hops[next])} - ${this.label(hop)} ${failure === 'auth' ? 'is not signed in' : 'ran out of usage'}.*\n\n`
+        for (const t of reply.tools ?? []) if (t.status === 'running') t.status = 'error'
+        this.upsert(reply, true)
+        error = undefined
+        i = next
       }
     } catch (e) {
       error = (e as Error).message ?? String(e)
@@ -420,6 +416,7 @@ export class Engine {
       this.turns.delete(agentId)
       this.controllers.delete(agentId)
       this.temps.delete(agentId)
+      this.fallbacks.delete(agentId)
       if (this.writing.delete(agentId)) this.writingUntil = Date.now() + 4000
       this.emitChannels()
     }
@@ -442,6 +439,135 @@ export class Engine {
       .map((r) => `${r.summary}${r.planPath ? `\n\nPlan saved at ${r.planPath}` : ''}${r.planMd ? `\n\n${r.planMd}` : ''}${r.files?.length ? `\n\nFiles: ${r.files.join(', ')}` : ''}`)
       .join('\n\n')
     return { text: reportText || reply.text, reports: ctx.reports, error }
+  }
+
+  /** One provider's run of a turn, streaming into `reply`. Returns the error it ended on, if any. */
+  private async runHop(agent: AgentSpec, prompt: string, history: HistoryItem[], mayResume: boolean, reply: ChatMessage, ctl: AbortController, sessionId: string): Promise<string | undefined> {
+    const agentId = agent.id
+    const isCli = ProviderRegistry.isCli(agent.provider)
+    const resumeId = mayResume ? this.resumeKey(agentId, agent.provider) : undefined
+    let finalPrompt = prompt
+    if (agent.provider === 'claude-cli' && !resumeId && history.length) {
+      finalPrompt = `# Conversation so far\n${history.map((h) => `${h.role === 'user' ? 'User' : 'You'}: ${h.text}`).join('\n\n')}\n\n# Now\n${prompt}`
+    }
+    let error: string | undefined
+    const req: TurnRequest = {
+      agent,
+      system: this.systemPrompt(agent),
+      history,
+      prompt: finalPrompt,
+      cwd: this.d.project.dir,
+      resumeId,
+      tools: await this.toolsFor(agent, isCli),
+      busUrl: isCli ? this.d.busUrl?.(agentId) : undefined,
+      externalMcp: this.d.config.settings.mcpServers.filter((s) => agent.mcp.includes(s.id)),
+      apiKey: this.d.config.getKey(agent.provider),
+      baseUrl: this.d.config.settings.baseUrls[agent.provider],
+      executable: agent.provider === 'claude-cli' ? this.d.config.settings.claudePath : agent.provider === 'codex-cli' ? this.d.config.settings.codexPath : undefined,
+      signal: ctl.signal,
+      ask: (qs) => this.askUser(agentId, qs).then((item) => item.answers ?? {}),
+      approvePlan: (plan) => this.requestApproval(agentId, `${agent.name} wants to leave plan mode`, plan).then((i) => ({ approved: !!i.approved, note: i.note })),
+      approveAction: (title, detail, always) => this.approveAction(agentId, title, detail, always)
+    }
+    for await (const ev of this.d.providers.get(agent.provider).run(req)) {
+      if (sessionId !== this.session.id) break
+      switch (ev.type) {
+        case 'text':
+          reply.text += ev.delta
+          this.setStatusOnce(agentId, 'working')
+          this.d.emit({ type: 'talk', agentId })
+          break
+        case 'thinking':
+          reply.thinking = (reply.thinking ?? '') + ev.delta
+          this.setStatusOnce(agentId, 'thinking')
+          break
+        case 'tool-start':
+          reply.tools!.push({ id: ev.id, name: ev.name, input: ev.input, status: 'running' })
+          this.setStatus(agentId, 'working', ev.name.replace(/^mcp__multimine__/, ''))
+          break
+        case 'tool-end': {
+          const t = reply.tools!.find((x) => x.id === ev.id)
+          if (t) Object.assign(t, { output: clip(ev.output), status: ev.isError ? 'error' : 'done' })
+          if (isCli && t && !t.name.includes('multimine')) void this.captureFromText(agentId, ev.output, t.name)
+          break
+        }
+        case 'resume':
+          await this.saveResume(agentId, agent.provider, ev.id)
+          break
+        case 'usage':
+          reply.usage = {
+            inputTokens: (reply.usage?.inputTokens ?? 0) + ev.inputTokens,
+            outputTokens: (reply.usage?.outputTokens ?? 0) + ev.outputTokens,
+            costUsd: (reply.usage?.costUsd ?? 0) + (ev.costUsd ?? 0) || undefined
+          }
+          this.totals.inputTokens += ev.inputTokens
+          this.totals.outputTokens += ev.outputTokens
+          this.totals.costUsd = (this.totals.costUsd ?? 0) + (ev.costUsd ?? 0)
+          this.d.emit({ type: 'usage', total: { ...this.totals } })
+          break
+        case 'limit':
+          // the provider's own warning: the next task this agent (or any on this login) starts goes to its fallback
+          if (ev.state === 'ok') this.health.clear(agent.provider)
+          else this.health.mark(agent.provider, ev.state, ev.detail ?? 'usage limit', ev.state === 'near' ? 'near' : 'usage', ev.resetsAt)
+          break
+        case 'error':
+          error = ev.message
+          break
+      }
+      this.upsert(reply)
+    }
+    return error
+  }
+
+  /** The agent's own model (or its economy model for this task), then its fallbacks or the default chain. */
+  private hopsFor(own: AgentSpec, agent: AgentSpec): FallbackHop[] {
+    const chain = own.fallback?.length ? own.fallback : this.d.config.settings.defaultFallback ?? []
+    const hops: FallbackHop[] = [{ provider: agent.provider, model: agent.model, effort: agent.effort }]
+    for (const h of chain) if (!hops.some((x) => x.provider === h.provider && x.model === h.model)) hops.push(h)
+    return hops
+  }
+
+  /** Start on the first provider that is fresh; failing that, the first that is not exhausted; failing that, the agent's own. */
+  private startHop(hops: FallbackHop[]): number {
+    const fresh = hops.findIndex((h) => this.health.fresh(h.provider))
+    if (fresh >= 0) return fresh
+    const usable = hops.findIndex((h) => this.health.usable(h.provider))
+    return usable >= 0 ? usable : 0
+  }
+
+  private nextHop(hops: FallbackHop[], from: number): number {
+    for (let j = from + 1; j < hops.length; j++) if (this.health.usable(hops[j].provider)) return j
+    return -1
+  }
+
+  private label(h: FallbackHop): string {
+    return `${SHORT_PROVIDER[h.provider]} ${modelLabel(this.d.config.settings.catalog, h.provider, h.model)}`.trim()
+  }
+
+  /** Moving onto a pay-per-use key costs money: ask, as a balloon over the agent, with an "always" answer. */
+  private async approvePaidFallback(own: AgentSpec, from: FallbackHop, to: FallbackHop, failure: Failure): Promise<boolean> {
+    const title = `continue on ${this.label(to)} (paid API)`
+    const detail = `${this.label(from)} ${failure === 'auth' ? 'is not signed in' : 'is out of usage'}.\n${own.name} can carry on with ${this.label(to)}, billed per call to your key.`
+    await this.logBus('approval', own.id, 'user', `Allow ${title}?`)
+    const prev = this.status.get(own.id)
+    this.setStatus(own.id, 'waiting', 'paid fallback?')
+    const item = await this.inbox.approval(own.id, title, `${detail}\n\n"Always" lets ${own.name} switch to paid keys without asking from now on.`, true, 'Always')
+    this.setStatus(own.id, prev && prev !== 'waiting' ? prev : 'working')
+    if (item.approved && item.always) {
+      const fresh = this.d.project.get(own.id)
+      if (fresh && !fresh.terminal) {
+        await this.d.project.saveAgent({ ...fresh, fallbackPaidOk: true })
+        this.d.emit({ type: 'project', project: this.d.project.info() })
+      }
+    }
+    return !!item.approved
+  }
+
+  /** `git diff --stat` and the diff, for a continuation brief; empty outside a repository. */
+  private gitDiffBrief(): Promise<{ diffStat?: string; diff?: string }> {
+    const run = (cmd: string) =>
+      new Promise<string>((resolve) => exec(cmd, { cwd: this.d.project.dir, timeout: 15_000, maxBuffer: 8_000_000 }, (err, out) => resolve(err ? '' : out.trim())))
+    return Promise.all([run('git diff HEAD --stat'), run('git diff HEAD')]).then(([diffStat, diff]) => ({ diffStat: diffStat || undefined, diff: diff || undefined }))
   }
 
   private setStatusOnce(agentId: string, s: AgentStatus): void {

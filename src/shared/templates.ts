@@ -39,6 +39,8 @@ export function roleTemplate(role: Role, id = role as string): AgentSpec {
       gated: false,
       planMode: false,
       autoApprove: true,
+      fallback: [],
+      fallbackPaidOk: false,
       purpose: 'Describe what this agent is for, what it receives, and what it must report back.\n'
     }
   }

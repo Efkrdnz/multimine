@@ -72,6 +72,11 @@ function ApprovalCard({ item }: { item: InboxItem }) {
         <button className="btn btn-primary flex-1 justify-center" onClick={() => void api().decide(item.id, true, note || undefined)} data-testid="inbox-approve">
           <Check size={14} /> Approve
         </button>
+        {item.alwaysLabel && (
+          <button className="btn flex-1 justify-center" onClick={() => void api().decide(item.id, true, note || undefined, true)}>
+            <Check size={14} /> {item.alwaysLabel}
+          </button>
+        )}
         <button className="btn btn-danger flex-1 justify-center" onClick={() => void api().decide(item.id, false, note || undefined)}>
           <X size={14} /> Reject
         </button>

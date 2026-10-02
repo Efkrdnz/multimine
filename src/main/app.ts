@@ -9,9 +9,11 @@ import { ProviderRegistry } from './providers/registry'
 import { listVendorModels } from './providers/aiSdk'
 import { detectClaude, detectCodex } from './providers/detect'
 import type { MockScript } from './providers/mock'
+import type { ProviderAdapter } from './providers/types'
 import { Engine } from './orchestrator/engine'
 import { BusServer } from './mcp/busServer'
 import { McpHub } from './mcp/hub'
+import { ProviderHealth } from './providers/limits'
 import { Git, GitHub, githubRepo } from './git/git'
 import { ProjectFiles, list as listDir } from './ide/fs'
 import { Terminals, shellQuote } from './ide/terminals'
@@ -39,6 +41,8 @@ export interface AppOptions {
   mockDelayMs?: number
   /** How long the project must be quiet before manual changes go to the Context Handler (default 2 minutes). */
   manualQuietMs?: number
+  /** Stand-in adapters for real providers (tests). */
+  providerOverrides?: Partial<Record<ProviderKind, ProviderAdapter>>
   /** Skip CLI detection when choosing Mastermind's provider (tests). */
   forceMockMastermind?: boolean
 }
@@ -47,6 +51,8 @@ export interface AppOptions {
 export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'mediaUrl' | 'ideOpenExternal'> {
   readonly config: AppConfig
   readonly hub = new McpHub()
+  /** Which providers are out of usage right now: app-wide, so it survives switching projects. */
+  readonly health: ProviderHealth
   readonly providers: ProviderRegistry
   project: ProjectStore | null = null
   engine: Engine | null = null
@@ -58,13 +64,14 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
 
   constructor(private readonly o: AppOptions) {
     this.config = new AppConfig(o.userDataDir, o.cipher)
-    this.providers = new ProviderRegistry(o.mockScript, o.mockDelayMs)
+    this.providers = new ProviderRegistry(o.mockScript, o.mockDelayMs, o.providerOverrides)
     this.bus = new BusServer((agentId) => {
       const agent = this.project?.get(agentId)
       if (!agent || !this.engine) return null
       return { tools: this.engine.coordinationTools(agent), instructions: agent.terminal ? terminalInstructions(agent.name) : undefined }
     })
     this.terminals = new Terminals(o.emit)
+    this.health = new ProviderHealth((h) => o.emit({ type: 'provider-health', health: h }))
   }
 
   async start(): Promise<void> {
@@ -105,6 +112,7 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     this.engine?.inbox?.cancelAll('Another project was opened.')
     this.project = project
     this.engine = new Engine({
+      health: this.health,
       project,
       sessions,
       config: this.config,
@@ -179,7 +187,7 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     const { engine } = this.need()
     const sessions = new SessionStore(this.project!.paths)
     await sessions.clearChat(engine.session.id, agentId)
-    delete engine.session.resume[agentId]
+    for (const k of Object.keys(engine.session.resume)) if (k === agentId || k.startsWith(`${agentId}|`)) delete engine.session.resume[k]
     await sessions.save(engine.session)
     engine.chats[agentId] = []
     this.o.emit({ type: 'chat-reset', chats: engine.chats })
@@ -218,8 +226,8 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     this.need().engine.inbox.answer(id, answers, note)
   }
 
-  async decide(id: string, approved: boolean, note?: string): Promise<void> {
-    this.need().engine.inbox.decide(id, approved, note)
+  async decide(id: string, approved: boolean, note?: string, always?: boolean): Promise<void> {
+    this.need().engine.inbox.decide(id, approved, note, always)
   }
 
   async updateSettings(patch: Partial<AppSettings>): Promise<AppSettings> {

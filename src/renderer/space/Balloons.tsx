@@ -73,6 +73,11 @@ export function Balloons({ stage }: { stage: RefObject<SpaceStage | null> }) {
                     <button className="btn btn-primary !px-2.5 !py-1 text-[11px]" onClick={() => void api().decide(first.id, true)} data-testid="balloon-allow">
                       <Check size={12} /> Allow
                     </button>
+                    {first.alwaysLabel && (
+                      <button className="btn !px-2.5 !py-1 text-[11px]" onClick={() => void api().decide(first.id, true, undefined, true)} title={`Allow, and don't ask ${name} again`}>
+                        {first.alwaysLabel}
+                      </button>
+                    )}
                     <button className="btn btn-danger !px-2.5 !py-1 text-[11px]" onClick={() => void api().decide(first.id, false)}>
                       <X size={12} /> Deny
                     </button>

@@ -34,8 +34,8 @@ export class Inbox {
     return this.add({ id: newId('q'), ts: Date.now(), kind: 'question', askedBy, title, questions, status: 'pending' })
   }
 
-  approval(askedBy: string, title: string, planMd: string, permission = false): Promise<InboxItem> {
-    return this.add({ id: newId('a'), ts: Date.now(), kind: 'approval', askedBy, title, planMd, status: 'pending', permission })
+  approval(askedBy: string, title: string, planMd: string, permission = false, alwaysLabel?: string): Promise<InboxItem> {
+    return this.add({ id: newId('a'), ts: Date.now(), kind: 'approval', askedBy, title, planMd, status: 'pending', permission, alwaysLabel })
   }
 
   /** Records an item that was settled on the spot (automation), for the log. */
@@ -62,8 +62,8 @@ export class Inbox {
     return this.settle(id, { status: 'answered', answers, note })
   }
 
-  decide(id: string, approved: boolean, note?: string): InboxItem | null {
-    return this.settle(id, { status: 'answered', approved, note })
+  decide(id: string, approved: boolean, note?: string, always = false): InboxItem | null {
+    return this.settle(id, { status: 'answered', approved, note, always: approved && always })
   }
 
   /** Settles every pending item (session switch, shutdown): questions empty, approvals refused. */

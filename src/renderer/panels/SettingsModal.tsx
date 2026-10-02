@@ -5,6 +5,7 @@ import { slugify } from '@shared/agentFile'
 import { EFFORTS, PROVIDERS, type AppSettings, type CliStatus, type McpServerConfig, type ModelEntry, type ProviderKind } from '@shared/types'
 import { api, useStore } from '../state/store'
 import { Modal } from './Modal'
+import { FallbackChain } from './FallbackChain'
 
 const TABS = [
   ['general', 'Economy & handoffs'],
@@ -38,6 +39,24 @@ function Toggle({ on, onChange, title, help, testId }: { on: boolean; onChange: 
         <span className="block text-xs text-indigo-200/70">{help}</span>
       </span>
     </label>
+  )
+}
+
+function ProviderHealthList() {
+  const health = useStore((s) => s.health)
+  const entries = Object.entries(health)
+  if (!entries.length) return <div className="text-[11px] text-emerald-300/80">All providers available.</div>
+  return (
+    <div className="space-y-1">
+      {entries.map(([p, h]) => (
+        <div key={p} className="flex items-center gap-2 text-[11px]">
+          <span className={`rounded px-1.5 font-bold ${h.state === 'exhausted' ? 'bg-red-500/20 text-red-200' : 'bg-amber-500/20 text-amber-200'}`}>{h.state === 'exhausted' ? 'OUT' : 'NEAR'}</span>
+          <span className="w-56">{PROVIDER_LABEL[p as ProviderKind] ?? p}</span>
+          <span className="flex-1 truncate text-indigo-300/70">{h.reason}</span>
+          <span className="text-indigo-300/70">until {new Date(h.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -92,6 +111,16 @@ function General({ settings }: { settings: AppSettings }) {
             })}
             <div className="mt-1 text-[11px] text-indigo-300/60">Blank keeps the agent's model and only lowers its effort.</div>
           </div>
+        </div>
+      </section>
+      <section>
+        <div className="label">Fallback (default chain)</div>
+        <div className="space-y-3 rounded-xl border border-white/10 bg-black/20 p-3">
+          <div className="text-xs text-indigo-200/70">
+            When an agent's provider runs out of usage or its login stops working, it carries on - mid-task, with a brief of what is already done - on the next provider in its own chain, or in this one if it has none. Ordinary errors never switch. Paid API keys ask first unless the agent allows them.
+          </div>
+          <FallbackChain value={settings.defaultFallback ?? []} onChange={(defaultFallback) => void api().updateSettings({ defaultFallback })} testId="default-fallback" />
+          <ProviderHealthList />
         </div>
       </section>
       <section>

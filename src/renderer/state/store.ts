@@ -33,7 +33,9 @@ export interface State {
   sessions: SessionMeta[]
   activeSession: string | null
   chats: Record<string, ChatMessage[]>
-  status: Record<string, { status: AgentStatus; activity?: string; temp?: { model: string; effort: string; difficulty: string } }>
+  status: Record<string, { status: AgentStatus; activity?: string; temp?: { model: string; effort: string; difficulty: string }; fallback?: { provider: string; model: string; reason: string } }>
+  /** Providers out of usage (or close to it) right now. */
+  health: Record<string, { state: 'near' | 'exhausted'; until: number; reason: string }>
   bus: BusEvent[]
   channels: Channel[]
   inbox: InboxItem[]
@@ -71,6 +73,7 @@ export const useStore = create<State>((set, get) => ({
   status: {},
   bus: [],
   channels: [],
+  health: {},
   inbox: [],
   media: [],
   council: [],
@@ -131,7 +134,7 @@ export function applyEvent(e: MainEvent): void {
       break
     }
     case 'status':
-      s.set({ status: { ...s.status, [e.agentId]: { status: e.status, activity: e.activity, temp: e.temp } } })
+      s.set({ status: { ...s.status, [e.agentId]: { status: e.status, activity: e.activity, temp: e.temp, fallback: e.fallback } } })
       break
     case 'bus':
       s.set({ bus: [...s.bus.slice(-300), e.event] })
@@ -165,6 +168,9 @@ export function applyEvent(e: MainEvent): void {
     case 'terminal-data':
       pushTerminalData(e.id, e.data)
       return
+    case 'provider-health':
+      s.set({ health: e.health })
+      break
     case 'manual-changes':
       s.set({ manual: { count: e.count, files: e.files } })
       break

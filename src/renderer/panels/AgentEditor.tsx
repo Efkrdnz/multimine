@@ -7,6 +7,7 @@ import { EFFORTS, MASTERMIND_ID, PERMISSIONS, PROVIDERS, type AgentSpec, type Ro
 import { api, useStore } from '../state/store'
 import { Modal } from './Modal'
 import { OrbAvatar } from './OrbAvatar'
+import { FallbackChain } from './FallbackChain'
 
 const SWATCHES = ['#c084fc', '#60a5fa', '#34d399', '#f472b6', '#fbbf24', '#22d3ee', '#f87171', '#a3e635', '#fb923c', '#e879f9', '#38bdf8', '#facc15']
 
@@ -177,6 +178,18 @@ export function AgentEditor({ agent, isNew }: { agent: AgentSpec; isNew: boolean
                 <input type="checkbox" disabled={a.provider !== 'claude-cli'} checked={a.planMode} onChange={(e) => patch({ planMode: e.target.checked })} /> Plan mode (Claude): plans and asks before acting
               </label>
             </div>
+
+            <div className="col-span-2 rounded-xl border border-sky-400/20 bg-sky-500/5 p-3">
+                <label className="label !text-sky-200">Fallback when out of usage</label>
+                <div className="mb-2 text-[11px] text-indigo-200/70">
+                  If {a.provider === 'mock' ? 'its provider' : 'this provider'} runs out of usage or its login stops working, {a.name || 'the agent'} continues on the next one, mid-task, with a brief of what is already done.
+                  {!a.fallback.length && ' With none set here, the default chain from Settings is used.'}
+                </div>
+                <FallbackChain value={a.fallback} onChange={(fallback) => patch({ fallback })} testId="agent-fallback" />
+                <label className="mt-2 flex items-center gap-2 text-xs">
+                  <input type="checkbox" checked={a.fallbackPaidOk} onChange={(e) => patch({ fallbackPaidOk: e.target.checked })} /> Switch to paid API keys without asking
+                </label>
+              </div>
 
             {!!settings?.mcpServers.length && (
               <div className="col-span-2">

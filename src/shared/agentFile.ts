@@ -1,5 +1,5 @@
 import { parse, stringify } from 'yaml'
-import { EFFORTS, PROVIDERS, type AgentSpec, type Effort, type Permission, type ProviderKind, type Role } from './types'
+import { EFFORTS, PROVIDERS, type AgentSpec, type FallbackHop, type Effort, type Permission, type ProviderKind, type Role } from './types'
 
 const FRONT = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/
 
@@ -49,6 +49,12 @@ export function parseAgentFile(id: string, text: string): AgentSpec {
     gated: meta.gated === true,
     planMode: meta.planMode === true,
     autoApprove: meta.autoApprove !== false,
+    fallback: Array.isArray(meta.fallback)
+      ? meta.fallback
+          .filter((h): h is Record<string, unknown> => !!h && typeof h === 'object')
+          .map((h): FallbackHop => ({ provider: pick<ProviderKind>(h.provider, PROVIDERS, 'mock'), model: typeof h.model === 'string' ? h.model : '', effort: pick<Effort>(h.effort, EFFORTS, 'medium') }))
+      : [],
+    fallbackPaidOk: meta.fallbackPaidOk === true,
     purpose: body.replace(/^\s+/, '').replace(/\s+$/, '') + '\n'
   }
 }
@@ -65,7 +71,9 @@ export function serializeAgentFile(agent: AgentSpec): string {
     mcp: agent.mcp,
     gated: agent.gated,
     planMode: agent.planMode,
-    autoApprove: agent.autoApprove
+    autoApprove: agent.autoApprove,
+    fallback: agent.fallback ?? [],
+    fallbackPaidOk: agent.fallbackPaidOk ?? false
   }
   return `---\n${stringify(meta).trimEnd()}\n---\n\n${agent.purpose.trim()}\n`
 }

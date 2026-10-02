@@ -59,6 +59,20 @@ packets fly), ask you questions through Mastermind, and work on a real project f
 - **Asset Creator.** A role for generated art: Meshy for 3D models, WaveSpeed for images and video.
   Settings -> MCP servers has presets for both (add your key), and each server card lists every agent
   so you can switch access on and off in one click.
+- **Code window** (left rail, `</>`): a folder tree with file-name search and search inside files,
+  Monaco editor tabs (Ctrl+S; tabs follow edits made elsewhere), **Open in IntelliJ / VS Code**, and
+  terminals at the project root. **+ Claude Code** / **+ Codex** start the CLI there joined to the team:
+  it appears as an orb and can message any agent or Mastermind; messages to it show as a banner.
+- **Your edits keep the context true.** Any change nobody on the team made - in the code window,
+  IntelliJ, VS Code, a terminal - is collected and sent with its diff to the Context Handler after 2
+  quiet minutes, or at once with **Sync context**. (On Windows the terminal uses node-pty's bundled
+  binary; `npm install-scripts approve node-pty` is recommended but not required.)
+- **Fallback providers.** Each agent can have an ordered chain (agent editor), with a default chain in
+  Settings. When its provider runs out of usage or its login stops working - never on an ordinary
+  error - the task carries on in the same reply on the next provider, briefed with everything already
+  done. Claude's own limit warnings move the next task over before anything is cut. Subscriptions
+  switch silently; a paid API key asks first (with **Always**). The orb shows `↪ model (fallback)` in
+  sky blue.
 - **Sessions.** Agents belong to the project; conversations belong to a session. Create, rename,
   duplicate, switch. Claude and Codex threads resume per session.
 

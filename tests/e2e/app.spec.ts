@@ -125,9 +125,19 @@ test('the workstation runs end to end on mock agents', async () => {
   await shot(page, '11-context-panel')
   await page.getByTestId('context').click()
 
+  // a fallback chain in the agent editor
+  await page.getByTestId('add-agent').click()
+  await page.getByTestId('agent-name').fill('Fallback Demo')
+  await page.getByTestId('agent-fallback-add').click()
+  await page.getByTestId('agent-fallback-add').click()
+  await page.getByTestId('agent-fallback').scrollIntoViewIfNeeded()
+  await page.waitForTimeout(300)
+  await shot(page, '12-fallback-chain')
+  await page.keyboard.press('Escape')
+
   await page.getByTestId('settings').click()
   await page.waitForTimeout(800)
-  await shot(page, '12-settings')
+  await shot(page, '13-settings')
   await page.keyboard.press('Escape')
 
   expect(existsSync(join(project, '.multimine', 'sessions'))).toBe(true)

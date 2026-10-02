@@ -11,11 +11,18 @@ export class ProviderRegistry {
   private readonly codex = new CodexCliProvider()
   mock: ProviderAdapter
 
-  constructor(mockScript?: MockScript, mockDelayMs?: number) {
+  constructor(
+    mockScript?: MockScript,
+    mockDelayMs?: number,
+    /** Stand-ins for real providers (tests drive fallbacks across provider kinds with these). */
+    private readonly overrides: Partial<Record<ProviderKind, ProviderAdapter>> = {}
+  ) {
     this.mock = new MockProvider(mockScript, mockDelayMs)
   }
 
   get(kind: ProviderKind): ProviderAdapter {
+    const o = this.overrides[kind]
+    if (o) return o
     if (kind === 'mock') return this.mock
     if (kind === 'claude-cli') return this.claude
     if (kind === 'codex-cli') return this.codex

@@ -10,7 +10,7 @@ import { Starfield } from './Starfield'
 export interface SceneState {
   agents: AgentSpec[]
   layout: Record<string, { x: number; y: number }>
-  status: Record<string, { status: AgentStatus; activity?: string; temp?: { model: string; effort: string; difficulty: string } }>
+  status: Record<string, { status: AgentStatus; activity?: string; temp?: { model: string; effort: string; difficulty: string }; fallback?: { provider: string; model: string; reason: string } }>
   pending: number
   council: CouncilCritic[]
   channels: Channel[]
@@ -150,13 +150,19 @@ export class SpaceStage {
         orb.position.set(state.layout[a.id].x, state.layout[a.id].y)
       }
       const temp = state.status[a.id]?.temp
+      const fb = state.status[a.id]?.fallback
       orb.setLook({
         name: a.name,
         // a temporary (economy) model is shown in place of the agent's own, marked and tinted
-        subtitle: a.terminal ? 'live terminal session' : temp ? `⚡ ${modelLabel(state.catalog, a.provider, temp.model)} · ${temp.effort} (this task)` : `${modelLabel(state.catalog, a.provider, a.model)} · ${a.effort}`,
+        subtitle: a.terminal
+          ? 'live terminal session'
+          : fb
+            ? `↪ ${modelLabel(state.catalog, fb.provider as AgentSpec['provider'], fb.model)} (fallback)`
+            : temp ? `⚡ ${modelLabel(state.catalog, a.provider, temp.model)} · ${temp.effort} (this task)` : `${modelLabel(state.catalog, a.provider, a.model)} · ${a.effort}`,
         color: a.color,
         radius: a.role === 'context-handler' ? 30 : 34,
-        temp: !!temp
+        temp: !!temp && !fb,
+        fallback: !!fb
       })
       orb.status = state.status[a.id]?.status ?? 'idle'
       orb.activity = state.status[a.id]?.activity ?? ''

@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script src="mmplugin://sdk/multimine.js"></script>
+    <style>
+      body { margin: 0; padding: 18px; font: 14px system-ui, sans-serif; color: #e5e7ff; background: transparent; }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      .muted { color: #a5b4fc; font-size: 12px; }
+      li { margin: 4px 0; }
+      textarea { width: 100%; box-sizing: border-box; min-height: 80px; background: #0b0d22; color: #eef2ff; border: 1px solid #333a70; border-radius: 8px; padding: 8px; }
+      button { margin-top: 8px; background: linear-gradient(90deg, #7c3aed, #4f46e5); color: white; border: 0; border-radius: 8px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
+      #out { margin-top: 10px; font-size: 12px; color: #86efac; }
+    </style>
+  </head>
+  <body>
+    <h1>Hello, team</h1>
+    <div class="muted" id="project"></div>
+    <ul id="team"></ul>
+    <textarea id="msg">Hello Mastermind, this is the Hello Team plugin.</textarea>
+    <button id="send">Send to Mastermind</button>
+    <div id="out"></div>
+    <script>
+      const out = document.getElementById('out')
+      multimine.info().then((i) => (document.getElementById('project').textContent = 'Project: ' + i.project))
+      multimine.team.list().then((team) => {
+        const ul = document.getElementById('team')
+        for (const a of team) {
+          const li = document.createElement('li')
+          li.textContent = a.name + ' - ' + a.role + ' (' + a.model + ')'
+          ul.appendChild(li)
+        }
+      }).catch((e) => (out.textContent = e.message))
+      document.getElementById('send').onclick = () =>
+        multimine.send('mastermind', document.getElementById('msg').value)
+          .then(() => (out.textContent = 'Sent.'))
+          .catch((e) => { out.style.color = '#fca5a5'; out.textContent = e.message })
+    </script>
+  </body>
+</html>

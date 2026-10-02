@@ -187,6 +187,8 @@ export interface SessionMeta {
 export interface McpServerConfig {
   id: string
   name: string
+  /** Set when a plugin brought this server: it comes and goes with the plugin. */
+  pluginId?: string
   transport: 'stdio' | 'http'
   command?: string
   args?: string[]
@@ -220,8 +222,49 @@ export interface EconomySettings {
   tiers: Partial<Record<ProviderKind, { light?: string; standard?: string }>>
 }
 
+export const PLUGIN_PERMISSIONS = ['team:read', 'agents:message', 'project:read', 'project:write', 'media:read', 'media:write', 'network'] as const
+export type PluginPermission = (typeof PLUGIN_PERMISSIONS)[number]
+
+export const PLUGIN_API_VERSION = 1
+
+export interface PluginManifest {
+  id: string
+  name: string
+  version: string
+  api: number
+  description: string
+  /** A lucide icon name and a two-colour gradient, or an image file in the plugin folder. */
+  icon: { glyph: string; gradient: [string, string] } | { file: string }
+  /** The page the tool window shows (web plugins). */
+  entry?: string
+  window: { width: number; height: number }
+  permissions: PluginPermission[]
+  /** An MCP server that gives agents the plugin's tools. ${PLUGIN_DIR} is replaced with the plugin folder. */
+  mcp?: { command: string; args?: string[]; env?: Record<string, string> }
+}
+
+export interface PluginInfo {
+  manifest: PluginManifest
+  source: 'builtin' | 'user' | 'project'
+  /** Native plugins ship inside the app and render as part of it (still through the plugin API). */
+  native: boolean
+  dir: string
+  enabled: boolean
+  granted: PluginPermission[]
+  /** Permissions it asks for that the user has not granted yet. */
+  pending: PluginPermission[]
+}
+
+export interface PluginSettings {
+  enabled: boolean
+  granted: PluginPermission[]
+}
+
 export interface AppSettings {
   automation: boolean
+  plugins: Record<string, PluginSettings>
+  /** The order of tiles in the Tools grid (plugin ids). */
+  toolOrder: string[]
   /** The fallback chain for agents that have none of their own. */
   defaultFallback: FallbackHop[]
   economy: EconomySettings
@@ -345,6 +388,7 @@ export type MainEvent =
   | { type: 'terminal-note'; agentId: string; from: string; text: string }
   | { type: 'manual-changes'; count: number; files: string[] }
   | { type: 'file-changed'; path: string; kind: 'added' | 'changed' | 'deleted' }
+  | { type: 'plugins'; plugins: PluginInfo[]; broken: { dir: string; errors: string[] }[] }
   | { type: 'bus-reset'; events: BusEvent[] }
   | { type: 'inbox'; items: InboxItem[] }
   | { type: 'media'; items: MediaItem[] }

@@ -1,4 +1,6 @@
-import { BookOpen, Code2, GitBranch, Image, Inbox, Plus, Settings, Sparkles } from 'lucide-react'
+import { useState } from 'react'
+import { BookOpen, Code2, GitBranch, Image, Inbox, LayoutGrid, Plus, Settings, Sparkles } from 'lucide-react'
+import { ToolsGrid } from '../tools/ToolsGrid'
 import { roleTemplate } from '@shared/templates'
 import { useStore } from '../state/store'
 
@@ -24,8 +26,9 @@ export function LeftRail() {
   const ide = useStore((s) => s.ide)
   const manual = useStore((s) => s.manual.count)
   // the code window and the drawers share the left side: opening one tucks the other away
-  const toggle = (p: typeof panel) => set({ panel: panel === p ? null : p, ide: ide === 'open' ? 'hidden' : ide })
-  const toggleIde = () => set({ ide: ide === 'open' ? 'hidden' : 'open', panel: null })
+  const toggle = (p: typeof panel) => set({ panel: panel === p ? null : p, ide: ide === 'open' ? 'hidden' : ide, activeTool: null })
+  const toggleIde = () => set({ ide: ide === 'open' ? 'hidden' : 'open', panel: null, activeTool: null })
+  const [tools, setTools] = useState(false)
   return (
     <div className="absolute left-3 top-16 z-20 flex flex-col gap-2">
       <RailButton testId="add-agent" icon={<Plus size={20} />} label="Create agent" onClick={() => set({ modal: { kind: 'agent', agent: { ...roleTemplate('custom', ''), name: '' }, isNew: true } })} />
@@ -35,6 +38,10 @@ export function LeftRail() {
       <RailButton testId="code" icon={<Code2 size={18} />} label="Code: files, editor, terminal" active={ide === 'open'} badge={manual} onClick={toggleIde} />
       <RailButton testId="git" icon={<GitBranch size={18} />} label="Repository (git & GitHub)" active={panel === 'git'} onClick={() => toggle('git')} />
       <RailButton testId="open-mastermind" icon={<Sparkles size={18} />} label="Open Mastermind" onClick={() => useStore.getState().openChat('mastermind')} />
+      <div className="relative">
+        <RailButton testId="tools" icon={<LayoutGrid size={18} />} label="Tools" active={tools} onClick={() => setTools(!tools)} />
+        {tools && <ToolsGrid onClose={() => setTools(false)} />}
+      </div>
       <RailButton testId="settings" icon={<Settings size={18} />} label="Settings" onClick={() => set({ modal: { kind: 'settings' } })} />
     </div>
   )

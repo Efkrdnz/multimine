@@ -13,6 +13,9 @@ import { SettingsModal } from './panels/SettingsModal'
 import { Welcome } from './panels/Welcome'
 import { Toasts } from './panels/Toasts'
 import { TeamWizard } from './panels/TeamWizard'
+import { ToolWindows } from './tools/ToolWindow'
+import { ConsentDialog } from './tools/ConsentDialog'
+import { ManagePlugins } from './tools/ManagePlugins'
 
 // the code window carries Monaco and xterm: loaded the first time it is opened, not at start-up
 const IdeWindow = lazy(() => import('./ide/IdeWindow').then((m) => ({ default: m.IdeWindow })))
@@ -38,6 +41,9 @@ export function App() {
     void api()
       .init()
       .then((r) => useStore.getState().set({ ready: true, settings: r.settings, keyed: r.keyed, project: r.project }))
+    void api()
+      .pluginList()
+      .then((r) => useStore.getState().set({ plugins: r.plugins, brokenPlugins: r.broken }))
     return off
   }, [])
 
@@ -54,6 +60,7 @@ export function App() {
           {panel === 'media' && <MediaPanel />}
           {panel === 'context' && <ContextPanel />}
           {panel === 'git' && <GitPanel />}
+          <ToolWindows />
           {ide !== 'closed' && (
             <Suspense fallback={null}>
               <IdeWindow />
@@ -64,6 +71,8 @@ export function App() {
       )}
       {modal?.kind === 'agent' && <AgentEditor key={modal.agent.id || 'new'} agent={modal.agent} isNew={modal.isNew} />}
       {modal?.kind === 'settings' && <SettingsModal initialTab={modal.tab} />}
+      {modal?.kind === 'plugins' && <ManagePlugins />}
+      <ConsentDialog />
       <Toasts />
     </div>
   )

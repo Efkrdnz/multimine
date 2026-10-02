@@ -1,4 +1,4 @@
-import type { AgentSpec, AppSettings, CliStatus, GhItem, GitCommit, GitStatus, IdeEntry, IdeHit, MainEvent, McpServerConfig, ModelEntry, ProjectInfo, ProviderKind, TerminalInfo, TerminalKind } from './types'
+import type { AgentSpec, AppSettings, CliStatus, GhItem, GitCommit, GitStatus, IdeEntry, IdeHit, MainEvent, McpServerConfig, ModelEntry, PluginInfo, PluginManifest, PluginPermission, ProjectInfo, ProviderKind, TerminalInfo, TerminalKind } from './types'
 
 /** Everything the renderer can ask of the main process. One method, one IPC channel. */
 export interface Api {
@@ -61,6 +61,14 @@ export interface Api {
   terminalResize(id: string, cols: number, rows: number): Promise<void>
   terminalClose(id: string): Promise<void>
 
+  pluginList(): Promise<{ plugins: PluginInfo[]; broken: { dir: string; errors: string[] }[] }>
+  pluginPickAndInstall(): Promise<PluginManifest | null>
+  pluginInstall(dir: string): Promise<PluginManifest>
+  pluginSetEnabled(id: string, enabled: boolean, grant?: PluginPermission[]): Promise<void>
+  pluginRevoke(id: string, perm: PluginPermission): Promise<void>
+  pluginRemove(id: string): Promise<void>
+  pluginCall(id: string, method: string, args: unknown[]): Promise<unknown>
+
   contextFiles(): Promise<{ file: string; text: string }[]>
   openPath(path: string): Promise<void>
   mediaUrl(path: string): Promise<string>
@@ -79,6 +87,7 @@ export const API_METHODS: ApiMethod[] = [
   'ghInfo', 'ghList', 'ghCreatePr',
   'ideList', 'ideFind', 'ideGrep', 'ideRead', 'ideWrite', 'ideOpenExternal', 'syncContext',
   'terminalAvailable', 'terminalOpen', 'terminalWrite', 'terminalResize', 'terminalClose',
+  'pluginList', 'pluginPickAndInstall', 'pluginInstall', 'pluginSetEnabled', 'pluginRevoke', 'pluginRemove', 'pluginCall',
   'contextFiles', 'openPath', 'mediaUrl'
 ]
 

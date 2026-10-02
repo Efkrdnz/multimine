@@ -5,11 +5,16 @@ import { pathToFileURL } from 'node:url'
 import { API_METHODS } from '@shared/api'
 import type { MainEvent } from '@shared/types'
 import { MultimineApp } from './app'
+import { servePlugin } from './plugins/protocol'
 
 // Tests and portable installs can point the user-data folder elsewhere.
 if (process.env.MULTIMINE_USER_DATA) app.setPath('userData', resolve(process.env.MULTIMINE_USER_DATA))
 
-protocol.registerSchemesAsPrivileged([{ scheme: 'mm', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true, bypassCSP: true } }])
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'mm', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true, bypassCSP: true } },
+  // plugin pages: a standard, secure scheme so they behave like web pages, but never bypassing their CSP
+  { scheme: 'mmplugin', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }
+])
 
 let win: BrowserWindow | null = null
 
@@ -68,7 +73,13 @@ app.whenReady().then(async () => {
     return net.fetch(pathToFileURL(path).toString())
   })
 
+  protocol.handle('mmplugin', (req) => servePlugin(req.url, (id) => mm.plugins.find(id, mm.project?.dir)))
+
   const handlers: Record<string, (...args: any[]) => Promise<unknown>> = {
+    pluginPickAndInstall: async () => {
+      const r = await dialog.showOpenDialog(win!, { title: 'Choose a plugin folder (it holds plugin.json)', properties: ['openDirectory'] })
+      return r.canceled ? null : mm.pluginInstall(r.filePaths[0])
+    },
     pickProject: async () => {
       const r = await dialog.showOpenDialog(win!, { title: 'Open a project folder', properties: ['openDirectory', 'createDirectory'] })
       return r.canceled ? null : r.filePaths[0]

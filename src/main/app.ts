@@ -14,6 +14,9 @@ import { Engine } from './orchestrator/engine'
 import { BusServer } from './mcp/busServer'
 import { McpHub } from './mcp/hub'
 import { ProviderHealth } from './providers/limits'
+import { PluginRegistry, pluginMcpServer } from './plugins/registry'
+import { callPlugin, type PluginContext } from './plugins/api'
+import type { PluginPermission } from '@shared/types'
 import { Git, GitHub, githubRepo } from './git/git'
 import { ProjectFiles, list as listDir } from './ide/fs'
 import { Terminals, shellQuote } from './ide/terminals'
@@ -48,7 +51,7 @@ export interface AppOptions {
 }
 
 /** The main-process side of the API: owns settings, the open project, the engine and the bus server. */
-export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'mediaUrl' | 'ideOpenExternal'> {
+export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'mediaUrl' | 'ideOpenExternal' | 'pluginPickAndInstall'> {
   readonly config: AppConfig
   readonly hub = new McpHub()
   /** Which providers are out of usage right now: app-wide, so it survives switching projects. */
@@ -58,6 +61,8 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
   engine: Engine | null = null
   private bus: BusServer
   readonly terminals: Terminals
+  readonly plugins: PluginRegistry
+  private pluginCtx: PluginContext
   private watcher: ProjectWatcher | null = null
   private tracker: ManualChangeTracker | null = null
   private files: ProjectFiles | null = null
@@ -72,6 +77,28 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     })
     this.terminals = new Terminals(o.emit)
     this.health = new ProviderHealth((h) => o.emit({ type: 'provider-health', health: h }))
+    this.plugins = new PluginRegistry(
+      join(o.userDataDir, 'plugins'),
+      () => this.config.settings.plugins ?? {},
+      async (plugins) => {
+        await this.config.update({ plugins })
+      }
+    )
+    this.pluginCtx = {
+      projectDir: () => this.project?.dir ?? null,
+      projectName: () => (this.project ? basename(this.project.dir) : null),
+      team: () => this.project?.list() ?? [],
+      send: async (pluginId, name, to, text) => {
+        if (!this.engine) throw new Error('No project is open')
+        await this.engine.fromOutside(`plugin:${pluginId}`, name, to, text)
+      },
+      addMedia: async (item) => {
+        await this.engine?.addMedia(item)
+      },
+      media: () => this.engine?.media ?? [],
+      emit: o.emit,
+      storageDir: join(o.userDataDir, 'plugin-data')
+    }
   }
 
   async start(): Promise<void> {
@@ -124,6 +151,7 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     this.emitProject()
     await this.engine.open()
     await this.startWatching(project.dir)
+    await this.pluginsChanged()
     await this.config.addRecent(dir)
     this.o.emit({ type: 'settings', settings: this.config.settings })
   }
@@ -261,6 +289,57 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     } catch (e) {
       return { ok: false, tools: [], error: (e as Error).message }
     }
+  }
+
+  // ---------------------------------------------------------------- plugins
+
+  /** After any change: the plugins' MCP servers follow their plugins, and the window hears about it. */
+  private async pluginsChanged(): Promise<void> {
+    const { plugins, broken } = await this.plugins.discover(this.project?.dir)
+    const infos = plugins.map((d) => this.plugins.state(d))
+    const servers = infos.filter((p) => p.enabled && !p.native).map(pluginMcpServer).filter((s): s is NonNullable<typeof s> => !!s)
+    const own = this.config.settings.mcpServers.filter((s) => !s.pluginId)
+    const next = [...own, ...servers]
+    if (JSON.stringify(next) !== JSON.stringify(this.config.settings.mcpServers)) {
+      for (const s of this.config.settings.mcpServers.filter((x) => x.pluginId)) await this.hub.drop(s.id)
+      await this.updateSettings({ mcpServers: next })
+    }
+    this.o.emit({ type: 'plugins', plugins: infos, broken })
+  }
+
+  async pluginList() {
+    const { plugins, broken } = await this.plugins.discover(this.project?.dir)
+    return { plugins: plugins.map((d) => this.plugins.state(d)), broken }
+  }
+
+  async pluginInstall(dir: string) {
+    const m = await this.plugins.install(dir)
+    await this.pluginsChanged()
+    return m
+  }
+
+  async pluginSetEnabled(id: string, enabled: boolean, grant?: PluginPermission[]) {
+    const p = await this.plugins.find(id, this.project?.dir)
+    if (!p) throw new Error(`No plugin ${id}`)
+    // only what the plugin asked for can be granted
+    await this.plugins.setEnabled(id, enabled, grant?.filter((g) => p.manifest.permissions.includes(g)))
+    await this.pluginsChanged()
+  }
+
+  async pluginRevoke(id: string, perm: PluginPermission) {
+    await this.plugins.revoke(id, perm)
+    await this.pluginsChanged()
+  }
+
+  async pluginRemove(id: string) {
+    await this.plugins.remove(id)
+    await this.pluginsChanged()
+  }
+
+  async pluginCall(id: string, method: string, args: unknown[]) {
+    const p = await this.plugins.find(id, this.project?.dir)
+    if (!p) throw new Error(`No plugin ${id}`)
+    return callPlugin(this.pluginCtx, p, method, Array.isArray(args) ? args : [])
   }
 
   // ---------------------------------------------------------------- IDE

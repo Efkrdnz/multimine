@@ -6,6 +6,8 @@ import { readJson, writeJson } from './fsx'
 
 export const DEFAULT_SETTINGS: AppSettings = {
   automation: false,
+  plugins: {},
+  toolOrder: [],
   defaultFallback: [],
   economy: { enabled: false, concise: true, downshift: true, tiers: DEFAULT_TIERS },
   handoffWaitMinutes: 10,

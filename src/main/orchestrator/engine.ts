@@ -237,7 +237,7 @@ export class Engine {
   send(agentId: string, body: string, from = 'user', kind: BusKind = 'message', temp?: TempModel | null): Promise<TurnResult> {
     // the incoming message is shown at once, even while the agent is still busy with an earlier turn
     const agent = this.d.project.get(agentId)
-    const fromName = from === 'user' ? 'user' : (this.d.project.get(from)?.name ?? from)
+    const fromName = from === 'user' ? 'user' : (this.d.project.get(from)?.name ?? this.sourceNames.get(from) ?? from)
     const prompt = from === 'user' ? body : inboundPrompt(fromName, kind === 'delegate' || kind === 'context' || kind === 'report' ? kind : 'message', body)
     const userMsg: ChatMessage = { id: newId('u'), agentId, role: 'user', from, text: prompt, ts: Date.now() }
     if (agent) {
@@ -591,6 +591,16 @@ export class Engine {
   }
 
   // ---------------------------------------------------------------- bus
+
+  /** Names for senders that are not agents (a plugin), so a message reads "from UI Sketcher". */
+  private sourceNames = new Map<string, string>()
+
+  /** A message from outside the team (a tool or plugin) to an agent: on the bus, and queued for it. */
+  async fromOutside(sourceId: string, name: string, to: string, body: string): Promise<void> {
+    this.sourceNames.set(sourceId, name)
+    await this.logBus('message', sourceId, to, body)
+    void this.send(to, body, sourceId, 'message')
+  }
 
   private async logBus(kind: BusKind, from: string, to: string, summary: string): Promise<BusEvent> {
     const event: BusEvent = { id: newId('b'), ts: Date.now(), kind, from, to, summary: summary.slice(0, 280) }

@@ -125,6 +125,37 @@ test('the workstation runs end to end on mock agents', async () => {
   await shot(page, '11-context-panel')
   await page.getByTestId('context').click()
 
+  // the Tools grid: a plugin is installed off, asks for consent, then runs walled off and talks to the team
+  await page.evaluate((dir) => (globalThis as any).mm.api.pluginInstall(dir), resolve('examples/plugins/hello'))
+  await page.getByTestId('tools').click()
+  await expect(page.getByTestId('tools-grid')).toBeVisible()
+  await page.waitForTimeout(500)
+  await shot(page, '12-tools-grid')
+  await page.getByTestId('tools-edit').click()
+  await page.waitForTimeout(200)
+  await shot(page, '13-tools-edit')
+  await page.getByTestId('tools-edit').click()
+  await page.getByTestId('tool-hello').click()
+  await expect(page.getByTestId('consent')).toBeVisible()
+  await page.waitForTimeout(600)
+  await shot(page, '14-consent')
+  await page.getByTestId('consent-allow').click()
+  const frame = page.frameLocator('[data-testid="plugin-frame-hello"]')
+  await expect(frame.locator('#team')).toContainText('Mastermind', { timeout: 10_000 })
+  // a new plugin frame runs in its own process and takes input once the compositor has placed it,
+  // which under software rendering can be a couple of seconds after its page has loaded
+  await expect(async () => {
+    await frame.locator('#send').click()
+    await expect(frame.locator('#out')).toHaveText('Sent.', { timeout: 1000 })
+  }).toPass({ timeout: 15_000 })
+  await page.waitForTimeout(400)
+  await shot(page, '15-hello-plugin')
+  // revoked, the same call is refused inside the plugin
+  await page.evaluate(() => (globalThis as any).mm.api.pluginRevoke('hello', 'agents:message'))
+  await frame.locator('#send').click()
+  await expect(frame.locator('#out')).toContainText('agents:message')
+  await page.getByTestId('toolwin-hello').getByTitle('Close').click()
+
   // a fallback chain in the agent editor
   await page.getByTestId('add-agent').click()
   await page.getByTestId('agent-name').fill('Fallback Demo')
@@ -132,12 +163,12 @@ test('the workstation runs end to end on mock agents', async () => {
   await page.getByTestId('agent-fallback-add').click()
   await page.getByTestId('agent-fallback').scrollIntoViewIfNeeded()
   await page.waitForTimeout(300)
-  await shot(page, '12-fallback-chain')
+  await shot(page, '16-fallback-chain')
   await page.keyboard.press('Escape')
 
   await page.getByTestId('settings').click()
   await page.waitForTimeout(800)
-  await shot(page, '13-settings')
+  await shot(page, '17-settings')
   await page.keyboard.press('Escape')
 
   expect(existsSync(join(project, '.multimine', 'sessions'))).toBe(true)

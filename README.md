@@ -73,6 +73,13 @@ packets fly), ask you questions through Mastermind, and work on a real project f
   done. Claude's own limit warnings move the next task over before anything is cut. Subscriptions
   switch silently; a paid API key asks first (with **Always**). The orb shows `↪ model (fallback)` in
   sky blue.
+- **Tools** (left rail, the grid button): a home-screen grid of tools - the built-in UI Sketcher and
+  any plugin you install - with Edit mode to reorder (drag) and remove them. Each tool opens in its own
+  window from the left. **Plugins** are a folder with a `plugin.json`: a web page that runs walled off
+  from the app (no keys, no settings, no Node) and reaches it only through `window.multimine`, each
+  call checked against the permissions you granted when it was first enabled (revocable in
+  **Manage**). A plugin can also bring an MCP server of agent tools. Project-folder plugins never run
+  until you enable them. See `docs/plugins.md` and `examples/plugins/hello`.
 - **Sessions.** Agents belong to the project; conversations belong to a session. Create, rename,
   duplicate, switch. Claude and Codex threads resume per session.
 
@@ -129,6 +136,7 @@ src/main/
   orchestrator/    engine (turn queues, bus, inbox, gate, automation), council, prompts, workspace tools
   mcp/             busServer (local MCP server CLI agents call back into), hub (external MCP servers)
   media/           saving generated media
+  plugins/         manifest validation, registry and grants, the permission-checked API, mmplugin://
 src/renderer/      React panels + a PixiJS space scene (space/)
 templates/         multimine.md and the role templates
 ```

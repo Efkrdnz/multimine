@@ -6,6 +6,7 @@ import type {
   AppSettings,
   BusEvent,
   Channel,
+  PluginInfo,
   ChatMessage,
   CouncilCritic,
   InboxItem,
@@ -17,7 +18,7 @@ import type {
 } from '@shared/types'
 
 export type Panel = 'inbox' | 'media' | 'context' | 'git' | null
-export type Modal = { kind: 'agent'; agent: AgentSpec; isNew: boolean } | { kind: 'settings'; tab?: string } | null
+export type Modal = { kind: 'agent'; agent: AgentSpec; isNew: boolean } | { kind: 'settings'; tab?: string } | { kind: 'plugins' } | null
 
 interface Toast {
   id: number
@@ -48,6 +49,13 @@ export interface State {
   panel: Panel
   /** The code window: mounted once opened (so terminals and tabs survive), shown or hidden. */
   ide: 'closed' | 'open' | 'hidden'
+  plugins: PluginInfo[]
+  brokenPlugins: { dir: string; errors: string[] }[]
+  /** Tool windows opened this run (kept mounted so they keep their state) and the one on screen. */
+  openTools: string[]
+  activeTool: string | null
+  /** A plugin waiting for the user to agree to its permissions, and what to do after. */
+  consent: { pluginId: string; thenOpen: boolean } | null
   /** Files changed by hand that the Context Handler has not been told about yet. */
   manual: { count: number; files: string[] }
   /** Messages teammates sent to a terminal session, shown as a banner over its tab. */
@@ -83,6 +91,11 @@ export const useStore = create<State>((set, get) => ({
   split: false,
   panel: null,
   ide: 'closed',
+  plugins: [],
+  brokenPlugins: [],
+  openTools: [],
+  activeTool: null,
+  consent: null,
   manual: { count: 0, files: [] },
   terminalNotes: {},
   modal: null,
@@ -168,6 +181,9 @@ export function applyEvent(e: MainEvent): void {
     case 'terminal-data':
       pushTerminalData(e.id, e.data)
       return
+    case 'plugins':
+      s.set({ plugins: e.plugins, brokenPlugins: e.broken })
+      break
     case 'provider-health':
       s.set({ health: e.health })
       break

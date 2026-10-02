@@ -8,7 +8,7 @@ designed against a core that has stopped moving.
 |---|---|---|
 | 1 | Mini IDE + editor-agnostic change tracking | done |
 | 2 | Fallback providers | done |
-| 3 | Plugin system + Tools grid | planned: `docs/plans/tools-plugins-sketcher.md` |
+| 3 | Plugin system + Tools grid | done (`docs/plugins.md`) |
 | 4 | UI sketcher (the first plugin) | planned: `docs/plans/tools-plugins-sketcher.md` |
 
 ---

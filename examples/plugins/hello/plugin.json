@@ -1,0 +1,11 @@
+{
+  "id": "hello",
+  "name": "Hello Team",
+  "version": "1.0.0",
+  "api": 1,
+  "description": "The smallest useful plugin: lists your team and sends Mastermind a message.",
+  "icon": { "glyph": "Hand", "gradient": ["#34d399", "#0ea5e9"] },
+  "entry": "index.html",
+  "window": { "width": 520, "height": 560 },
+  "permissions": ["team:read", "agents:message"]
+}

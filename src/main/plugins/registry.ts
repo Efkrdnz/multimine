@@ -25,6 +25,16 @@ export const BUILTIN: PluginManifest[] = [
     icon: { glyph: 'Boxes', gradient: ['#f59e0b', '#ef4444'] },
     window: { width: 1240, height: 780 },
     permissions: ['team:read', 'agents:message', 'project:read', 'project:write', 'media:read']
+  },
+  {
+    id: 'data-tables',
+    name: 'Data Tables',
+    version: '1.0.0',
+    api: 1,
+    description: "Edit the project's JSON and CSV game data as a spreadsheet, chart it, and ask an agent to rebalance it.",
+    icon: { glyph: 'Table2', gradient: ['#22c55e', '#0ea5e9'] },
+    window: { width: 1280, height: 780 },
+    permissions: ['team:read', 'agents:message', 'project:read', 'project:write']
   }
 ]
 

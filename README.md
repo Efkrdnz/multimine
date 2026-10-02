@@ -80,15 +80,28 @@ packets fly), ask you questions through Mastermind, and work on a real project f
   call checked against the permissions you granted when it was first enabled (revocable in
   **Manage**). A plugin can also bring an MCP server of agent tools. Project-folder plugins never run
   until you enable them. See `docs/plugins.md` and `examples/plugins/hello`.
-- **UI Sketcher** (in Tools): draw a GUI wireframe - windows, panels, layers, buttons, labels, text
-  fields, slots and slot grids, images, lists, sliders, checkboxes, progress bars, tooltips - with
-  nesting, snapping to the grid and to other elements, a layers panel, properties in the target's own
-  units (position, size, anchor, states to build, notes) and undo. Presets: **Minecraft GUI** (GUI
-  pixels on a 427x240 screen, a 176x166 container with the player inventory, 18px slots, a vanilla-style
-  look drawn from scratch), web, mobile and desktop. **Send** saves `.multimine/sketches/<name>/`
-  (`sketch.json`, the wireframe and a styled mockup) and asks Mastermind to have a **UI Creator** agent
-  build it, capture the real screen and show it in the gallery. **Revisions** marks up that screenshot
-  and sends it back. The Sketcher is built in but uses only the plugin API, like any other tool.
+- **UI Sketcher** (in Tools): draw a game HUD, a menu or an app screen - 26 element types, from
+  windows, buttons and lists to health bars, ability slots, minimaps, dialogue boxes, crosshairs and
+  joysticks - with nesting, snapping, layers, properties, undo, and **anchors** (picked from where you
+  draw, editable, with stretch). Targets: **Godot**, **Unity**, **Unreal**, **Minecraft**, web, mobile
+  and desktop, detected from the project. The **Mockup** tab lays the sketch out on every screen the
+  target runs on (1080p to ultrawide, Steam Deck, a phone) the way that engine resolves anchors, in a
+  procedural game, Minecraft or app style; game targets show the title-safe area. **Send** saves
+  `.multimine/sketches/<name>/` and asks Mastermind to have a **UI Creator** build it the way that
+  engine does (a Godot Control scene, UI Toolkit or UGUI, a C++ `UUserWidget`, a Minecraft screen, the
+  project's web stack), capture the real thing and show it in the gallery; **Revisions** marks the
+  screenshot up and sends it back.
+- **Asset Board** (in Tools): the art and sound the project needs, as cards (Wanted, In progress,
+  Review, Done) in `.multimine/assets/board.json`. Each asset has a spec and a path suggested for the
+  engine; **Request** briefs the Asset Creator with it and the board's style guide. Results come back
+  through the gallery and become candidates; **Approve** copies the chosen one into place (images
+  resized to the spec, nearest neighbour for pixel art), or send it back with a note.
+- **Data Tables** (in Tools): the project's JSON and CSV data (items, enemies, loot, levels) as a
+  spreadsheet with typed columns, validation, min/max/mean, a chart, sort and filter. A save patches
+  the file in its own format - only the edited lines change. **Ask an agent** sends the selected rows
+  and a request to anyone on the team; the table reloads when they edit the file.
+- Every built-in tool holds no privileges of its own: it goes through the same permission-checked
+  plugin API a third-party plugin gets.
 - **Sessions.** Agents belong to the project; conversations belong to a session. Create, rename,
   duplicate, switch. Claude and Codex threads resume per session.
 
@@ -146,7 +159,9 @@ src/main/
   mcp/             busServer (local MCP server CLI agents call back into), hub (external MCP servers)
   media/           saving generated media
   plugins/         manifest validation, registry and grants, the permission-checked API, mmplugin://
-src/shared/sketch/ the UI Sketcher's model, presets, drawing ops and briefs (pure, unit tested)
+src/shared/sketch/ the UI Sketcher's model, targets, layout, drawing ops and briefs (pure, unit tested)
+src/shared/assets/ the Asset Board's board, paths, matching and briefs (pure, unit tested)
+src/shared/data/   Data Tables' parse, type inference, patching writer and diff (pure, unit tested)
 src/renderer/      React panels + a PixiJS space scene (space/)
 templates/         multimine.md and the role templates
 ```

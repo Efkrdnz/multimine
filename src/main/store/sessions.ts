@@ -76,7 +76,8 @@ export class SessionStore {
       // a message is appended once per final state; the last copy of an id wins
       const byId = new Map<string, ChatMessage>()
       for (const m of lines) byId.set(m.id, m)
-      out[a] = [...byId.values()].sort((x, y) => x.ts - y.ts)
+      // within one millisecond a reply cannot precede the message it answers, whatever order the lines landed in
+      out[a] = [...byId.values()].sort((x, y) => x.ts - y.ts || Number(x.role !== 'user') - Number(y.role !== 'user'))
     }
     return out
   }

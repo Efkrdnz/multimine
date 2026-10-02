@@ -90,9 +90,10 @@ Paths are relative to the open project and can never leave it.
 - An MCP server runs as a normal local process (like any MCP server the user adds); its tools reach
   only the agents the user assigns it to.
 
-## The built-in UI Sketcher
+## The built-in tools
 
-The UI Sketcher ships with Multimine and is drawn as part of the app, but it holds no privileges of
-its own: it is listed as the plugin `ui-sketcher`, its permissions can be revoked in **Manage** like
-any other, and every file it writes, message it sends and picture it shows goes through the same
-`pluginCall` handlers your plugin's `window.multimine` reaches. Anything it does, a plugin can do.
+The UI Sketcher (`ui-sketcher`), the Asset Board (`asset-board`) and Data Tables (`data-tables`) ship
+with Multimine and are drawn as part of the app, but they hold no privileges of their own: each is
+listed as a plugin, its permissions can be revoked in **Manage** like any other, and every file it
+writes, message it sends and picture it shows goes through the same `pluginCall` handlers your
+plugin's `window.multimine` reaches. Anything they do, a plugin can do.

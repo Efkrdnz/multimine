@@ -15,6 +15,17 @@ test('the workstation runs end to end on mock agents', async () => {
   // enough for the UI Sketcher to know a NeoForge mod when it sees one
   writeFileSync(join(project, 'build.gradle'), "plugins { id 'net.neoforged.moddev' version '2.0.0' }\n")
   writeFileSync(join(project, 'gradle.properties'), 'mod_id=manamod\n')
+  mkdirSync(join(project, 'data'))
+  const items = [
+    { id: 1, name: 'Iron Sword', damage: 6, speed: 1.6, rarity: 'common', tags: ['melee', 'metal'], stackable: false },
+    { id: 2, name: 'Mana Staff', damage: 3, speed: 1.1, rarity: 'rare', tags: ['magic'], stackable: false },
+    { id: 3, name: 'Apple', damage: 0, speed: 4, rarity: 'common', tags: [], stackable: true },
+    { id: 4, name: 'Dragon Bow', damage: 12, speed: 0.8, rarity: 'epic', tags: ['ranged'], stackable: false },
+    { id: 5, name: 'Rune Dagger', damage: 4, speed: 2.4, rarity: 'rare', tags: ['melee', 'magic'], stackable: false }
+  ]
+  // the layout a formatter leaves: objects broken over lines, short arrays kept on one
+  const itemsText = JSON.stringify(items, null, 2).replace(/\[\s+([^\[\]{}]*?)\s+\]/g, (_m, inner: string) => `[${inner.split(/,\s+/).join(', ')}]`) + '\n'
+  writeFileSync(join(project, 'data', 'items.json'), itemsText)
   const app = await electron.launch({
     // SwiftShader: CI machines have no GPU, and the space scene is WebGL
     args: [resolve('out/main/index.js'), '--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--project', project],
@@ -322,6 +333,34 @@ test('the workstation runs end to end on mock agents', async () => {
   await shot(page, '25-asset-board-done')
   await page.getByTestId('toolwin-asset-board').getByTitle('Close', { exact: true }).click()
 
+  // Data Tables: a JSON item list as a spreadsheet; a save changes exactly the edited line; an agent is asked
+  await page.getByTestId('tools').click()
+  await page.getByTestId('tool-data-tables').click()
+  await expect(page.getByTestId('data-tables')).toBeVisible()
+  await page.getByTestId('dt-file-data/items.json').click()
+  await expect(page.getByTestId('dt-row')).toHaveCount(5)
+  await expect(page.getByTestId('dt-stats-damage')).toContainText('0..12')
+  await page.getByTestId('dt-row').nth(3).getByTestId('dt-cell-damage').click()
+  await page.getByTestId('dt-editor').fill('8')
+  await page.keyboard.press('Enter')
+  await page.getByTestId('dt-row').nth(3).getByTestId('dt-cell-rarity').click()
+  await page.getByTestId('dt-editor').selectOption('rare')
+  await page.getByTestId('dt-chart-toggle').click()
+  await page.getByTestId('dt-row').nth(3).locator('input[type=checkbox]').first().check()
+  await page.getByTestId('dt-ask-toggle').click()
+  await page.getByTestId('dt-ask-text').fill('Is the Dragon Bow still too strong next to the Iron Sword?')
+  await page.waitForTimeout(300)
+  await shot(page, '26-data-tables')
+  await page.getByTestId('dt-save').click()
+  await expect.poll(() => readFileSync(join(project, 'data', 'items.json'), 'utf8'), { timeout: 10_000 }).toContain('"damage": 8')
+  const before = itemsText.split('\n')
+  const after = readFileSync(join(project, 'data', 'items.json'), 'utf8').split('\n')
+  expect(after.length).toBe(before.length)
+  expect(after.filter((l, i) => l !== before[i])).toEqual(['    "damage": 8,', '    "rarity": "rare",'])
+  await page.getByTestId('dt-ask-send').click()
+  await expect.poll(busText, { timeout: 10_000 }).toContain('Data request from Game Data Tables')
+  await page.getByTestId('toolwin-data-tables').getByTitle('Close', { exact: true }).click()
+
   // a fallback chain in the agent editor
   await page.getByTestId('add-agent').click()
   await page.getByTestId('agent-name').fill('Fallback Demo')
@@ -329,12 +368,12 @@ test('the workstation runs end to end on mock agents', async () => {
   await page.getByTestId('agent-fallback-add').click()
   await page.getByTestId('agent-fallback').scrollIntoViewIfNeeded()
   await page.waitForTimeout(300)
-  await shot(page, '26-fallback-chain')
+  await shot(page, '27-fallback-chain')
   await page.keyboard.press('Escape')
 
   await page.getByTestId('settings').click()
   await page.waitForTimeout(800)
-  await shot(page, '27-settings')
+  await shot(page, '28-settings')
   await page.keyboard.press('Escape')
 
   expect(existsSync(join(project, '.multimine', 'sessions'))).toBe(true)

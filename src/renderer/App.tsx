@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { applyEvent, api, useStore } from './state/store'
 import { SpaceView } from './space/SpaceView'
 import { TopBar } from './panels/TopBar'
@@ -14,11 +14,15 @@ import { Welcome } from './panels/Welcome'
 import { Toasts } from './panels/Toasts'
 import { TeamWizard } from './panels/TeamWizard'
 
+// the code window carries Monaco and xterm: loaded the first time it is opened, not at start-up
+const IdeWindow = lazy(() => import('./ide/IdeWindow').then((m) => ({ default: m.IdeWindow })))
+
 export function App() {
   const ready = useStore((s) => s.ready)
   const project = useStore((s) => s.project)
   const panel = useStore((s) => s.panel)
   const modal = useStore((s) => s.modal)
+  const ide = useStore((s) => s.ide)
   // offered once per opened project, when it has nobody but Mastermind; stays up until finished
   const [wizard, setWizard] = useState(false)
   const projectDir = project?.dir
@@ -50,6 +54,11 @@ export function App() {
           {panel === 'media' && <MediaPanel />}
           {panel === 'context' && <ContextPanel />}
           {panel === 'git' && <GitPanel />}
+          {ide !== 'closed' && (
+            <Suspense fallback={null}>
+              <IdeWindow />
+            </Suspense>
+          )}
           {wizard && !modal && <TeamWizard onDone={() => setWizard(false)} />}
         </>
       )}

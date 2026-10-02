@@ -5,8 +5,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import type { ToolDef } from '../providers/types'
 
-/** Looks up the tools an agent may call. Returning null refuses the agent. */
-export type ToolSource = (agentId: string) => ToolDef[] | null
+/** Looks up the tools an agent may call, and what to tell it about them. Returning null refuses the agent. */
+export type ToolSource = (agentId: string) => { tools: ToolDef[]; instructions?: string } | null
 
 function readBody(req: IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -44,8 +44,8 @@ export class BusServer {
         res.writeHead(404).end()
         return
       }
-      const defs = this.tools(m[1])
-      if (!defs) {
+      const found = this.tools(m[1])
+      if (!found) {
         res.writeHead(404).end()
         return
       }
@@ -56,8 +56,8 @@ export class BusServer {
       }
       try {
         const body = await readBody(req)
-        const mcp = new McpServer({ name: 'multimine', version: '0.1.0' })
-        for (const d of defs) {
+        const mcp = new McpServer({ name: 'multimine', version: '0.1.0' }, { instructions: found.instructions })
+        for (const d of found.tools) {
           mcp.registerTool(d.name, { description: d.description, inputSchema: d.shape }, async (args: any) => {
             try {
               const out = await d.handler(args ?? {})

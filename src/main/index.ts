@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, net, protocol, safeStorage, shell } from 'electron'
+import { spawn } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { API_METHODS } from '@shared/api'
@@ -75,7 +76,25 @@ app.whenReady().then(async () => {
     openPath: async (p: string) => {
       await shell.openPath(p)
     },
-    mediaUrl: async (p: string) => `mm://media/${encodeURIComponent(p)}`
+    mediaUrl: async (p: string) => `mm://media/${encodeURIComponent(p)}`,
+    // hand a file to the user's real IDE; fall back to whatever the system opens it with
+    ideOpenExternal: async (rel: string, which: 'idea' | 'code' | 'system') => {
+      const root = mm.project?.dir
+      if (!root) return
+      const full = resolve(root, rel)
+      if (!full.startsWith(resolve(root))) return
+      if (which !== 'system') {
+        const ok = await new Promise<boolean>((done) => {
+          const child = spawn(which, [full], { detached: true, stdio: 'ignore', shell: process.platform === 'win32' })
+          child.on('error', () => done(false))
+          child.on('spawn', () => done(true))
+          child.unref()
+        })
+        if (ok) return
+        emit({ type: 'toast', level: 'error', text: `Could not start \`${which}\`. Add it to PATH (IntelliJ: Tools > Create Command-line Launcher; VS Code: "Shell Command: Install 'code'").` })
+      }
+      await shell.openPath(full)
+    }
   }
   for (const m of API_METHODS) {
     ipcMain.handle(`mm:${m}`, async (_e, ...args) => {

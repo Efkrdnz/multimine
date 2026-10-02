@@ -95,6 +95,9 @@ export class Engine {
   private turns = new Map<string, TurnContext>()
   private waits = new Map<string, string>()
   private controllers = new Map<string, AbortController>()
+  /** Write-capable agents mid-turn, and when the last one stopped: the watcher's "an agent did it" window. */
+  private writing = new Set<string>()
+  private writingUntil = 0
   /** Agents running their current task on a cheaper model than their own (economy mode). */
   private temps = new Map<string, TempModel>()
   private flushTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -184,6 +187,34 @@ export class Engine {
 
   private emitChannels(): void {
     this.d.emit({ type: 'channels', channels: this.channels() })
+  }
+
+  /** True while (or just after) an agent with write access works: file changes then are the agent's, not the user's. */
+  agentWriting(): boolean {
+    return this.writing.size > 0 || Date.now() < this.writingUntil
+  }
+
+  /** The user changed files by hand (any editor): the Context Handler gets one batch with the diff. */
+  async manualChanges(files: Map<string, 'added' | 'changed' | 'deleted'>): Promise<boolean> {
+    const handler = this.d.project.contextHandler()
+    if (!handler || !files.size) return false
+    const list = [...files.entries()].map(([f, k]) => `- ${k}: ${f}`).join('\n')
+    const changed = [...files.entries()].filter(([, k]) => k !== 'deleted').map(([f]) => f)
+    const diff = changed.length ? await this.gitDiff(changed) : ''
+    const body =
+      `The user edited the project by hand (outside the team). Bring the context files up to date with these changes and add a changelog entry marked "manual".\n\n## Files\n${list}\n\n` +
+      (diff ? `## Diff\n\`\`\`diff\n${diff}\n\`\`\`\n` : 'Read the files themselves; there is no git diff for them (new, or not a git repository).\n')
+    await this.logBus('context', 'user', handler.id, `${files.size} manual change${files.size === 1 ? '' : 's'}`)
+    void this.send(handler.id, body, 'user', 'context')
+    return true
+  }
+
+  private gitDiff(files: string[]): Promise<string> {
+    return new Promise((resolve) =>
+      exec(`git diff HEAD -- ${files.map((f) => JSON.stringify(f)).join(' ')}`, { cwd: this.d.project.dir, timeout: 20_000, maxBuffer: 8_000_000 }, (err, stdout) =>
+        resolve(err ? '' : stdout.length > 40_000 ? `${stdout.slice(0, 40_000)}\n... (diff truncated)` : stdout)
+      )
+    )
   }
 
   busy(agentId: string): boolean {
@@ -291,6 +322,11 @@ export class Engine {
   private async runTurn(agentId: string, userMsg: ChatMessage, kind: BusKind, temp?: TempModel): Promise<TurnResult> {
     const own = this.d.project.get(agentId)
     if (!own) return { text: '', reports: [], error: `No agent ${agentId}` }
+    if (own.terminal) {
+      // a terminal agent is the user at a keyboard: show the message there, do not run anything
+      this.d.emit({ type: 'terminal-note', agentId, from: userMsg.from, text: userMsg.text })
+      return { text: `Delivered to ${own.name}, a terminal session the user is driving. It will answer with message_agent when it can; do not wait on it.`, reports: [] }
+    }
     // a downshifted task runs on the cheaper model for this turn only; the agent file is untouched
     const agent: AgentSpec = temp ? { ...own, model: temp.model, effort: temp.effort } : own
     if (temp) this.temps.set(agentId, temp)
@@ -312,6 +348,7 @@ export class Engine {
 
     const isCli = ProviderRegistry.isCli(agent.provider)
     const watchChanges = agent.permissions === 'write' && agent.role !== 'context-handler'
+    if (agent.permissions === 'write') this.writing.add(agentId)
     const gitBefore = watchChanges ? await this.gitState() : null
     const resumeId = this.resumeKey(agent)
     let finalPrompt = prompt
@@ -383,6 +420,7 @@ export class Engine {
       this.turns.delete(agentId)
       this.controllers.delete(agentId)
       this.temps.delete(agentId)
+      if (this.writing.delete(agentId)) this.writingUntil = Date.now() + 4000
       this.emitChannels()
     }
     if (ctl.signal.aborted && !error) error = 'Stopped.'
@@ -847,6 +885,7 @@ export class Engine {
         handler: async (a) => {
           const target = this.d.project.find(String(a.agent))
           if (!target) return text(`No agent ${a.agent}`, true)
+          if (target.terminal) return text(`${target.name} is a terminal session the user drives; it cannot take delegated work. Use message_agent to tell it something.`, true)
           if (target.gated) {
             const approval = a.approval_id ? this.inbox.get(String(a.approval_id)) : undefined
             if (!approval || approval.kind !== 'approval' || !approval.approved)

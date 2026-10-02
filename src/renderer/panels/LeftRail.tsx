@@ -1,4 +1,4 @@
-import { BookOpen, GitBranch, Image, Inbox, Plus, Settings, Sparkles } from 'lucide-react'
+import { BookOpen, Code2, GitBranch, Image, Inbox, Plus, Settings, Sparkles } from 'lucide-react'
 import { roleTemplate } from '@shared/templates'
 import { useStore } from '../state/store'
 
@@ -21,13 +21,18 @@ export function LeftRail() {
   const pending = useStore((s) => s.inbox.filter((i) => i.status === 'pending').length)
   const media = useStore((s) => s.media.length)
   const set = useStore((s) => s.set)
-  const toggle = (p: typeof panel) => set({ panel: panel === p ? null : p })
+  const ide = useStore((s) => s.ide)
+  const manual = useStore((s) => s.manual.count)
+  // the code window and the drawers share the left side: opening one tucks the other away
+  const toggle = (p: typeof panel) => set({ panel: panel === p ? null : p, ide: ide === 'open' ? 'hidden' : ide })
+  const toggleIde = () => set({ ide: ide === 'open' ? 'hidden' : 'open', panel: null })
   return (
     <div className="absolute left-3 top-16 z-20 flex flex-col gap-2">
       <RailButton testId="add-agent" icon={<Plus size={20} />} label="Create agent" onClick={() => set({ modal: { kind: 'agent', agent: { ...roleTemplate('custom', ''), name: '' }, isNew: true } })} />
       <RailButton testId="inbox" icon={<Inbox size={18} />} label="Mastermind inbox" active={panel === 'inbox'} badge={pending} onClick={() => toggle('inbox')} />
       <RailButton testId="media" icon={<Image size={18} />} label={`Media gallery (${media})`} active={panel === 'media'} onClick={() => toggle('media')} />
       <RailButton testId="context" icon={<BookOpen size={18} />} label="Context & multimine.md" active={panel === 'context'} onClick={() => toggle('context')} />
+      <RailButton testId="code" icon={<Code2 size={18} />} label="Code: files, editor, terminal" active={ide === 'open'} badge={manual} onClick={toggleIde} />
       <RailButton testId="git" icon={<GitBranch size={18} />} label="Repository (git & GitHub)" active={panel === 'git'} onClick={() => toggle('git')} />
       <RailButton testId="open-mastermind" icon={<Sparkles size={18} />} label="Open Mastermind" onClick={() => useStore.getState().openChat('mastermind')} />
       <RailButton testId="settings" icon={<Settings size={18} />} label="Settings" onClick={() => set({ modal: { kind: 'settings' } })} />

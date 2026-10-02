@@ -1,4 +1,4 @@
-import type { AgentSpec, AppSettings, CliStatus, GhItem, GitCommit, GitStatus, MainEvent, McpServerConfig, ModelEntry, ProjectInfo, ProviderKind } from './types'
+import type { AgentSpec, AppSettings, CliStatus, GhItem, GitCommit, GitStatus, IdeEntry, IdeHit, MainEvent, McpServerConfig, ModelEntry, ProjectInfo, ProviderKind, TerminalInfo, TerminalKind } from './types'
 
 /** Everything the renderer can ask of the main process. One method, one IPC channel. */
 export interface Api {
@@ -48,6 +48,19 @@ export interface Api {
   ghList(kind: 'pulls' | 'issues'): Promise<GhItem[]>
   ghCreatePr(title: string, body: string, base?: string): Promise<GhItem>
 
+  ideList(dir: string): Promise<IdeEntry[]>
+  ideFind(query: string): Promise<IdeHit[]>
+  ideGrep(query: string): Promise<IdeHit[]>
+  ideRead(path: string): Promise<{ text: string; binary: boolean; tooBig: boolean }>
+  ideWrite(path: string, text: string): Promise<void>
+  ideOpenExternal(path: string, app: 'idea' | 'code' | 'system'): Promise<void>
+  syncContext(): Promise<boolean>
+  terminalAvailable(): Promise<{ ok: boolean; error?: string }>
+  terminalOpen(kind: TerminalKind, cols: number, rows: number): Promise<TerminalInfo>
+  terminalWrite(id: string, data: string): Promise<void>
+  terminalResize(id: string, cols: number, rows: number): Promise<void>
+  terminalClose(id: string): Promise<void>
+
   contextFiles(): Promise<{ file: string; text: string }[]>
   openPath(path: string): Promise<void>
   mediaUrl(path: string): Promise<string>
@@ -64,6 +77,8 @@ export const API_METHODS: ApiMethod[] = [
   'updateSettings', 'setKey', 'detectClis', 'refreshModels', 'testMcp',
   'gitStatus', 'gitInit', 'gitDiff', 'gitStage', 'gitUnstage', 'gitCommit', 'gitLog', 'gitShow', 'gitBranches', 'gitCheckout', 'gitPull', 'gitPush',
   'ghInfo', 'ghList', 'ghCreatePr',
+  'ideList', 'ideFind', 'ideGrep', 'ideRead', 'ideWrite', 'ideOpenExternal', 'syncContext',
+  'terminalAvailable', 'terminalOpen', 'terminalWrite', 'terminalResize', 'terminalClose',
   'contextFiles', 'openPath', 'mediaUrl'
 ]
 

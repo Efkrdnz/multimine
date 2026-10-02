@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { pushTerminalData } from '../ide/terminalBus'
 import type {
   AgentSpec,
   AgentStatus,
@@ -43,6 +44,12 @@ export interface State {
   focused: string | null
   split: boolean
   panel: Panel
+  /** The code window: mounted once opened (so terminals and tabs survive), shown or hidden. */
+  ide: 'closed' | 'open' | 'hidden'
+  /** Files changed by hand that the Context Handler has not been told about yet. */
+  manual: { count: number; files: string[] }
+  /** Messages teammates sent to a terminal session, shown as a banner over its tab. */
+  terminalNotes: Record<string, { from: string; text: string; ts: number }[]>
   modal: Modal
   toasts: Toast[]
   set: (patch: Partial<State>) => void
@@ -72,6 +79,9 @@ export const useStore = create<State>((set, get) => ({
   focused: null,
   split: false,
   panel: null,
+  ide: 'closed',
+  manual: { count: 0, files: [] },
+  terminalNotes: {},
   modal: null,
   toasts: [],
   set: (patch) => set(patch),
@@ -151,6 +161,15 @@ export function applyEvent(e: MainEvent): void {
       s.toast(e.level, e.text)
       break
     case 'talk':
+      break
+    case 'terminal-data':
+      pushTerminalData(e.id, e.data)
+      return
+    case 'manual-changes':
+      s.set({ manual: { count: e.count, files: e.files } })
+      break
+    case 'terminal-note':
+      s.set({ terminalNotes: { ...s.terminalNotes, [e.agentId]: [...(s.terminalNotes[e.agentId] ?? []), { from: e.from, text: e.text, ts: Date.now() }] } })
       break
   }
   for (const l of sceneListeners) l(e)

@@ -49,6 +49,8 @@ export interface AgentSpec {
   gated: boolean
   /** Claude CLI only: start every turn in plan mode. */
   planMode: boolean
+  /** A live CLI session in the IDE's terminal: never saved, driven by the user, not delegated to. */
+  terminal?: boolean
   /**
    * Say yes to every permission prompt this agent raises. Pushing, publishing and destroying
    * history still ask (as a balloon over the agent). Off: every prompt asks.
@@ -275,6 +277,29 @@ export interface GhItem {
   labels: string[]
 }
 
+export interface IdeEntry {
+  name: string
+  /** Relative to the project root, with forward slashes. */
+  path: string
+  dir: boolean
+}
+
+export interface IdeHit {
+  path: string
+  line?: number
+  text?: string
+}
+
+export type TerminalKind = 'shell' | 'claude' | 'codex'
+
+export interface TerminalInfo {
+  id: string
+  kind: TerminalKind
+  title: string
+  /** The agent this terminal speaks for on the team (CLI terminals only). */
+  agentId?: string
+}
+
 export interface CliStatus {
   installed: boolean
   version?: string
@@ -292,6 +317,11 @@ export type MainEvent =
   | { type: 'talk'; agentId: string }
   | { type: 'bus'; event: BusEvent }
   | { type: 'channels'; channels: Channel[] }
+  | { type: 'terminal-data'; id: string; data: string }
+  | { type: 'terminal-exit'; id: string; code: number }
+  | { type: 'terminal-note'; agentId: string; from: string; text: string }
+  | { type: 'manual-changes'; count: number; files: string[] }
+  | { type: 'file-changed'; path: string; kind: 'added' | 'changed' | 'deleted' }
   | { type: 'bus-reset'; events: BusEvent[] }
   | { type: 'inbox'; items: InboxItem[] }
   | { type: 'media'; items: MediaItem[] }

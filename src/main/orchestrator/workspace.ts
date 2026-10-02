@@ -6,7 +6,7 @@ import type { Permission } from '@shared/types'
 import { hardStop } from '../providers/guard'
 import type { ToolDef } from '../providers/types'
 
-const SKIP = new Set(['.git', 'node_modules', 'build', 'out', 'dist', '.gradle', 'run', '.idea', 'target', '__pycache__'])
+export const SKIP = new Set(['.git', 'node_modules', 'build', 'out', 'dist', '.gradle', 'run', '.idea', 'target', '__pycache__'])
 const MAX_READ = 200_000
 
 /** Resolves a path the model gave inside the project, refusing anything that escapes it. */
@@ -17,7 +17,7 @@ export function insideProject(root: string, p: string): string {
   return full
 }
 
-async function walk(root: string, dir: string, depth: number, out: string[], limit: number): Promise<void> {
+export async function walk(root: string, dir: string, depth: number, out: string[], limit: number): Promise<void> {
   if (out.length >= limit) return
   let entries
   try {

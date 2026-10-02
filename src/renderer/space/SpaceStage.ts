@@ -153,7 +153,7 @@ export class SpaceStage {
       orb.setLook({
         name: a.name,
         // a temporary (economy) model is shown in place of the agent's own, marked and tinted
-        subtitle: temp ? `⚡ ${modelLabel(state.catalog, a.provider, temp.model)} · ${temp.effort} (this task)` : `${modelLabel(state.catalog, a.provider, a.model)} · ${a.effort}`,
+        subtitle: a.terminal ? 'live terminal session' : temp ? `⚡ ${modelLabel(state.catalog, a.provider, temp.model)} · ${temp.effort} (this task)` : `${modelLabel(state.catalog, a.provider, a.model)} · ${a.effort}`,
         color: a.color,
         radius: a.role === 'context-handler' ? 30 : 34,
         temp: !!temp

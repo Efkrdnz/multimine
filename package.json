@@ -30,6 +30,8 @@
     "@anthropic-ai/sdk": "^0.131.0",
     "@modelcontextprotocol/sdk": "^1.31.0",
     "ai": "^5.0.271",
+    "chokidar": "^4.0.3",
+    "node-pty": "^1.1.0",
     "yaml": "^2.9.1",
     "zod": "^4.6.5"
   },
@@ -39,16 +41,20 @@
   },
   "devDependencies": {
     "@google/model-viewer": "^4.3.1",
+    "@monaco-editor/react": "^4.7.0",
     "@playwright/test": "1.56",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^22.20.4",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.2.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "electron": "^44.5.1",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "lucide-react": "^1.49.0",
+    "monaco-editor": "^0.57.0",
     "pixi.js": "^8.21.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
@@ -73,7 +79,8 @@
     ],
     "asarUnpack": [
       "node_modules/@anthropic-ai/**",
-      "templates/**"
+      "templates/**",
+      "node_modules/node-pty/**"
     ],
     "extraResources": [],
     "win": {

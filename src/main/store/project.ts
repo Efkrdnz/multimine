@@ -10,6 +10,8 @@ import { readJson, readText, writeAtomic, writeJson } from './fsx'
 export class ProjectStore {
   readonly paths: ProjectPaths
   private agents = new Map<string, AgentSpec>()
+  /** Agents that exist only while something runs (a CLI in the IDE terminal); never written to disk. */
+  private virtuals = new Map<string, AgentSpec>()
   private layout: Record<string, { x: number; y: number }> = {}
   multimineMd = ''
 
@@ -65,18 +67,26 @@ export class ProjectStore {
   }
 
   list(): AgentSpec[] {
-    const all = [...this.agents.values()]
+    const all = [...this.agents.values(), ...this.virtuals.values()]
     return all.sort((a, b) => (a.id === MASTERMIND_ID ? -1 : b.id === MASTERMIND_ID ? 1 : a.name.localeCompare(b.name)))
   }
 
   get(id: string): AgentSpec | undefined {
-    return this.agents.get(id)
+    return this.agents.get(id) ?? this.virtuals.get(id)
+  }
+
+  addVirtual(agent: AgentSpec): void {
+    this.virtuals.set(agent.id, agent)
+  }
+
+  removeVirtual(id: string): void {
+    this.virtuals.delete(id)
   }
 
   /** Finds an agent by id or (case-insensitively) by name, which is how agents address each other. */
   find(ref: string): AgentSpec | undefined {
     const r = ref.trim().toLowerCase()
-    return this.agents.get(r) ?? this.list().find((a) => a.name.toLowerCase() === r || slugify(a.name) === slugify(r))
+    return this.get(r) ?? this.list().find((a) => a.name.toLowerCase() === r || slugify(a.name) === slugify(r))
   }
 
   contextHandler(): AgentSpec | undefined {
@@ -87,7 +97,7 @@ export class ProjectStore {
   freeId(name: string): string {
     const base = slugify(name)
     let id = base
-    for (let i = 2; this.agents.has(id); i++) id = `${base}-${i}`
+    for (let i = 2; this.agents.has(id) || this.virtuals.has(id); i++) id = `${base}-${i}`
     return id
   }
 

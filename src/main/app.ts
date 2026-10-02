@@ -13,6 +13,23 @@ import { Engine } from './orchestrator/engine'
 import { BusServer } from './mcp/busServer'
 import { McpHub } from './mcp/hub'
 import { Git, GitHub, githubRepo } from './git/git'
+import { ProjectFiles, list as listDir } from './ide/fs'
+import { Terminals, shellQuote } from './ide/terminals'
+import { ManualChangeTracker, ProjectWatcher } from './ide/watcher'
+import { writeJson } from './store/fsx'
+import { roleTemplate } from '@shared/templates'
+import type { TerminalKind } from '@shared/types'
+
+/** What a CLI in the IDE terminal is told about the team, through the MCP server's instructions. */
+function terminalInstructions(name: string): string {
+  return (
+    `You are "${name}", a session in the user's own terminal inside Multimine, connected to its team of agents through ` +
+    'this `multimine` server. Use list_agents to see the team; message_agent to ask or tell a teammate something ' +
+    '(Mastermind coordinates the team); ask_user for structured questions; request_permission before pushing or ' +
+    'destroying work; show_media for anything you generate. Messages teammates send you reach the user as a banner, ' +
+    'not as your input, so the user decides what to do with them.'
+  )
+}
 
 export interface AppOptions {
   userDataDir: string
@@ -20,26 +37,34 @@ export interface AppOptions {
   emit: (e: MainEvent) => void
   mockScript?: MockScript
   mockDelayMs?: number
+  /** How long the project must be quiet before manual changes go to the Context Handler (default 2 minutes). */
+  manualQuietMs?: number
   /** Skip CLI detection when choosing Mastermind's provider (tests). */
   forceMockMastermind?: boolean
 }
 
 /** The main-process side of the API: owns settings, the open project, the engine and the bus server. */
-export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'mediaUrl'> {
+export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'mediaUrl' | 'ideOpenExternal'> {
   readonly config: AppConfig
   readonly hub = new McpHub()
   readonly providers: ProviderRegistry
   project: ProjectStore | null = null
   engine: Engine | null = null
   private bus: BusServer
+  readonly terminals: Terminals
+  private watcher: ProjectWatcher | null = null
+  private tracker: ManualChangeTracker | null = null
+  private files: ProjectFiles | null = null
 
   constructor(private readonly o: AppOptions) {
     this.config = new AppConfig(o.userDataDir, o.cipher)
     this.providers = new ProviderRegistry(o.mockScript, o.mockDelayMs)
     this.bus = new BusServer((agentId) => {
       const agent = this.project?.get(agentId)
-      return agent && this.engine ? this.engine.coordinationTools(agent) : null
+      if (!agent || !this.engine) return null
+      return { tools: this.engine.coordinationTools(agent), instructions: agent.terminal ? terminalInstructions(agent.name) : undefined }
     })
+    this.terminals = new Terminals(o.emit)
   }
 
   async start(): Promise<void> {
@@ -48,6 +73,9 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
   }
 
   async shutdown(): Promise<void> {
+    this.terminals.closeAll()
+    await this.watcher?.stop()
+    this.tracker?.dispose()
     this.engine?.inbox?.cancelAll('Multimine closed.')
     await this.hub.closeAll()
     await this.bus.stop()
@@ -87,11 +115,17 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     })
     this.emitProject()
     await this.engine.open()
+    await this.startWatching(project.dir)
     await this.config.addRecent(dir)
     this.o.emit({ type: 'settings', settings: this.config.settings })
   }
 
   async closeProject(): Promise<void> {
+    this.terminals.closeAll()
+    await this.watcher?.stop()
+    this.tracker?.dispose()
+    this.watcher = null
+    this.tracker = null
     this.engine?.inbox?.cancelAll('The project was closed.')
     this.project = null
     this.engine = null
@@ -105,6 +139,7 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
 
   async saveAgent(agent: AgentSpec, isNew: boolean): Promise<AgentSpec> {
     const { project, engine } = this.need()
+    if (agent.terminal || project.get(agent.id)?.terminal) throw new Error('A terminal session is not an agent file; close its terminal to remove it.')
     if (isNew) return engine.createAgent(agent, 'user')
     if (!project.get(agent.id)) throw new Error(`No agent ${agent.id}`)
     const saved = await project.saveAgent(agent.id === MASTERMIND_ID ? { ...agent, role: 'mastermind', gated: false } : agent)
@@ -113,6 +148,7 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
   }
 
   async deleteAgent(id: string): Promise<void> {
+    if (this.project?.get(id)?.terminal) throw new Error('Close its terminal to remove a terminal session.')
     await this.need().project.deleteAgent(id)
     this.emitProject()
   }
@@ -217,6 +253,115 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     } catch (e) {
       return { ok: false, tools: [], error: (e as Error).message }
     }
+  }
+
+  // ---------------------------------------------------------------- IDE
+
+  private async startWatching(dir: string): Promise<void> {
+    await this.watcher?.stop()
+    this.tracker?.dispose()
+    this.files = new ProjectFiles(dir)
+    this.tracker = new ManualChangeTracker({
+      quietMs: (this.o.manualQuietMs ?? 120_000),
+      isAgentWriting: () => this.engine?.agentWriting() ?? false,
+      changed: (count, files) => this.o.emit({ type: 'manual-changes', count, files }),
+      flush: (batch) => void this.engine?.manualChanges(batch)
+    })
+    this.watcher = new ProjectWatcher()
+    this.watcher.start(
+      dir,
+      (path, kind) => {
+        this.o.emit({ type: 'file-changed', path, kind })
+        // without a Context Handler there is nobody to tell, so nothing is collected
+        if (this.project?.contextHandler()) this.tracker?.record(path, kind)
+      },
+      () => this.files?.invalidate()
+    )
+  }
+
+  private ide(): ProjectFiles {
+    this.need()
+    return this.files!
+  }
+
+  ideList(dir: string) {
+    return listDir(this.need().project.dir, dir)
+  }
+
+  ideFind(query: string) {
+    return this.ide().findFiles(query)
+  }
+
+  ideGrep(query: string) {
+    return this.ide().grep(query)
+  }
+
+  ideRead(path: string) {
+    return this.ide().read(path)
+  }
+
+  async ideWrite(path: string, text: string): Promise<void> {
+    await this.ide().write(path, text)
+    // a save in the IDE window is the user's, even while an agent happens to be working
+    if (this.project?.contextHandler()) this.tracker?.record(path, 'changed', true)
+  }
+
+  async syncContext(): Promise<boolean> {
+    if (!this.project?.contextHandler()) return false
+    this.tracker?.flushNow()
+    return true
+  }
+
+  async terminalAvailable() {
+    return this.terminals.available()
+  }
+
+  /** A shell in the project root; for `claude`/`codex`, the CLI starts in it as a member of the team. */
+  async terminalOpen(kind: TerminalKind, cols: number, rows: number) {
+    const { project, engine } = this.need()
+    if (kind === 'shell') return this.terminals.open(project.dir, kind, cols, rows, 'Terminal')
+    const label = kind === 'claude' ? 'Claude Code' : 'Codex'
+    const id = project.freeId(`terminal-${kind}`)
+    const agent = {
+      ...roleTemplate('custom', id),
+      id,
+      name: `${label} (terminal)`,
+      provider: kind === 'claude' ? ('claude-cli' as const) : ('codex-cli' as const),
+      model: '',
+      color: kind === 'claude' ? '#f59e0b' : '#10b981',
+      permissions: 'write' as const,
+      terminal: true,
+      purpose: 'A live CLI session in the user terminal.'
+    }
+    project.addVirtual(agent)
+    engine.chats[id] ??= []
+    this.emitProject()
+    const url = this.bus.url(id)
+    let startup: string
+    if (kind === 'claude') {
+      const cfg = join(this.o.userDataDir, `terminal-mcp-${id}.json`)
+      await writeJson(cfg, { mcpServers: { multimine: { type: 'http', url } } })
+      startup = `${this.config.settings.claudePath || 'claude'} --mcp-config ${shellQuote(cfg)}`
+    } else {
+      // codex reads a -c value that is not valid TOML as a plain string, so the URL needs no inner quotes
+      startup = `${this.config.settings.codexPath || 'codex'} -c ${shellQuote(`mcp_servers.multimine.url=${url}`)}`
+    }
+    return this.terminals.open(project.dir, kind, cols, rows, label, startup, id, () => {
+      this.project?.removeVirtual(id)
+      this.emitProject()
+    })
+  }
+
+  async terminalWrite(id: string, data: string) {
+    this.terminals.write(id, data)
+  }
+
+  async terminalResize(id: string, cols: number, rows: number) {
+    this.terminals.resize(id, cols, rows)
+  }
+
+  async terminalClose(id: string) {
+    this.terminals.close(id)
   }
 
   // ---------------------------------------------------------------- git and GitHub

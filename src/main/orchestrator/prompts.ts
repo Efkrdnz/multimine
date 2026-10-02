@@ -24,6 +24,7 @@ function roster(agents: AgentSpec[], self: string): string {
     .map((a) => {
       const you = a.id === self ? ' - **you**' : ''
       const gate = a.gated ? ', gated (needs an approved plan)' : ''
+      if (a.terminal) return `- **${a.name}** (\`${a.id}\`) - a live ${SHORT_PROVIDER[a.provider]} session in the user's terminal, driven by the user: message it, never delegate to it${you}`
       return `- **${a.name}** (\`${a.id}\`) - ${ROLE_LABEL[a.role]}, ${SHORT_PROVIDER[a.provider]} ${a.model}, ${a.permissions}${gate}${you}`
     })
     .join('\n')

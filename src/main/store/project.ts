@@ -1,5 +1,5 @@
 import { mkdir, readdir, rm } from 'node:fs/promises'
-import { basename } from 'node:path'
+import { basename, join } from 'node:path'
 import { parseAgentFile, serializeAgentFile, slugify } from '@shared/agentFile'
 import { MULTIMINE_TEMPLATE, roleTemplate } from '@shared/templates'
 import { MASTERMIND_ID, type AgentSpec, type ProjectInfo } from '@shared/types'
@@ -25,6 +25,8 @@ export class ProjectStore {
     const store = new ProjectStore(dir)
     const p = store.paths
     for (const d of [p.root, p.agents, p.context, p.media, p.sessions]) await mkdir(d, { recursive: true })
+    // agents and the context map belong in the repository; chat logs and generated media do not
+    if ((await readText(join(p.root, '.gitignore'))) == null) await writeAtomic(join(p.root, '.gitignore'), 'sessions/\nmedia/\nlayout.json\n')
     const md = await readText(p.multimineMd)
     if (md == null) await writeAtomic(p.multimineMd, MULTIMINE_TEMPLATE)
     store.multimineMd = md ?? MULTIMINE_TEMPLATE

@@ -7,6 +7,7 @@ import { api, useStore } from '../state/store'
 import { Modal } from './Modal'
 
 const TABS = [
+  ['general', 'Economy & handoffs'],
   ['providers', 'Providers & keys'],
   ['models', 'Models'],
   ['council', 'Council'],
@@ -24,6 +25,92 @@ function CliCard({ name, status, path, onPath }: { name: string; status?: CliSta
       </div>
       {status?.detail && <div className="mt-1 text-xs text-indigo-200/70">{status.detail}</div>}
       <input className="field mt-2 font-mono text-xs" placeholder="Executable path (optional)" defaultValue={path} onBlur={(e) => onPath(e.target.value)} />
+    </div>
+  )
+}
+
+function Toggle({ on, onChange, title, help, testId }: { on: boolean; onChange: (v: boolean) => void; title: string; help: string; testId?: string }) {
+  return (
+    <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-black/20 p-3">
+      <input type="checkbox" className="mt-1" checked={on} onChange={(e) => onChange(e.target.checked)} data-testid={testId} />
+      <span>
+        <span className="text-sm font-semibold">{title}</span>
+        <span className="block text-xs text-indigo-200/70">{help}</span>
+      </span>
+    </label>
+  )
+}
+
+function General({ settings }: { settings: AppSettings }) {
+  const eco = settings.economy
+  const setEco = (patch: Partial<AppSettings['economy']>) => void api().updateSettings({ economy: { ...eco, ...patch } })
+  const tierProviders = PROVIDERS.filter((p) => p !== 'mock')
+  return (
+    <div className="space-y-6">
+      <section className="space-y-2">
+        <div className="label">Economy mode</div>
+        <Toggle
+          on={eco.enabled}
+          onChange={(v) => setEco({ enabled: v })}
+          title="Save tokens"
+          help="The master switch. Also on the top bar. What it does is chosen below."
+          testId="economy-enabled"
+        />
+        <div className={`space-y-2 pl-6 ${eco.enabled ? '' : 'pointer-events-none opacity-40'}`}>
+          <Toggle on={eco.concise} onChange={(v) => setEco({ concise: v })} title="Short answers" help="Every agent is told to answer and report briefly and to read only what it needs." />
+          <Toggle
+            on={eco.downshift}
+            onChange={(v) => setEco({ downshift: v })}
+            title="Cheaper models for easy tasks"
+            help="Mastermind rates each handoff light, standard or heavy. Light and standard tasks run on the cheaper model below for that task only; the agent shows it in amber with a ⚡ and goes back to its own model afterwards. Heavy tasks are never downshifted."
+          />
+          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+            <div className="mb-2 grid grid-cols-[180px_1fr_1fr] gap-2 text-[10px] font-bold uppercase tracking-wider text-indigo-300">
+              <span>Provider</span>
+              <span>Light task model (effort low)</span>
+              <span>Standard task model (effort medium)</span>
+            </div>
+            {tierProviders.map((p) => {
+              const t = eco.tiers[p] ?? {}
+              const put = (k: 'light' | 'standard', v: string) => setEco({ tiers: { ...eco.tiers, [p]: { ...t, [k]: v || undefined } } })
+              const list = settings.catalog[p] ?? DEFAULT_CATALOG[p]
+              return (
+                <div key={p} className="mb-1.5 grid grid-cols-[180px_1fr_1fr] items-center gap-2">
+                  <span className="text-xs">{PROVIDER_LABEL[p].replace(' API key', '')}</span>
+                  {(['light', 'standard'] as const).map((k) => (
+                    <input key={k} className="field !py-1 font-mono text-[11px]" list={`tier-${p}`} placeholder="keep agent's model" defaultValue={t[k] ?? ''} onBlur={(e) => put(k, e.target.value.trim())} />
+                  ))}
+                  <datalist id={`tier-${p}`}>
+                    {list.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </datalist>
+                </div>
+              )
+            })}
+            <div className="mt-1 text-[11px] text-indigo-300/60">Blank keeps the agent's model and only lowers its effort.</div>
+          </div>
+        </div>
+      </section>
+      <section>
+        <div className="label">Handoffs</div>
+        <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/20 p-3 text-sm">
+          <span className="flex-1">
+            Wait this many minutes for a delegated task before handing the caller its turn back
+            <span className="block text-xs text-indigo-200/70">After that the report arrives as a new message, so long jobs (builds, implementations) never time out.</span>
+          </span>
+          <input
+            className="field !w-20 text-center"
+            type="number"
+            min={1}
+            max={50}
+            defaultValue={settings.handoffWaitMinutes}
+            onBlur={(e) => void api().updateSettings({ handoffWaitMinutes: Math.max(1, Math.min(50, Number(e.target.value) || 10)) })}
+          />
+        </div>
+      </section>
     </div>
   )
 }
@@ -234,11 +321,22 @@ function Council({ settings }: { settings: AppSettings }) {
 
 const BLANK: McpServerConfig = { id: '', name: '', transport: 'http', url: '', headers: {}, command: '', args: [], env: {} }
 
-/** Name-only starters: each vendor documents its own MCP command or URL, which the user pastes in. */
-const PRESETS: { name: string; hint: string }[] = [
-  { name: 'Higgsfield', hint: 'Image & video generation. Paste the MCP URL or command from your Higgsfield account.' },
-  { name: 'Meshy', hint: '3D model generation. Paste Meshy\'s MCP command or URL and your API key.' },
-  { name: 'WaveSpeed', hint: 'Fast image/video models. Paste WaveSpeed\'s MCP command or URL and your key.' }
+/**
+ * Starters for the generation services. Meshy and WaveSpeed publish MCP servers (npm and PyPI);
+ * paste your key into the env. Higgsfield has no published server here, so it is name-only.
+ */
+const PRESETS: { name: string; hint: string; cfg: Partial<McpServerConfig> }[] = [
+  {
+    name: 'Meshy',
+    hint: '3D models (text/image to 3D). Needs Node. Key from meshy.ai/settings/api.',
+    cfg: { id: 'meshy', transport: 'stdio', command: 'npx', args: ['-y', '@meshy-ai/meshy-mcp-server'], env: { MESHY_API_KEY: '' } }
+  },
+  {
+    name: 'WaveSpeed',
+    hint: 'Images and video. Needs uv (pip install uv) or pip install wavespeed-mcp. Key from wavespeed.ai.',
+    cfg: { id: 'wavespeed', transport: 'stdio', command: 'uvx', args: ['wavespeed-mcp'], env: { WAVESPEED_API_KEY: '' } }
+  },
+  { name: 'Higgsfield', hint: 'Image & video. Paste the MCP URL or command from your Higgsfield account.', cfg: { id: 'higgsfield' } }
 ]
 
 function kv(text: string): Record<string, string> {
@@ -250,6 +348,29 @@ function kv(text: string): Record<string, string> {
   return out
 }
 const unkv = (r?: Record<string, string>) => Object.entries(r ?? {}).map(([k, v]) => `${k}=${v}`).join('\n')
+
+/** Which agents may use a server, toggled straight from its card. */
+function AgentChips({ server }: { server: string }) {
+  const agents = useStore((s) => s.project?.agents)
+  if (!agents) return null
+  return (
+    <div className="flex max-w-[320px] flex-wrap justify-end gap-1">
+      {agents.map((a) => {
+        const on = a.mcp.includes(server)
+        return (
+          <button
+            key={a.id}
+            className={`rounded-full border px-2 py-0.5 text-[10px] ${on ? 'border-cyan-400 bg-cyan-500/20 text-cyan-50' : 'border-white/10 text-indigo-300/70 hover:border-white/25'}`}
+            title={on ? `${a.name} can use this server` : `Let ${a.name} use this server`}
+            onClick={() => void api().saveAgent({ ...a, mcp: on ? a.mcp.filter((x) => x !== server) : [...a.mcp, server] }, false)}
+          >
+            {a.name}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
 
 function Mcp({ settings }: { settings: AppSettings }) {
   const [edit, setEdit] = useState<McpServerConfig | null>(null)
@@ -346,6 +467,7 @@ function Mcp({ settings }: { settings: AppSettings }) {
               <div className="text-sm font-semibold">{s.name}</div>
               <div className="font-mono text-[11px] text-indigo-300/70">{s.transport === 'http' ? s.url : `${s.command} ${(s.args ?? []).join(' ')}`}</div>
             </div>
+            <AgentChips server={s.id} />
             <button className="btn !py-1" onClick={() => setEdit(s)}>
               Edit
             </button>
@@ -360,19 +482,19 @@ function Mcp({ settings }: { settings: AppSettings }) {
           <Plus size={13} /> Add server
         </button>
         {PRESETS.map((p) => (
-          <button key={p.name} className="btn" title={p.hint} onClick={() => setEdit({ ...BLANK, name: p.name })}>
+          <button key={p.name} className="btn" title={p.hint} onClick={() => setEdit({ ...BLANK, ...p.cfg, name: p.name })}>
             <Plus size={13} /> {p.name}
           </button>
         ))}
       </div>
-      <p className="text-[11px] text-indigo-300/50">The named buttons only fill in the name: take the command or URL from each vendor's current MCP instructions.</p>
+      <p className="text-[11px] text-indigo-300/50">Meshy and WaveSpeed fill in their published servers - add your key under Environment. Higgsfield fills in only the name.</p>
     </div>
   )
 }
 
 export function SettingsModal({ initialTab }: { initialTab?: string }) {
   const settings = useStore((s) => s.settings)
-  const [tab, setTab] = useState<Tab>((TABS.find((t) => t[0] === initialTab)?.[0] ?? 'providers') as Tab)
+  const [tab, setTab] = useState<Tab>((TABS.find((t) => t[0] === initialTab)?.[0] ?? 'general') as Tab)
   if (!settings) return null
   return (
     <Modal title="Settings" onClose={() => useStore.getState().set({ modal: null })}>
@@ -384,6 +506,7 @@ export function SettingsModal({ initialTab }: { initialTab?: string }) {
         ))}
       </div>
       <div className="scroll-thin min-h-[60vh] overflow-y-auto p-5">
+        {tab === 'general' && <General settings={settings} />}
         {tab === 'providers' && <Providers settings={settings} />}
         {tab === 'models' && <Models settings={settings} />}
         {tab === 'council' && <Council settings={settings} />}

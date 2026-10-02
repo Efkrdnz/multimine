@@ -34,8 +34,8 @@ export class Inbox {
     return this.add({ id: newId('q'), ts: Date.now(), kind: 'question', askedBy, title, questions, status: 'pending' })
   }
 
-  approval(askedBy: string, title: string, planMd: string): Promise<InboxItem> {
-    return this.add({ id: newId('a'), ts: Date.now(), kind: 'approval', askedBy, title, planMd, status: 'pending' })
+  approval(askedBy: string, title: string, planMd: string, permission = false): Promise<InboxItem> {
+    return this.add({ id: newId('a'), ts: Date.now(), kind: 'approval', askedBy, title, planMd, status: 'pending', permission })
   }
 
   /** Records an item that was settled on the spot (automation), for the log. */

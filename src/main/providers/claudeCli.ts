@@ -65,16 +65,21 @@ export class ClaudeCliProvider implements ProviderAdapter {
           ? { behavior: 'allow', updatedInput: input }
           : { behavior: 'deny', message: `The plan was not approved.${verdict.note ? ` Feedback: ${verdict.note}` : ''} Revise it.` }
       }
-      if (name.startsWith('mcp__')) return { behavior: 'allow', updatedInput: input }
+      if (name.startsWith('mcp__multimine__')) return { behavior: 'allow', updatedInput: input }
       if (name === 'Bash') {
         const cmd = String(input.command ?? '')
         if (agent.permissions !== 'write' && !readOnlyCommand(cmd)) return { behavior: 'deny', message: 'This agent is read-only; that command changes things.' }
         const stop = hardStop(cmd)
-        if (stop && !(await req.approveAction(stop, cmd))) return { behavior: 'deny', message: `The user did not allow: ${stop}` }
-        return { behavior: 'allow', updatedInput: input }
+        // a hard stop always asks; anything else asks only when auto-approve is off
+        const ok = readOnlyCommand(cmd) && !stop ? true : await req.approveAction(stop ?? `run: ${cmd.slice(0, 60)}`, cmd, !!stop)
+        return ok ? { behavior: 'allow', updatedInput: input } : { behavior: 'deny', message: `The user did not allow: ${stop ?? cmd}` }
       }
       if (disallowed.includes(name)) return { behavior: 'deny', message: `This agent's permissions (${agent.permissions}) do not allow ${name}.` }
-      return { behavior: 'allow', updatedInput: input }
+      if (READ_TOOLS.includes(name)) return { behavior: 'allow', updatedInput: input }
+      const detail = String(input.file_path ?? input.url ?? input.path ?? JSON.stringify(input).slice(0, 400))
+      return (await req.approveAction(`${name.replace(/^mcp__/, '')} ${detail}`.slice(0, 90), JSON.stringify(input, null, 2).slice(0, 1500)))
+        ? { behavior: 'allow', updatedInput: input }
+        : { behavior: 'deny', message: `The user did not allow ${name}.` }
     }
 
     let stream
@@ -88,10 +93,11 @@ export class ClaudeCliProvider implements ProviderAdapter {
           systemPrompt: { type: 'preset', preset: 'claude_code', append: req.system },
           resume: req.resumeId,
           includePartialMessages: true,
-          permissionMode: agent.planMode ? 'plan' : agent.permissions === 'write' ? 'acceptEdits' : 'default',
+          // auto-approved writers skip edit prompts; otherwise every prompt reaches canUseTool and the user
+          permissionMode: agent.planMode ? 'plan' : agent.permissions === 'write' && agent.autoApprove ? 'acceptEdits' : 'default',
           canUseTool,
           disallowedTools: disallowed,
-          allowedTools: Object.keys(mcpServers).map((k) => `mcp__${k}`),
+          allowedTools: agent.autoApprove ? Object.keys(mcpServers).map((k) => `mcp__${k}`) : ['mcp__multimine'],
           mcpServers,
           settingSources: ['user', 'project', 'local'],
           abortController: abort,

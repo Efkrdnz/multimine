@@ -37,7 +37,15 @@ function ChatPanel({ agentId }: { agentId: string }) {
         <div className="min-w-0 flex-1">
           <div className="truncate font-display text-[15px] font-bold">{agent.name}</div>
           <div className="truncate text-[11px] text-indigo-300/80">
-            {ROLE_LABEL[agent.role]} · {agent.provider === 'mock' ? '' : `${SHORT_PROVIDER[agent.provider]} `}{modelLabel(catalog, agent.provider, agent.model)} · {agent.effort} · <span className={st?.status === 'error' ? 'text-red-300' : st?.status === 'waiting' ? 'text-amber-300' : ''}>{st?.activity || STATUS_TEXT[st?.status ?? 'idle']}</span>
+            {ROLE_LABEL[agent.role]} · {agent.provider === 'mock' ? '' : `${SHORT_PROVIDER[agent.provider]} `}
+            {st?.temp ? (
+              <span className="rounded bg-amber-400/20 px-1 font-semibold text-amber-200" title={`Economy mode: this ${st.temp.difficulty} task runs on a cheaper model. ${agent.name} goes back to ${modelLabel(catalog, agent.provider, agent.model)} · ${agent.effort} afterwards.`}>
+                ⚡ {modelLabel(catalog, agent.provider, st.temp.model)} · {st.temp.effort} (this task)
+              </span>
+            ) : (
+              `${modelLabel(catalog, agent.provider, agent.model)} · ${agent.effort}`
+            )}{' '}
+            · <span className={st?.status === 'error' ? 'text-red-300' : st?.status === 'waiting' ? 'text-amber-300' : ''}>{st?.activity || STATUS_TEXT[st?.status ?? 'idle']}</span>
           </div>
         </div>
         <button className="btn btn-ghost !p-1.5" title="Edit agent" onClick={() => useStore.getState().set({ modal: { kind: 'agent', agent, isNew: false } })}>

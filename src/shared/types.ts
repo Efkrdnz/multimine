@@ -29,6 +29,7 @@ export type Role =
   | 'designer'
   | 'brainstormer'
   | 'context-handler'
+  | 'asset-creator'
   | 'critic'
   | 'custom'
 
@@ -48,6 +49,11 @@ export interface AgentSpec {
   gated: boolean
   /** Claude CLI only: start every turn in plan mode. */
   planMode: boolean
+  /**
+   * Say yes to every permission prompt this agent raises. Pushing, publishing and destroying
+   * history still ask (as a balloon over the agent). Off: every prompt asks.
+   */
+  autoApprove: boolean
   /** The purpose prompt: the markdown body of the agent file. */
   purpose: string
 }
@@ -116,6 +122,13 @@ export interface BusEvent {
   summary: string
 }
 
+/** A conversation in progress: `to` is working on something `from` handed it, or `from` waits on `to`. */
+export interface Channel {
+  from: string
+  to: string
+  kind: BusKind
+}
+
 export interface QuestionOption {
   label: string
   description?: string
@@ -143,6 +156,8 @@ export interface InboxItem {
   note?: string
   /** Why Mastermind answered on the user's behalf. */
   autoReason?: string
+  /** A quick allow/deny for one action (a command, a push), shown as a balloon over the agent. */
+  permission?: boolean
 }
 
 export interface SessionMeta {
@@ -179,8 +194,22 @@ export interface ModelEntry {
   label: string
 }
 
+export interface EconomySettings {
+  /** The master switch for saving tokens. */
+  enabled: boolean
+  /** Tell every agent to keep answers and reports short. */
+  concise: boolean
+  /** Let Mastermind run light and standard tasks on a cheaper model, for that task only. */
+  downshift: boolean
+  /** Per provider: the model a light and a standard task run on. */
+  tiers: Partial<Record<ProviderKind, { light?: string; standard?: string }>>
+}
+
 export interface AppSettings {
   automation: boolean
+  economy: EconomySettings
+  /** How long a handoff blocks its caller before the report is delivered later instead. */
+  handoffWaitMinutes: number
   council: CouncilConfig
   /** Provider -> base URL override (compatible, openrouter, ollama...). */
   baseUrls: Partial<Record<ProviderKind, string>>
@@ -205,6 +234,47 @@ export interface ProjectInfo {
   layout: Record<string, { x: number; y: number }>
 }
 
+export interface GitFile {
+  path: string
+  /** The old path of a rename. */
+  from?: string
+  /** Porcelain status letters: index (staged side) and worktree. */
+  index: string
+  worktree: string
+  staged: boolean
+  untracked: boolean
+}
+
+export interface GitStatus {
+  isRepo: boolean
+  branch: string
+  upstream?: string
+  ahead: number
+  behind: number
+  remote?: string
+  files: GitFile[]
+}
+
+export interface GitCommit {
+  hash: string
+  short: string
+  author: string
+  when: string
+  subject: string
+}
+
+export interface GhItem {
+  number: number
+  title: string
+  url: string
+  author: string
+  updated: string
+  head?: string
+  base?: string
+  draft: boolean
+  labels: string[]
+}
+
 export interface CliStatus {
   installed: boolean
   version?: string
@@ -218,9 +288,10 @@ export type MainEvent =
   | { type: 'sessions'; sessions: SessionMeta[]; active: string | null }
   | { type: 'chat-reset'; chats: Record<string, ChatMessage[]> }
   | { type: 'chat-upsert'; message: ChatMessage }
-  | { type: 'status'; agentId: string; status: AgentStatus; activity?: string }
+  | { type: 'status'; agentId: string; status: AgentStatus; activity?: string; temp?: { model: string; effort: Effort; difficulty: string } }
   | { type: 'talk'; agentId: string }
   | { type: 'bus'; event: BusEvent }
+  | { type: 'channels'; channels: Channel[] }
   | { type: 'bus-reset'; events: BusEvent[] }
   | { type: 'inbox'; items: InboxItem[] }
   | { type: 'media'; items: MediaItem[] }

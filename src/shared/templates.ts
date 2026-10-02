@@ -8,6 +8,7 @@ import designer from '../../templates/agents/designer.md?raw'
 import brainstormer from '../../templates/agents/brainstormer.md?raw'
 import contextHandler from '../../templates/agents/context-handler.md?raw'
 import critic from '../../templates/agents/critic.md?raw'
+import assetCreator from '../../templates/agents/asset-creator.md?raw'
 
 export const MULTIMINE_TEMPLATE = multimineMd
 
@@ -18,6 +19,7 @@ const RAW: Record<Exclude<Role, 'custom'>, string> = {
   designer,
   brainstormer,
   'context-handler': contextHandler,
+  'asset-creator': assetCreator,
   critic
 }
 
@@ -36,6 +38,7 @@ export function roleTemplate(role: Role, id = role as string): AgentSpec {
       mcp: [],
       gated: false,
       planMode: false,
+      autoApprove: true,
       purpose: 'Describe what this agent is for, what it receives, and what it must report back.\n'
     }
   }
@@ -49,8 +52,9 @@ export const ROLE_LABEL: Record<Role, string> = {
   designer: 'Designer',
   brainstormer: 'Brainstormer',
   'context-handler': 'Context Handler',
+  'asset-creator': 'Asset Creator',
   critic: 'Critic',
   custom: 'Custom'
 }
 
-export const CREATABLE_ROLES: Role[] = ['planner', 'implementer', 'designer', 'brainstormer', 'context-handler', 'critic', 'custom']
+export const CREATABLE_ROLES: Role[] = ['planner', 'implementer', 'designer', 'brainstormer', 'context-handler', 'asset-creator', 'critic', 'custom']

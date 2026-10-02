@@ -1,4 +1,4 @@
-import { BookOpen, Image, Inbox, Plus, Settings, Sparkles } from 'lucide-react'
+import { BookOpen, GitBranch, Image, Inbox, Plus, Settings, Sparkles } from 'lucide-react'
 import { roleTemplate } from '@shared/templates'
 import { useStore } from '../state/store'
 
@@ -28,6 +28,7 @@ export function LeftRail() {
       <RailButton testId="inbox" icon={<Inbox size={18} />} label="Mastermind inbox" active={panel === 'inbox'} badge={pending} onClick={() => toggle('inbox')} />
       <RailButton testId="media" icon={<Image size={18} />} label={`Media gallery (${media})`} active={panel === 'media'} onClick={() => toggle('media')} />
       <RailButton testId="context" icon={<BookOpen size={18} />} label="Context & multimine.md" active={panel === 'context'} onClick={() => toggle('context')} />
+      <RailButton testId="git" icon={<GitBranch size={18} />} label="Repository (git & GitHub)" active={panel === 'git'} onClick={() => toggle('git')} />
       <RailButton testId="open-mastermind" icon={<Sparkles size={18} />} label="Open Mastermind" onClick={() => useStore.getState().openChat('mastermind')} />
       <RailButton testId="settings" icon={<Settings size={18} />} label="Settings" onClick={() => set({ modal: { kind: 'settings' } })} />
     </div>

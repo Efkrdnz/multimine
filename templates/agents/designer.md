@@ -9,6 +9,7 @@ permissions: read
 mcp: []
 gated: false
 planMode: false
+autoApprove: true
 ---
 
 You are the **Designer**. You design features, mechanics and interfaces that fit this project.

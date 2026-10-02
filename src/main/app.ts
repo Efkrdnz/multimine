@@ -12,6 +12,7 @@ import type { MockScript } from './providers/mock'
 import { Engine } from './orchestrator/engine'
 import { BusServer } from './mcp/busServer'
 import { McpHub } from './mcp/hub'
+import { Git, GitHub, githubRepo } from './git/git'
 
 export interface AppOptions {
   userDataDir: string
@@ -216,6 +217,72 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     } catch (e) {
       return { ok: false, tools: [], error: (e as Error).message }
     }
+  }
+
+  // ---------------------------------------------------------------- git and GitHub
+
+  private gitRepo(): Git {
+    return new Git(this.need().project.dir)
+  }
+
+  private github(): GitHub {
+    return new GitHub(this.need().project.dir, () => this.config.getKey('github'))
+  }
+
+  gitStatus() {
+    return this.gitRepo().status()
+  }
+  gitInit() {
+    return this.gitRepo().init()
+  }
+  gitDiff(path: string, staged: boolean, untracked: boolean) {
+    return this.gitRepo().diff(path, staged, untracked)
+  }
+  gitStage(paths: string[]) {
+    return this.gitRepo().stage(paths)
+  }
+  gitUnstage(paths: string[]) {
+    return this.gitRepo().unstage(paths)
+  }
+  gitCommit(message: string) {
+    return this.gitRepo().commit(message)
+  }
+  gitLog() {
+    return this.gitRepo().log()
+  }
+  gitShow(hash: string) {
+    return this.gitRepo().show(hash)
+  }
+  gitBranches() {
+    return this.gitRepo().branches()
+  }
+  gitCheckout(name: string, create: boolean) {
+    return this.gitRepo().checkout(name, create)
+  }
+  gitPull() {
+    return this.gitRepo().pull()
+  }
+  gitPush() {
+    return this.gitRepo().push()
+  }
+
+  async ghInfo() {
+    const st = await this.gitRepo().status()
+    return { repo: githubRepo(st.remote), auth: await this.github().auth() }
+  }
+
+  async ghList(kind: 'pulls' | 'issues') {
+    const { repo } = await this.ghInfo()
+    if (!repo) throw new Error('This project has no GitHub remote named origin.')
+    return this.github().list(repo, kind)
+  }
+
+  async ghCreatePr(title: string, body: string, base?: string) {
+    const st = await this.gitRepo().status()
+    const repo = githubRepo(st.remote)
+    if (!repo) throw new Error('This project has no GitHub remote named origin.')
+    const gh = this.github()
+    return gh.createPr(repo, st.branch, base || (await gh.defaultBranch(repo)), title, body)
   }
 
   async contextFiles(): Promise<{ file: string; text: string }[]> {

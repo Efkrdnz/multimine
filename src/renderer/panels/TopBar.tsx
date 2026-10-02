@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Bot, ChevronDown, Copy, FolderOpen, Pencil, Plus, Trash2, Zap } from 'lucide-react'
+import { Bot, ChevronDown, Copy, FolderOpen, Leaf, Pencil, Plus, Trash2, Zap } from 'lucide-react'
 import { api, useStore } from '../state/store'
 
 function fmt(n: number): string {
@@ -79,6 +79,14 @@ export function TopBar() {
       <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 font-mono text-[11px] text-indigo-200" title="Tokens used this session">
         <Bot size={13} /> {fmt(usage.inputTokens)} in · {fmt(usage.outputTokens)} out{usage.costUsd ? ` · $${usage.costUsd.toFixed(2)}` : ''}
       </div>
+      <button
+        className={`btn ${settings?.economy.enabled ? 'border-emerald-400/60 bg-emerald-500/20 text-emerald-100' : ''}`}
+        onClick={() => settings && void api().updateSettings({ economy: { ...settings.economy, enabled: !settings.economy.enabled } })}
+        title="Economy mode: short answers and cheaper models for easy tasks (configure in Settings)"
+        data-testid="economy"
+      >
+        <Leaf size={14} /> Economy {settings?.economy.enabled ? 'ON' : 'off'}
+      </button>
       <button className={`btn ${automation ? 'automation-on text-white' : ''}`} onClick={toggleAutomation} data-testid="automation" title="When on, Mastermind answers questions and approves plans for you">
         <Zap size={14} /> Automation {automation ? 'ON' : 'off'}
       </button>

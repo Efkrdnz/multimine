@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { serializeAgentFile } from '@shared/agentFile'
 import { newId } from '@shared/ids'
 import { roleTemplate } from '@shared/templates'
+import { CONCISE_RULES, DIFFICULTIES, DIFFICULTY_RULES, downshift, type Difficulty, type TempModel } from '@shared/economy'
 import {
   EFFORTS,
   MASTERMIND_ID,
@@ -14,6 +15,7 @@ import {
   type AgentStatus,
   type BusEvent,
   type BusKind,
+  type Channel,
   type ChatMessage,
   type InboxItem,
   type MainEvent,
@@ -66,8 +68,17 @@ export interface TurnResult {
   error?: string
 }
 
-const ROLES: Role[] = ['planner', 'implementer', 'designer', 'brainstormer', 'context-handler', 'critic', 'custom']
+const ROLES: Role[] = ['planner', 'implementer', 'designer', 'brainstormer', 'context-handler', 'asset-creator', 'critic', 'custom']
 const text = (t: string, isError = false): ToolOutput => ({ text: t, isError })
+
+/**
+ * Tool output as the chat shows it. The model already has the whole thing; the window only needs
+ * the start and the end, and a long run of builds would otherwise ship megabytes on every update.
+ */
+const CLIP = 4000
+export function clip(out: string): string {
+  return out.length <= CLIP ? out : `${out.slice(0, CLIP * 0.6)}\n\n... ${out.length - CLIP} characters not shown ...\n\n${out.slice(-CLIP * 0.4)}`
+}
 
 /**
  * Runs the team: one serial turn queue per agent, the bus between them, the inbox, the approval
@@ -84,6 +95,8 @@ export class Engine {
   private turns = new Map<string, TurnContext>()
   private waits = new Map<string, string>()
   private controllers = new Map<string, AbortController>()
+  /** Agents running their current task on a cheaper model than their own (economy mode). */
+  private temps = new Map<string, TempModel>()
   private flushTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private totals: Usage = { inputTokens: 0, outputTokens: 0, costUsd: 0 }
   private mediaStore: MediaStore
@@ -115,6 +128,7 @@ export class Engine {
     this.inbox = new Inbox(saved, (items) => {
       void this.d.sessions.saveInbox(this.session.id, items)
       this.d.emit({ type: 'inbox', items })
+      this.emitChannels()
     })
     void this.d.sessions.saveInbox(meta.id, this.inbox.items)
     this.totals = { inputTokens: 0, outputTokens: 0, costUsd: 0 }
@@ -152,7 +166,24 @@ export class Engine {
 
   private setStatus(agentId: string, status: AgentStatus, activity?: string): void {
     this.status.set(agentId, status)
-    this.d.emit({ type: 'status', agentId, status, activity })
+    this.d.emit({ type: 'status', agentId, status, activity, temp: this.temps.get(agentId) })
+  }
+
+  /**
+   * The conversations happening right now, for the scene to keep lit: every turn another agent
+   * asked for, and every agent waiting on the user (drawn to Mastermind, who carries the question).
+   */
+  channels(): Channel[] {
+    const out: Channel[] = []
+    for (const [agentId, ctx] of this.turns)
+      if (ctx.from !== 'user' && ctx.from !== agentId) out.push({ from: ctx.from, to: agentId, kind: ctx.kind })
+    for (const item of this.inbox?.pending() ?? [])
+      if (item.askedBy !== MASTERMIND_ID) out.push({ from: item.askedBy, to: MASTERMIND_ID, kind: item.kind === 'question' ? 'question' : 'approval' })
+    return out
+  }
+
+  private emitChannels(): void {
+    this.d.emit({ type: 'channels', channels: this.channels() })
   }
 
   busy(agentId: string): boolean {
@@ -160,18 +191,18 @@ export class Engine {
   }
 
   /** Queues a turn for an agent. Turns of one agent never overlap; different agents run in parallel. */
-  send(agentId: string, body: string, from = 'user', kind: BusKind = 'message'): Promise<TurnResult> {
+  send(agentId: string, body: string, from = 'user', kind: BusKind = 'message', temp?: TempModel | null): Promise<TurnResult> {
     // the incoming message is shown at once, even while the agent is still busy with an earlier turn
     const agent = this.d.project.get(agentId)
     const fromName = from === 'user' ? 'user' : (this.d.project.get(from)?.name ?? from)
-    const prompt = from === 'user' ? body : inboundPrompt(fromName, kind === 'delegate' ? 'delegate' : kind === 'context' ? 'context' : 'message', body)
+    const prompt = from === 'user' ? body : inboundPrompt(fromName, kind === 'delegate' || kind === 'context' || kind === 'report' ? kind : 'message', body)
     const userMsg: ChatMessage = { id: newId('u'), agentId, role: 'user', from, text: prompt, ts: Date.now() }
     if (agent) {
       this.upsert(userMsg, true)
       void this.persist(userMsg)
     }
     const prev = this.queues.get(agentId) ?? Promise.resolve()
-    const next = prev.then(() => this.runTurn(agentId, userMsg, kind))
+    const next = prev.then(() => this.runTurn(agentId, userMsg, kind, temp ?? undefined))
     this.queues.set(
       agentId,
       next.catch(() => undefined)
@@ -229,7 +260,7 @@ export class Engine {
         this.flushTimers.delete(key)
         const latest = this.chats[msg.agentId]?.find((m) => m.id === key)
         if (latest) this.d.emit({ type: 'chat-upsert', message: { ...latest, tools: latest.tools?.map((t) => ({ ...t })) } })
-      }, 40)
+      }, 90)
     )
   }
 
@@ -257,9 +288,13 @@ export class Engine {
     await this.d.sessions.save(this.session)
   }
 
-  private async runTurn(agentId: string, userMsg: ChatMessage, kind: BusKind): Promise<TurnResult> {
-    const agent = this.d.project.get(agentId)
-    if (!agent) return { text: '', reports: [], error: `No agent ${agentId}` }
+  private async runTurn(agentId: string, userMsg: ChatMessage, kind: BusKind, temp?: TempModel): Promise<TurnResult> {
+    const own = this.d.project.get(agentId)
+    if (!own) return { text: '', reports: [], error: `No agent ${agentId}` }
+    // a downshifted task runs on the cheaper model for this turn only; the agent file is untouched
+    const agent: AgentSpec = temp ? { ...own, model: temp.model, effort: temp.effort } : own
+    if (temp) this.temps.set(agentId, temp)
+    else this.temps.delete(agentId)
     const sessionId = this.session.id
     const from = userMsg.from
     const prompt = userMsg.text
@@ -267,6 +302,7 @@ export class Engine {
 
     const ctx: TurnContext = { from, kind, reports: [] }
     this.turns.set(agentId, ctx)
+    this.emitChannels()
     const ctl = new AbortController()
     this.controllers.set(agentId, ctl)
     this.setStatus(agentId, 'thinking')
@@ -301,7 +337,7 @@ export class Engine {
         signal: ctl.signal,
         ask: (qs) => this.askUser(agent.id, qs).then((item) => item.answers ?? {}),
         approvePlan: (plan) => this.requestApproval(agent.id, `${agent.name} wants to leave plan mode`, plan).then((i) => ({ approved: !!i.approved, note: i.note })),
-        approveAction: (title, detail) => this.approveAction(agent.id, title, detail)
+        approveAction: (title, detail, always) => this.approveAction(agent.id, title, detail, always)
       }
       for await (const ev of this.d.providers.get(agent.provider).run(req)) {
         if (sessionId !== this.session.id) break
@@ -321,7 +357,7 @@ export class Engine {
             break
           case 'tool-end': {
             const t = reply.tools!.find((x) => x.id === ev.id)
-            if (t) Object.assign(t, { output: ev.output.slice(0, 20_000), status: ev.isError ? 'error' : 'done' })
+            if (t) Object.assign(t, { output: clip(ev.output), status: ev.isError ? 'error' : 'done' })
             if (isCli && t && !t.name.includes('multimine')) void this.captureFromText(agent.id, ev.output, t.name)
             break
           }
@@ -346,6 +382,8 @@ export class Engine {
     } finally {
       this.turns.delete(agentId)
       this.controllers.delete(agentId)
+      this.temps.delete(agentId)
+      this.emitChannels()
     }
     if (ctl.signal.aborted && !error) error = 'Stopped.'
     reply.streaming = false
@@ -373,7 +411,11 @@ export class Engine {
   }
 
   systemPrompt(agent: AgentSpec): string {
-    return buildSystemPrompt({
+    const eco = this.d.config.settings.economy
+    const extra = [eco.enabled && eco.concise ? CONCISE_RULES : '', eco.enabled && eco.downshift && agent.id === MASTERMIND_ID ? DIFFICULTY_RULES : '']
+      .filter(Boolean)
+      .join('\n\n')
+    const base = buildSystemPrompt({
       agent,
       agents: this.d.project.list(),
       projectDir: this.d.project.dir,
@@ -381,6 +423,7 @@ export class Engine {
       hasContextHandler: !!this.d.project.contextHandler(),
       automation: this.d.config.settings.automation
     })
+    return extra ? `${base}\n\n${extra}` : base
   }
 
   // ---------------------------------------------------------------- bus
@@ -407,26 +450,52 @@ export class Engine {
   }
 
   /** One agent hands something to another and (optionally) waits for the answer. */
-  async relay(from: string, toRef: string, body: string, kind: BusKind, wait: boolean): Promise<ToolOutput> {
+  async relay(from: string, toRef: string, body: string, kind: BusKind, wait: boolean, difficulty?: Difficulty): Promise<ToolOutput> {
     const target = this.d.project.find(toRef)
     if (!target) return text(`No agent "${toRef}". Use list_agents.`, true)
     if (wait && this.wouldDeadlock(from, target.id)) return text(`${target.name} is waiting on you; waiting back would deadlock. Use report, or message without waiting.`, true)
     await this.logBus(kind, from, target.id, body)
+    const temp = downshift(target, difficulty, this.d.config.settings.economy)
     if (!wait) {
-      void this.send(target.id, body, from, kind)
+      void this.send(target.id, body, from, kind, temp)
       return text(`Sent to ${target.name}. Not waiting for a reply.`)
     }
     this.waits.set(from, target.id)
     const prev = this.status.get(from)
     this.setStatus(from, 'working', `waiting for ${target.name}`)
+    // Wait a while, never forever: a long job (an implementation, a build) would otherwise outlive the
+    // caller's tool-call timeout and its report would have nowhere to go. Past the cap the caller gets
+    // its turn back and the report arrives later as a message of its own.
+    const capMs = Math.max(0.001, this.d.config.settings.handoffWaitMinutes ?? 10) * 60_000
+    const run = this.send(target.id, body, from, kind, temp)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const capped = new Promise<null>((resolve) => (timer = setTimeout(() => resolve(null), capMs)))
     try {
-      const res = await this.send(target.id, body, from, kind)
+      const res = await Promise.race([run, capped])
+      if (res === null) {
+        void run.then((late) => this.deliverLate(from, target.id, late))
+        const mins = Math.round(capMs / 60_000) || '<1'
+        return text(
+          `${target.name} is still working after ${mins} min. Its report will be delivered to you as a new message when it finishes - ` +
+            'do not wait or poll for it. End this turn now with a short status for the user.'
+        )
+      }
       await this.logBus(res.reports.length ? 'report' : 'message', target.id, from, res.text || res.error || '(no reply)')
       return text(`${target.name} replied${res.error ? ` (with error: ${res.error})` : ''}:\n\n${res.text || '(no text)'}`, !!res.error && !res.text)
     } finally {
+      clearTimeout(timer)
       this.waits.delete(from)
       if (this.turns.has(from)) this.setStatus(from, prev === 'thinking' ? 'thinking' : 'working')
     }
+  }
+
+  /** A report that came back after its caller stopped waiting: handed over as a fresh turn. */
+  private async deliverLate(to: string, fromId: string, res: TurnResult): Promise<void> {
+    const name = this.d.project.get(fromId)?.name ?? fromId
+    await this.logBus('report', fromId, to, res.text || res.error || '(no reply)')
+    if (to === 'user' || !this.d.project.get(to)) return
+    const body = `${name} finished the task you handed over earlier${res.error ? ` (with error: ${res.error})` : ''}:\n\n${res.text || '(no text)'}`
+    await this.send(to, body, fromId, 'report')
   }
 
   // ---------------------------------------------------------------- user in the loop
@@ -464,12 +533,18 @@ export class Engine {
     return item
   }
 
-  /** Hard stops (git push, recursive delete...) always wait for the user, automation or not. */
-  async approveAction(askedBy: string, title: string, detail: string): Promise<boolean> {
+  /**
+   * One action an agent wants to take. Auto-approved agents get a yes at once, except for the hard
+   * stops (git push, recursive delete...), which wait for the user whatever the settings say.
+   */
+  async approveAction(askedBy: string, title: string, detail: string, always = false): Promise<boolean> {
+    const agent = this.d.project.get(askedBy)
+    if (!always && agent?.autoApprove) return true
     await this.logBus('approval', askedBy, 'user', `Allow ${title}?`)
     const prev = this.status.get(askedBy)
     this.setStatus(askedBy, 'waiting', `allow ${title}?`)
-    const item = await this.inbox.approval(askedBy, `Allow ${title}?`, `\`\`\`\n${detail}\n\`\`\`\n\nThis always needs you, even in automation mode.`)
+    const note = always ? 'This always needs you, even with auto-approve or automation on.' : `${agent?.name ?? askedBy} has auto-approve off.`
+    const item = await this.inbox.approval(askedBy, title, `\`\`\`\n${detail}\n\`\`\`\n\n${note}`, true)
     this.setStatus(askedBy, prev && prev !== 'waiting' ? prev : 'working')
     return !!item.approved
   }
@@ -587,7 +662,7 @@ export class Engine {
   async toolsFor(agent: AgentSpec, cli: boolean): Promise<ToolDef[]> {
     const tools = this.coordinationTools(agent)
     if (!cli) {
-      tools.push(...workspaceTools(this.d.project.dir, agent.permissions, (t, d) => this.approveAction(agent.id, t, d)))
+      tools.push(...workspaceTools(this.d.project.dir, agent.permissions, (t, d, always) => this.approveAction(agent.id, t, d, always)))
       if (this.d.hub && agent.provider !== 'mock')
         for (const s of this.d.config.settings.mcpServers.filter((x) => agent.mcp.includes(x.id))) {
           try {
@@ -642,6 +717,14 @@ export class Engine {
         description: 'Ask the user one to four structured questions. Each has 2-6 options, recommended first. Blocks until answered.',
         shape: { questions: z.array(question).min(1).max(4) },
         handler: async (a) => text(formatAnswers(await this.askUser(me, a.questions as Question[])))
+      },
+      {
+        name: 'request_permission',
+        description:
+          'Ask the user before an action that leaves this machine or cannot be undone: git push, publishing, force operations, deleting work. Blocks until they answer. Proceed only if it returns ALLOWED.',
+        shape: { action: z.string().describe('Short, e.g. "git push origin main"'), detail: z.string().optional() },
+        handler: async (a) =>
+          (await this.approveAction(me, String(a.action), String(a.detail ?? a.action), true)) ? text('ALLOWED') : text('DENIED by the user. Do not do it.', true)
       },
       {
         name: 'list_agents',
@@ -710,7 +793,7 @@ export class Engine {
     tools.push(
       {
         name: 'create_agent',
-        description: 'Create a new agent. role: planner|implementer|designer|brainstormer|context-handler|critic|custom. The purpose is its system brief.',
+        description: 'Create a new agent. role: planner|implementer|designer|brainstormer|context-handler|asset-creator|critic|custom. The purpose is its system brief. mcp lists MCP server ids it may use (see Settings), e.g. meshy, wavespeed.',
         shape: {
           name: z.string(),
           role: z.enum(ROLES as [Role, ...Role[]]),
@@ -719,7 +802,8 @@ export class Engine {
           model: z.string().optional(),
           effort: z.enum(EFFORTS).optional(),
           permissions: z.enum(PERMISSIONS).optional(),
-          color: z.string().optional()
+          color: z.string().optional(),
+          mcp: z.array(z.string()).optional().describe('MCP server ids this agent may use, e.g. ["meshy","wavespeed"]')
         },
         handler: async (a) => {
           const agentSpec = await this.createAgent(a as any, me)
@@ -737,7 +821,8 @@ export class Engine {
           provider: z.enum(PROVIDERS).optional(),
           model: z.string().optional(),
           effort: z.enum(EFFORTS).optional(),
-          permissions: z.enum(PERMISSIONS).optional()
+          permissions: z.enum(PERMISSIONS).optional(),
+          mcp: z.array(z.string()).optional().describe('Replaces the MCP server ids this agent may use')
         },
         handler: async (a) => {
           const target = this.d.project.find(String(a.agent))
@@ -753,7 +838,12 @@ export class Engine {
       {
         name: 'delegate',
         description: 'Give an agent a task and wait for its report. Gated agents (implementers) need approval_id from an approved request_approval.',
-        shape: { agent: z.string(), task: z.string(), approval_id: z.string().optional() },
+        shape: {
+          agent: z.string(),
+          task: z.string(),
+          approval_id: z.string().optional(),
+          difficulty: z.enum(DIFFICULTIES).optional().describe('Economy mode: light and standard tasks run on a cheaper model for this task only')
+        },
         handler: async (a) => {
           const target = this.d.project.find(String(a.agent))
           if (!target) return text(`No agent ${a.agent}`, true)
@@ -762,7 +852,7 @@ export class Engine {
             if (!approval || approval.kind !== 'approval' || !approval.approved)
               return text(`${target.name} is gated: call request_approval with the plan first, then pass its approval_id here.`, true)
           }
-          return this.relay(me, target.id, String(a.task), 'delegate', true)
+          return this.relay(me, target.id, String(a.task), 'delegate', true, a.difficulty as Difficulty | undefined)
         }
       },
       {

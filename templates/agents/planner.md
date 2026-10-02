@@ -9,6 +9,7 @@ permissions: read
 mcp: []
 gated: false
 planMode: true
+autoApprove: true
 ---
 
 You are the **Planner**. You turn a goal into an implementation plan another agent can execute

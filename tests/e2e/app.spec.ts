@@ -51,10 +51,13 @@ test('the workstation runs end to end on mock agents', async () => {
   await expect(chat).toContainText('no AI attached', { timeout: 15_000 })
   await expect(chat.getByTestId('chat-send')).toBeVisible()
 
+  // economy on: a light handoff runs the designer on a cheaper setting for that task, shown with a bolt
+  await page.getByTestId('economy').click()
+  await expect(page.getByTestId('economy')).toContainText('ON')
   // drive the bus by hand: the mock calls the real tool for a /tool line
-  await input.fill('/tool delegate {"agent":"designer","task":"Sketch a stronger attack"}')
+  await input.fill('/tool delegate {"agent":"designer","task":"Sketch a stronger attack","difficulty":"light"}')
   await input.press('Enter')
-  await page.waitForTimeout(500)
+  await page.waitForTimeout(600)
   await shot(page, '04-delegation-in-flight')
   await expect(chat).toContainText('Designer replied', { timeout: 15_000 }).catch(() => undefined)
 
@@ -71,14 +74,31 @@ test('the workstation runs end to end on mock agents', async () => {
   await expect(chat).toContainText('Void', { timeout: 10_000 })
   await page.getByTestId('inbox').click()
 
+  // a push always asks, as a balloon over the agent, answered in the space view itself
+  await page.locator('[data-chat-dock] button:has(svg.lucide-x)').first().click()
+  await page.evaluate(() => (globalThis as any).mm.api.send('implementer', '/tool request_permission {"action":"git push origin main"}'))
+  await expect(page.getByTestId('balloon-implementer')).toBeVisible({ timeout: 10_000 })
+  await page.waitForTimeout(500)
+  await shot(page, '07-permission-balloon')
+  await page.getByTestId('balloon-allow').click()
+  await expect(page.getByTestId('balloon-implementer')).toHaveCount(0)
+
+  await page.getByTestId('git').click()
+  await page.getByRole('button', { name: 'Initialise git here' }).click()
+  await expect(page.getByTestId('git-stage-all')).toBeVisible({ timeout: 10_000 })
+  await page.getByText('README.md').first().click()
+  await page.waitForTimeout(500)
+  await shot(page, '08-git-panel')
+  await page.getByTestId('git').click()
+
   await page.getByTestId('context').click()
   await page.waitForTimeout(400)
-  await shot(page, '07-context-panel')
+  await shot(page, '09-context-panel')
   await page.getByTestId('context').click()
 
   await page.getByTestId('settings').click()
   await page.waitForTimeout(800)
-  await shot(page, '08-settings')
+  await shot(page, '10-settings')
   await page.keyboard.press('Escape')
 
   expect(existsSync(join(project, '.multimine', 'sessions'))).toBe(true)

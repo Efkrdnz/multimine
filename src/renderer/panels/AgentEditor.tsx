@@ -10,6 +10,12 @@ import { OrbAvatar } from './OrbAvatar'
 
 const SWATCHES = ['#c084fc', '#60a5fa', '#34d399', '#f472b6', '#fbbf24', '#22d3ee', '#f87171', '#a3e635', '#fb923c', '#e879f9', '#38bdf8', '#facc15']
 
+const AUTO_HELP: Record<string, string> = {
+  'claude-cli': 'Claude Code: on accepts edits and allows commands and tools without asking; off sends every permission prompt to you.',
+  'codex-cli': 'Codex: on runs with full access (network, outside the sandbox); off keeps it in the workspace sandbox. Codex cannot ask mid-run, so pushes go through request_permission.',
+  api: 'API agents: on lets file writes and commands run; off asks you for each one.'
+}
+
 const PERM_HELP = { chat: 'Talks only; never touches files.', read: 'Reads the project; cannot change it.', write: 'Reads and edits the project, runs commands.' }
 
 export function AgentEditor({ agent, isNew }: { agent: AgentSpec; isNew: boolean }) {
@@ -160,6 +166,13 @@ export function AgentEditor({ agent, isNew }: { agent: AgentSpec; isNew: boolean
                   <input type="checkbox" checked={a.gated} onChange={(e) => patch({ gated: e.target.checked })} /> Gated: needs an approved plan before work
                 </label>
               )}
+              <label className="flex items-start gap-2 text-sm" title={AUTO_HELP[a.provider] ?? AUTO_HELP.api}>
+                <input type="checkbox" className="mt-1" checked={a.autoApprove} onChange={(e) => patch({ autoApprove: e.target.checked })} data-testid="agent-auto-approve" />
+                <span>
+                  Auto-approve permissions
+                  <span className="block text-[11px] text-indigo-300/70">{a.autoApprove ? 'Never stops to ask; pushing and destructive commands still ask.' : 'Each command, edit or tool use pops up for you to allow.'}</span>
+                </span>
+              </label>
               <label className={`flex items-center gap-2 text-sm ${a.provider !== 'claude-cli' ? 'opacity-40' : ''}`}>
                 <input type="checkbox" disabled={a.provider !== 'claude-cli'} checked={a.planMode} onChange={(e) => patch({ planMode: e.target.checked })} /> Plan mode (Claude): plans and asks before acting
               </label>

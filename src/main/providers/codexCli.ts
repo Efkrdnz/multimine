@@ -27,7 +27,9 @@ export function codexArgs(req: Pick<TurnRequest, 'agent' | 'cwd' | 'resumeId' | 
   const args = ['exec', '--json', '--skip-git-repo-check', '--cd', req.cwd]
   if (agent.model) args.push('-m', agent.model)
   args.push('-c', `model_reasoning_effort=${toml(clampEffort('codex-cli', agent.effort))}`)
-  args.push('--sandbox', agent.permissions === 'write' ? 'workspace-write' : 'read-only')
+  // codex exec cannot ask mid-run, so auto-approve means "full access" (network, outside the
+  // folder) and off means sandboxed; pushing goes through the request_permission tool instead
+  args.push('--sandbox', agent.permissions !== 'write' ? 'read-only' : agent.autoApprove ? 'danger-full-access' : 'workspace-write')
   if (req.busUrl) args.push(...mcpArgs('multimine', { transport: 'http', url: req.busUrl }))
   for (const s of req.externalMcp) args.push(...mcpArgs(s.id.replace(/[^a-zA-Z0-9_-]/g, '_'), s))
   if (req.resumeId) args.push('resume', req.resumeId)

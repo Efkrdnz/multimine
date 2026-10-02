@@ -49,7 +49,7 @@ function globToRegex(glob: string): RegExp {
 export function workspaceTools(
   root: string,
   permission: Permission,
-  approveAction: (title: string, detail: string) => Promise<boolean>
+  approveAction: (title: string, detail: string, always?: boolean) => Promise<boolean>
 ): ToolDef[] {
   if (permission === 'chat') return []
   const tools: ToolDef[] = [
@@ -116,6 +116,7 @@ export function workspaceTools(
       shape: { path: z.string(), content: z.string() },
       handler: async (a) => {
         const full = insideProject(root, String(a.path))
+        if (!(await approveAction(`write ${a.path}`, String(a.content).slice(0, 1500)))) return { text: 'The user did not allow this write.', isError: true }
         await mkdir(dirname(full), { recursive: true })
         await writeFile(full, String(a.content), 'utf8')
         return { text: `Wrote ${a.path}` }
@@ -127,6 +128,7 @@ export function workspaceTools(
       shape: { path: z.string(), old_string: z.string(), new_string: z.string(), replace_all: z.boolean().optional() },
       handler: async (a) => {
         const full = insideProject(root, String(a.path))
+        if (!(await approveAction(`edit ${a.path}`, `- ${String(a.old_string).slice(0, 700)}\n+ ${String(a.new_string).slice(0, 700)}`))) return { text: 'The user did not allow this edit.', isError: true }
         const text = await readFile(full, 'utf8')
         const old = String(a.old_string)
         const count = text.split(old).length - 1
@@ -143,7 +145,7 @@ export function workspaceTools(
       handler: async (a) => {
         const cmd = String(a.command)
         const stop = hardStop(cmd)
-        if (stop && !(await approveAction(stop, cmd))) return { text: `The user did not allow: ${stop}`, isError: true }
+        if (!(await approveAction(stop ?? `run: ${cmd.slice(0, 60)}`, cmd, !!stop))) return { text: `The user did not allow: ${stop ?? cmd}`, isError: true }
         return new Promise((done) =>
           exec(cmd, { cwd: root, timeout: 180_000, maxBuffer: 4_000_000 }, (err, stdout, stderr) => {
             const out = `${stdout}${stderr ? `\n[stderr]\n${stderr}` : ''}`.slice(-60_000)

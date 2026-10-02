@@ -83,10 +83,11 @@ describe('pipeline', () => {
     await rm(dir, { recursive: true, force: true })
   })
 
-  it('creates the project layout and a Mastermind', () => {
+  it('creates the project layout and a Mastermind', async () => {
     const p = join(dir, 'proj')
     expect(existsSync(join(p, 'multimine.md'))).toBe(true)
     expect(existsSync(join(p, '.multimine', 'agents', 'mastermind.md'))).toBe(true)
+    expect(await readFile(join(p, '.multimine', '.gitignore'), 'utf8')).toContain('sessions/')
     expect(app.project!.list().map((a) => a.id)).toEqual(['mastermind', 'context-handler', 'designer', 'implementer'])
   })
 

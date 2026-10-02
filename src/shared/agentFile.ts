@@ -3,7 +3,7 @@ import { EFFORTS, PROVIDERS, type AgentSpec, type Effort, type Permission, type 
 
 const FRONT = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/
 
-const ROLES: Role[] = ['mastermind', 'planner', 'implementer', 'designer', 'brainstormer', 'context-handler', 'critic', 'custom']
+const ROLES: Role[] = ['mastermind', 'planner', 'implementer', 'designer', 'brainstormer', 'context-handler', 'asset-creator', 'critic', 'custom']
 const PERMS: Permission[] = ['chat', 'read', 'write']
 
 /** A slug safe for a file name: lower case, dashes, never empty. */
@@ -48,6 +48,7 @@ export function parseAgentFile(id: string, text: string): AgentSpec {
     mcp: Array.isArray(meta.mcp) ? meta.mcp.filter((x): x is string => typeof x === 'string') : [],
     gated: meta.gated === true,
     planMode: meta.planMode === true,
+    autoApprove: meta.autoApprove !== false,
     purpose: body.replace(/^\s+/, '').replace(/\s+$/, '') + '\n'
   }
 }
@@ -63,7 +64,8 @@ export function serializeAgentFile(agent: AgentSpec): string {
     permissions: agent.permissions,
     mcp: agent.mcp,
     gated: agent.gated,
-    planMode: agent.planMode
+    planMode: agent.planMode,
+    autoApprove: agent.autoApprove
   }
   return `---\n${stringify(meta).trimEnd()}\n---\n\n${agent.purpose.trim()}\n`
 }

@@ -1,5 +1,5 @@
 import { Container, Graphics, Sprite } from 'pixi.js'
-import type { BusKind } from '@shared/types'
+import type { BusKind, Channel } from '@shared/types'
 import { glowTexture } from './textures'
 
 export const KIND_COLOR: Record<BusKind, number> = {
@@ -57,6 +57,9 @@ export class LinkLayer extends Container {
   private packets: Packet[] = []
   private t = 0
   spokes: string[] = []
+  /** Conversations in progress: drawn as a pulsing, glowing link until they end. */
+  channels: Channel[] = []
+  private glows = new Map<string, Sprite[]>()
 
   constructor(private readonly locate: Locate, private readonly hub: string) {
     super()
@@ -84,6 +87,67 @@ export class LinkLayer extends Container {
     this.packets.push({ from, to, t: 0, speed: 0.75 + Math.random() * 0.2, color, sprites })
   }
 
+  /**
+   * A live conversation: a wide breathing glow under a bright core, energy running along it toward
+   * whoever is working, and a soft beacon on both ends. It stays lit for as long as the exchange lasts.
+   */
+  private drawChannels(g: Graphics): void {
+    const live = new Set<string>()
+    for (const ch of this.channels) {
+      const a = this.locate(ch.from)
+      const b = this.locate(ch.to)
+      if (!a || !b) continue
+      const key = `${ch.from}>${ch.to}`
+      live.add(key)
+      const color = KIND_COLOR[ch.kind]
+      const c = curve(a, b)
+      const pulse = 0.5 + 0.5 * Math.sin(this.t * 3.2 + (a.x + b.y) * 0.01)
+      for (const [w, alpha] of [
+        [22, 0.05 + 0.07 * pulse],
+        [11, 0.1 + 0.12 * pulse],
+        [4.5, 0.35 + 0.25 * pulse],
+        [1.8, 0.95]
+      ] as const) {
+        const p0 = c(0)
+        g.moveTo(p0.x, p0.y)
+        for (let k = 1; k <= 36; k++) {
+          const q = c(k / 36)
+          g.lineTo(q.x, q.y)
+        }
+        g.stroke({ width: w, color, alpha, cap: 'round' })
+      }
+      // energy flowing toward the agent doing the work
+      for (let k = 0; k < 9; k++) {
+        const tt = (k / 9 + this.t * 0.45) % 1
+        const q = c(tt)
+        g.circle(q.x, q.y, 2.6 + 1.4 * Math.sin(tt * Math.PI)).fill({ color: 0xffffff, alpha: 0.75 * Math.sin(tt * Math.PI) })
+      }
+      let ends = this.glows.get(key)
+      if (!ends) {
+        ends = [0, 1].map(() => {
+          const s = new Sprite(glowTexture())
+          s.anchor.set(0.5)
+          s.blendMode = 'add'
+          this.packetLayer.addChild(s)
+          return s
+        })
+        this.glows.set(key, ends)
+      }
+      ends.forEach((s, i) => {
+        const p = i ? b : a
+        s.position.set(p.x, p.y)
+        s.tint = color
+        s.scale.set(0.9 + 0.35 * pulse)
+        s.alpha = 0.35 + 0.3 * pulse
+      })
+    }
+    for (const [key, ends] of this.glows)
+      if (!live.has(key)) {
+        for (const s of ends) s.destroy()
+        this.glows.delete(key)
+      }
+  }
+
   update(dt: number): void {
     const s = dt / 1000
     this.t += s
@@ -104,6 +168,8 @@ export class LinkLayer extends Container {
         for (let k = 2; k < pts.length; k += 2) g.lineTo(pts[k], pts[k + 1])
         g.stroke({ width: 1, color: 0x8b5cf6, alpha: 0.12 + Math.sin(this.t * 0.8 + p.x * 0.01) * 0.04 })
       }
+
+    this.drawChannels(g)
 
     for (const [key, l] of this.links) {
       l.energy -= s * 0.16

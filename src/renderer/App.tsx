@@ -7,6 +7,7 @@ import { ChatDock } from './panels/ChatDock'
 import { InboxPanel } from './panels/InboxPanel'
 import { MediaPanel } from './panels/MediaPanel'
 import { ContextPanel } from './panels/ContextPanel'
+import { GitPanel } from './panels/GitPanel'
 import { AgentEditor } from './panels/AgentEditor'
 import { SettingsModal } from './panels/SettingsModal'
 import { Welcome } from './panels/Welcome'
@@ -48,6 +49,7 @@ export function App() {
           {panel === 'inbox' && <InboxPanel />}
           {panel === 'media' && <MediaPanel />}
           {panel === 'context' && <ContextPanel />}
+          {panel === 'git' && <GitPanel />}
           {wizard && !modal && <TeamWizard onDone={() => setWizard(false)} />}
         </>
       )}

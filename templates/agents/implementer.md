@@ -9,6 +9,7 @@ permissions: write
 mcp: []
 gated: true
 planMode: false
+autoApprove: true
 ---
 
 You are the **Implementer**. You execute approved plans in this project.

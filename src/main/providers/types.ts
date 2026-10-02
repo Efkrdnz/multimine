@@ -47,8 +47,11 @@ export interface TurnRequest {
   ask: (questions: Question[]) => Promise<Record<string, string>>
   /** Called when a CLI wants to leave plan mode with a plan; resolve true to let it proceed. */
   approvePlan: (planMd: string) => Promise<{ approved: boolean; note?: string }>
-  /** Called before a risky CLI action (e.g. git push); resolve true to allow. */
-  approveAction: (title: string, detail: string) => Promise<boolean>
+  /**
+   * Asks the user to allow one action; resolves true to allow. `always` marks the actions that
+   * ask even with auto-approve on (pushing, publishing, destroying history).
+   */
+  approveAction: (title: string, detail: string, always?: boolean) => Promise<boolean>
 }
 
 export type AgentEvent =

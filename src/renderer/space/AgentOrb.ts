@@ -8,6 +8,8 @@ export interface OrbLook {
   color: string
   radius: number
   stern?: boolean
+  /** Running on a temporary model: the subtitle turns amber and pulses. */
+  temp?: boolean
 }
 
 const STATUS_RING: Record<AgentStatus, number> = {
@@ -73,6 +75,8 @@ export class AgentOrb extends Container {
     }
     this.nameText.text = look.name
     this.sub.text = look.subtitle
+    this.sub.style.fill = look.temp ? 0xfcd34d : 0xa5b4fc
+    this.sub.style.fontWeight = look.temp ? '700' : '400'
     this.nameText.y = look.radius + 12
     this.sub.y = look.radius + 31
     this.hitArea = { contains: (x: number, y: number) => x * x + y * y <= (look.radius + 8) ** 2 }
@@ -110,7 +114,8 @@ export class AgentOrb extends Container {
 
     this.activityText.text = this.activity && this.status !== 'idle' ? this.activity.slice(0, 28) : ''
     this.activityText.y = -radius - 16 + bob
-    this.nameText.alpha = this.sub.alpha = appear
+    this.nameText.alpha = appear
+    this.sub.alpha = appear * (this.look.temp ? 0.75 + 0.25 * Math.sin(this.t * 4) : 1)
   }
 
   private drawRing(r: number): void {

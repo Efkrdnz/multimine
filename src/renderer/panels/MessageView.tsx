@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { AlertTriangle, Brain, CheckCircle2, ChevronRight, Loader2, RotateCcw, Wrench, XCircle } from 'lucide-react'
@@ -6,13 +6,16 @@ import type { ChatMessage, ToolCallView } from '@shared/types'
 import { EMPTY_LIST, api, useStore } from '../state/store'
 import { MediaView } from './MediaView'
 
-export function Markdown({ text }: { text: string }) {
+const PLUGINS = [remarkGfm]
+
+/** Markdown is the costly part of a chat; it only re-parses when its text changes. */
+export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
     <div className="md">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={PLUGINS}>{text}</ReactMarkdown>
     </div>
   )
-}
+})
 
 function show(v: unknown): string {
   if (typeof v === 'string') return v
@@ -51,7 +54,8 @@ function ToolCard({ t }: { t: ToolCallView }) {
   )
 }
 
-export function MessageView({ m, last = false }: { m: ChatMessage; last?: boolean }) {
+/** One message. Memoised: a streaming reply re-renders itself, not the whole conversation above it. */
+export const MessageView = memo(function MessageView({ m, last = false }: { m: ChatMessage; last?: boolean }) {
   const agents = useStore((s) => s.project?.agents ?? EMPTY_LIST)
   const media = useStore((s) => s.media)
   const [thinkOpen, setThinkOpen] = useState(false)
@@ -104,4 +108,4 @@ export function MessageView({ m, last = false }: { m: ChatMessage; last?: boolea
       )}
     </div>
   )
-}
+})

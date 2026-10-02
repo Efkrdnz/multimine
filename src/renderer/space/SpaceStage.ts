@@ -1,7 +1,7 @@
 import 'pixi.js/unsafe-eval'
 import { Application, Container, Graphics, Rectangle, type FederatedPointerEvent } from 'pixi.js'
 import { modelLabel } from '@shared/catalog'
-import { MASTERMIND_ID, type AgentSpec, type AgentStatus, type AppSettings, type CouncilCritic, type MainEvent } from '@shared/types'
+import { MASTERMIND_ID, type AgentSpec, type AgentStatus, type AppSettings, type Channel, type CouncilCritic, type MainEvent } from '@shared/types'
 import { AgentOrb } from './AgentOrb'
 import { BrainNode } from './BrainNode'
 import { LinkLayer } from './LinkLayer'
@@ -10,9 +10,10 @@ import { Starfield } from './Starfield'
 export interface SceneState {
   agents: AgentSpec[]
   layout: Record<string, { x: number; y: number }>
-  status: Record<string, { status: AgentStatus; activity?: string }>
+  status: Record<string, { status: AgentStatus; activity?: string; temp?: { model: string; effort: string; difficulty: string } }>
   pending: number
   council: CouncilCritic[]
+  channels: Channel[]
   focused: string | null
   catalog: AppSettings['catalog']
 }
@@ -148,7 +149,15 @@ export class SpaceStage {
       } else if (state.layout[a.id] && !(this.drag?.id === a.id)) {
         orb.position.set(state.layout[a.id].x, state.layout[a.id].y)
       }
-      orb.setLook({ name: a.name, subtitle: `${modelLabel(state.catalog, a.provider, a.model)} · ${a.effort}`, color: a.color, radius: a.role === 'context-handler' ? 30 : 34 })
+      const temp = state.status[a.id]?.temp
+      orb.setLook({
+        name: a.name,
+        // a temporary (economy) model is shown in place of the agent's own, marked and tinted
+        subtitle: temp ? `⚡ ${modelLabel(state.catalog, a.provider, temp.model)} · ${temp.effort} (this task)` : `${modelLabel(state.catalog, a.provider, a.model)} · ${a.effort}`,
+        color: a.color,
+        radius: a.role === 'context-handler' ? 30 : 34,
+        temp: !!temp
+      })
       orb.status = state.status[a.id]?.status ?? 'idle'
       orb.activity = state.status[a.id]?.activity ?? ''
       orb.selected = state.focused === a.id
@@ -164,6 +173,7 @@ export class SpaceStage {
     this.brain.status = state.status[MASTERMIND_ID]?.status ?? 'idle'
     this.brain.pending = state.pending
     this.links.spokes = others.map((a) => a.id)
+    this.links.channels = state.channels
 
     // council critics appear round the brain while a review runs
     const ids = new Set(state.council.map((c) => c.id))
@@ -195,6 +205,19 @@ export class SpaceStage {
       if (e.agentId === MASTERMIND_ID) this.brain.talk()
       else this.orbs.get(e.agentId)?.talk()
     }
+  }
+
+  /** Where an agent (or the brain) is on screen, in page pixels, and how big it is drawn. */
+  screenOf(id: string): { x: number; y: number; r: number } | null {
+    if (!this.ready) return null
+    if (id === MASTERMIND_ID) {
+      const p = this.world.toGlobal({ x: 0, y: 0 })
+      return { x: p.x, y: p.y, r: this.brain.R * this.cam.zoom }
+    }
+    const orb = this.orbs.get(id)
+    if (!orb) return null
+    const p = this.world.toGlobal({ x: orb.x, y: orb.y })
+    return { x: p.x, y: p.y, r: orb.look.radius * this.cam.zoom }
   }
 
   /** Centres the camera on an agent (used when a chat tab is focused). */

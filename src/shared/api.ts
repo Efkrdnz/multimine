@@ -1,4 +1,4 @@
-import type { AgentSpec, AppSettings, CliStatus, MainEvent, McpServerConfig, ModelEntry, ProjectInfo, ProviderKind } from './types'
+import type { AgentSpec, AppSettings, CliStatus, GhItem, GitCommit, GitStatus, MainEvent, McpServerConfig, ModelEntry, ProjectInfo, ProviderKind } from './types'
 
 /** Everything the renderer can ask of the main process. One method, one IPC channel. */
 export interface Api {
@@ -32,6 +32,22 @@ export interface Api {
   refreshModels(provider: ProviderKind): Promise<ModelEntry[]>
   testMcp(server: McpServerConfig): Promise<{ ok: boolean; tools: string[]; error?: string }>
 
+  gitStatus(): Promise<GitStatus>
+  gitInit(): Promise<void>
+  gitDiff(path: string, staged: boolean, untracked: boolean): Promise<string>
+  gitStage(paths: string[]): Promise<void>
+  gitUnstage(paths: string[]): Promise<void>
+  gitCommit(message: string): Promise<string>
+  gitLog(): Promise<GitCommit[]>
+  gitShow(hash: string): Promise<string>
+  gitBranches(): Promise<{ current: string; local: string[] }>
+  gitCheckout(name: string, create: boolean): Promise<void>
+  gitPull(): Promise<string>
+  gitPush(): Promise<string>
+  ghInfo(): Promise<{ repo: string | null; auth: 'token' | 'gh' | null }>
+  ghList(kind: 'pulls' | 'issues'): Promise<GhItem[]>
+  ghCreatePr(title: string, body: string, base?: string): Promise<GhItem>
+
   contextFiles(): Promise<{ file: string; text: string }[]>
   openPath(path: string): Promise<void>
   mediaUrl(path: string): Promise<string>
@@ -46,6 +62,8 @@ export const API_METHODS: ApiMethod[] = [
   'newSession', 'switchSession', 'renameSession', 'deleteSession', 'duplicateSession',
   'answer', 'decide',
   'updateSettings', 'setKey', 'detectClis', 'refreshModels', 'testMcp',
+  'gitStatus', 'gitInit', 'gitDiff', 'gitStage', 'gitUnstage', 'gitCommit', 'gitLog', 'gitShow', 'gitBranches', 'gitCheckout', 'gitPull', 'gitPush',
+  'ghInfo', 'ghList', 'ghCreatePr',
   'contextFiles', 'openPath', 'mediaUrl'
 ]
 

@@ -4,6 +4,7 @@ import type {
   AgentStatus,
   AppSettings,
   BusEvent,
+  Channel,
   ChatMessage,
   CouncilCritic,
   InboxItem,
@@ -14,7 +15,7 @@ import type {
   Usage
 } from '@shared/types'
 
-export type Panel = 'inbox' | 'media' | 'context' | null
+export type Panel = 'inbox' | 'media' | 'context' | 'git' | null
 export type Modal = { kind: 'agent'; agent: AgentSpec; isNew: boolean } | { kind: 'settings'; tab?: string } | null
 
 interface Toast {
@@ -31,8 +32,9 @@ export interface State {
   sessions: SessionMeta[]
   activeSession: string | null
   chats: Record<string, ChatMessage[]>
-  status: Record<string, { status: AgentStatus; activity?: string }>
+  status: Record<string, { status: AgentStatus; activity?: string; temp?: { model: string; effort: string; difficulty: string } }>
   bus: BusEvent[]
+  channels: Channel[]
   inbox: InboxItem[]
   media: MediaItem[]
   council: CouncilCritic[]
@@ -61,6 +63,7 @@ export const useStore = create<State>((set, get) => ({
   chats: {},
   status: {},
   bus: [],
+  channels: [],
   inbox: [],
   media: [],
   council: [],
@@ -118,10 +121,13 @@ export function applyEvent(e: MainEvent): void {
       break
     }
     case 'status':
-      s.set({ status: { ...s.status, [e.agentId]: { status: e.status, activity: e.activity } } })
+      s.set({ status: { ...s.status, [e.agentId]: { status: e.status, activity: e.activity, temp: e.temp } } })
       break
     case 'bus':
       s.set({ bus: [...s.bus.slice(-300), e.event] })
+      break
+    case 'channels':
+      s.set({ channels: e.channels })
       break
     case 'bus-reset':
       s.set({ bus: e.events.slice(-300) })

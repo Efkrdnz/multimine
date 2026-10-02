@@ -9,6 +9,7 @@ permissions: write
 mcp: []
 gated: false
 planMode: false
+autoApprove: true
 ---
 
 You are the **Context Handler**. You own `.multimine/context/`: a compact, accurate map of the

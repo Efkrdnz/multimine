@@ -16,8 +16,8 @@ packets fly), ask you questions through Mastermind, and work on a real project f
   - **Mock** - an offline stand-in, so you can try everything with no AI at all.
 - **Roles and purpose files.** Every agent is `.multimine/agents/<id>.md`: YAML frontmatter (provider,
   model, effort, permissions, MCP tools, gated, plan mode) plus a markdown brief that becomes its
-  system prompt. Templates ship for Planner, Implementer, Designer, Brainstormer, Context Handler and
-  Critic; Custom starts blank.
+  system prompt. Templates ship for Planner, Implementer, Designer, Brainstormer, Context Handler, Asset
+  Creator and Critic; Custom starts blank.
 - **`multimine.md`** at the project root is shared guidance injected into every agent, like
   `CLAUDE.md` / `AGENTS.md`.
 - **Mastermind orchestrates.** It can create and reconfigure agents, delegate tasks, run a council,
@@ -33,6 +33,8 @@ packets fly), ask you questions through Mastermind, and work on a real project f
 - **Council.** `run_council` sends a plan to N cheap critics with different lenses. Round one is
   blind; in round two each sees the others and must rebut or escalate. An approval only counts with
   at least three objections and none of them high - agreeing is never free.
+- **Live links.** While one agent works on something another handed it, or waits on you, the line
+  between them pulses and glows until the exchange ends.
 - **Context Handler.** Create one and it maps the project into `.multimine/context/` (index,
   registries, one file per system, changelog). Every other agent is then told to read the map first
   and code second, and whenever an agent with write access changes the project, the Context Handler
@@ -41,6 +43,22 @@ packets fly), ask you questions through Mastermind, and work on a real project f
   else - and tick it on the agents that should have it. Images, video, audio and 3D models agents
   produce are saved to `.multimine/media/` and previewed in the chat and the **Media gallery**
   (glb/gltf in a 3D viewer).
+- **Permissions.** Each agent has *Auto-approve permissions*: on, it never stops to ask (Claude
+  accepts edits and runs commands, Codex runs with full access); off, every command, edit or tool use
+  asks. Either way pushing, publishing and destroying history ask - as a speech balloon over the
+  agent's orb with **Allow / Deny**, so you answer from the space view without opening the chat.
+- **Long tasks never time out.** A handoff waits up to 10 minutes (Settings -> Economy & handoffs),
+  then gives the caller its turn back; the report arrives later as a message of its own.
+- **Economy mode** (top bar): agents keep answers short, and Mastermind rates each handoff light,
+  standard or heavy. Light and standard tasks run on a cheaper model for that task only (Haiku or
+  Sonnet for Claude agents by default; the table is in Settings) - the agent shows it in amber with a
+  ⚡ and goes back to its own model afterwards.
+- **Repository panel** (left rail): branch switch/create, changed files with diffs, stage and commit,
+  pull and push, history, and on GitHub the open pull requests and issues and a new-PR form (through
+  your `gh` login, or a token you paste). `.multimine/sessions` and `media` are git-ignored.
+- **Asset Creator.** A role for generated art: Meshy for 3D models, WaveSpeed for images and video.
+  Settings -> MCP servers has presets for both (add your key), and each server card lists every agent
+  so you can switch access on and off in one click.
 - **Sessions.** Agents belong to the project; conversations belong to a session. Create, rename,
   duplicate, switch. Claude and Codex threads resume per session.
 

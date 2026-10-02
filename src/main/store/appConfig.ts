@@ -1,10 +1,13 @@
 import { join } from 'node:path'
 import { DEFAULT_CATALOG } from '@shared/catalog'
+import { DEFAULT_TIERS } from '@shared/economy'
 import type { AppSettings, ProviderKind } from '@shared/types'
 import { readJson, writeJson } from './fsx'
 
 export const DEFAULT_SETTINGS: AppSettings = {
   automation: false,
+  economy: { enabled: false, concise: true, downshift: true, tiers: DEFAULT_TIERS },
+  handoffWaitMinutes: 10,
   council: {
     size: 3,
     provider: 'mock',
@@ -42,6 +45,7 @@ export class AppConfig {
       ...structuredClone(DEFAULT_SETTINGS),
       ...saved,
       council: { ...DEFAULT_SETTINGS.council, ...(saved.council ?? {}) },
+      economy: { ...DEFAULT_SETTINGS.economy, ...(saved.economy ?? {}), tiers: { ...DEFAULT_TIERS, ...(saved.economy?.tiers ?? {}) } },
       catalog: { ...DEFAULT_CATALOG, ...(saved.catalog ?? {}) },
       baseUrls: { ...DEFAULT_SETTINGS.baseUrls, ...(saved.baseUrls ?? {}) }
     }

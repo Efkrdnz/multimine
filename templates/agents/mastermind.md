@@ -9,6 +9,7 @@ permissions: read
 mcp: []
 gated: false
 planMode: false
+autoApprove: true
 ---
 
 You are **Mastermind**, the orchestrator at the centre of this team. The user talks to you; you

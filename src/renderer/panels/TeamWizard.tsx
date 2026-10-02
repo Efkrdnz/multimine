@@ -7,12 +7,14 @@ import { PROVIDERS, type AgentSpec, type ProviderKind, type Role } from '@shared
 import { api, useStore } from '../state/store'
 import { OrbAvatar } from './OrbAvatar'
 
-const SUGGESTED: Role[] = ['planner', 'implementer', 'designer', 'brainstormer', 'context-handler']
+const SUGGESTED: Role[] = ['planner', 'implementer', 'designer', 'brainstormer', 'context-handler', 'asset-creator']
+/** Suggested but off until asked for: it needs MCP servers set up first. */
+const OPTIONAL: Role[] = ['asset-creator']
 
 /** Shown while a project has only its Mastermind: one click for a starting team, each member editable later. */
 export function TeamWizard({ onDone }: { onDone: () => void }) {
   const settings = useStore((s) => s.settings)
-  const [rows, setRows] = useState(() => SUGGESTED.map((r) => ({ on: true, spec: roleTemplate(r, '') })))
+  const [rows, setRows] = useState(() => SUGGESTED.map((r) => ({ on: !OPTIONAL.includes(r), spec: roleTemplate(r, '') })))
   const [busy, setBusy] = useState(false)
   const [clis, setClis] = useState<{ claude: boolean; codex: boolean } | null>(null)
 

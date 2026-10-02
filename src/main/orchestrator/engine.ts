@@ -75,7 +75,7 @@ export interface TurnResult {
   error?: string
 }
 
-const ROLES: Role[] = ['planner', 'implementer', 'designer', 'brainstormer', 'context-handler', 'asset-creator', 'critic', 'custom']
+const ROLES: Role[] = ['planner', 'implementer', 'designer', 'brainstormer', 'context-handler', 'asset-creator', 'ui-creator', 'critic', 'custom']
 const text = (t: string, isError = false): ToolOutput => ({ text: t, isError })
 
 /**
@@ -967,7 +967,7 @@ export class Engine {
     tools.push(
       {
         name: 'create_agent',
-        description: 'Create a new agent. role: planner|implementer|designer|brainstormer|context-handler|asset-creator|critic|custom. The purpose is its system brief. mcp lists MCP server ids it may use (see Settings), e.g. meshy, wavespeed.',
+        description: 'Create a new agent. role: planner|implementer|designer|brainstormer|context-handler|asset-creator|ui-creator|critic|custom. The purpose is its system brief. mcp lists MCP server ids it may use (see Settings), e.g. meshy, wavespeed.',
         shape: {
           name: z.string(),
           role: z.enum(ROLES as [Role, ...Role[]]),

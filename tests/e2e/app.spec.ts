@@ -1,5 +1,5 @@
 import { _electron as electron, expect, test, type Page } from '@playwright/test'
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -156,6 +156,67 @@ test('the workstation runs end to end on mock agents', async () => {
   await expect(frame.locator('#out')).toContainText('agents:message')
   await page.getByTestId('toolwin-hello').getByTitle('Close').click()
 
+  // the UI Sketcher: a Minecraft GUI drawn on the starter container, exported, sent, then marked up
+  await page.getByTestId('tools').click()
+  await page.getByTestId('tool-ui-sketcher').click()
+  await expect(page.getByTestId('sketcher')).toBeVisible()
+  await page.getByTestId('sk-name').fill('Mana Furnace')
+  await page.getByTestId('sk-layers').getByText('Container', { exact: true }).click()
+  const wb = (await page.getByTestId('sketch-selection').first().boundingBox())!
+  const at = (fx: number, fy: number) => [wb.x + wb.width * fx, wb.y + wb.height * fy] as const
+  await page.getByTestId('sk-tool-button').click()
+  await page.mouse.move(...at(0.56, 0.12))
+  await page.mouse.down()
+  await page.mouse.move(...at(0.75, 0.2), { steps: 4 })
+  await page.mouse.move(...at(0.92, 0.25), { steps: 4 })
+  await page.mouse.up()
+  await page.getByTestId('sk-prop-text').fill('Smelt')
+  await page.getByTestId('sk-tool-slot').click()
+  await page.mouse.click(...at(0.2, 0.2))
+  await page.getByTestId('sk-tool-progress').click()
+  await page.mouse.click(...at(0.36, 0.23))
+  await page.getByTestId('sk-prop-notes').fill('Fills as mana is smelted.')
+  await page.waitForTimeout(300)
+  await shot(page, '18-sketcher')
+  await page.getByTestId('sk-look-styled').click()
+  await page.mouse.click(...at(0.5, 0.33)) // select the container, to show its handles over the styled look
+  await page.waitForTimeout(300)
+  await shot(page, '19-sketcher-minecraft')
+  await page.getByTestId('sk-tab-mockup').click()
+  await expect(page.getByTestId('sk-mockup').locator('img')).toBeVisible()
+  await page.waitForTimeout(300)
+  await shot(page, '20-sketch-mockup')
+  await page.getByTestId('sk-tab-design').click()
+  await page.getByTestId('sk-send').click()
+  await page.getByTestId('sk-send-note').fill('Opens from the mana furnace block.')
+  await page.getByTestId('sk-send-go').click()
+  const sketchDir = join(project, '.multimine', 'sketches', 'mana-furnace')
+  await expect.poll(() => existsSync(join(sketchDir, 'mockup.png')), { timeout: 10_000 }).toBe(true)
+  const saved = JSON.parse(readFileSync(join(sketchDir, 'sketch.json'), 'utf8'))
+  expect(JSON.stringify(saved.tree)).toContain('"text":"Smelt"')
+  expect(JSON.stringify(saved.tree)).toContain('Player inventory')
+  expect(existsSync(join(sketchDir, 'sketch.png'))).toBe(true)
+  const busText = () => {
+    const sessions = join(project, '.multimine', 'sessions')
+    return readdirSync(sessions).map((d) => (existsSync(join(sessions, d, 'bus.jsonl')) ? readFileSync(join(sessions, d, 'bus.jsonl'), 'utf8') : '')).join('\n')
+  }
+  await expect.poll(busText, { timeout: 10_000 }).toContain('plugin:ui-sketcher')
+  expect(busText()).toContain('Mana Furnace')
+  // the mockup went to the gallery; mark it up and send it back as a revision
+  await page.getByTestId('sk-tab-revisions').click()
+  await page.getByTestId('sk-shot').first().click()
+  const mk = (await page.getByTestId('sk-markup-svg').boundingBox())!
+  await page.mouse.move(mk.x + mk.width * 0.55, mk.y + mk.height * 0.2)
+  await page.mouse.down()
+  await page.mouse.move(mk.x + mk.width * 0.75, mk.y + mk.height * 0.35, { steps: 5 })
+  await page.mouse.up()
+  await page.getByTestId('sk-revision-notes').fill('Make the Smelt button narrower.')
+  await page.waitForTimeout(300)
+  await shot(page, '21-sketch-revision')
+  await page.getByTestId('sk-revision-send').click()
+  await expect.poll(() => existsSync(join(sketchDir, 'revision-1.png')), { timeout: 10_000 }).toBe(true)
+  await page.getByTestId('toolwin-ui-sketcher').getByTitle('Close').click()
+
   // a fallback chain in the agent editor
   await page.getByTestId('add-agent').click()
   await page.getByTestId('agent-name').fill('Fallback Demo')
@@ -163,12 +224,12 @@ test('the workstation runs end to end on mock agents', async () => {
   await page.getByTestId('agent-fallback-add').click()
   await page.getByTestId('agent-fallback').scrollIntoViewIfNeeded()
   await page.waitForTimeout(300)
-  await shot(page, '16-fallback-chain')
+  await shot(page, '22-fallback-chain')
   await page.keyboard.press('Escape')
 
   await page.getByTestId('settings').click()
   await page.waitForTimeout(800)
-  await shot(page, '17-settings')
+  await shot(page, '23-settings')
   await page.keyboard.press('Escape')
 
   expect(existsSync(join(project, '.multimine', 'sessions'))).toBe(true)

@@ -80,6 +80,15 @@ packets fly), ask you questions through Mastermind, and work on a real project f
   call checked against the permissions you granted when it was first enabled (revocable in
   **Manage**). A plugin can also bring an MCP server of agent tools. Project-folder plugins never run
   until you enable them. See `docs/plugins.md` and `examples/plugins/hello`.
+- **UI Sketcher** (in Tools): draw a GUI wireframe - windows, panels, layers, buttons, labels, text
+  fields, slots and slot grids, images, lists, sliders, checkboxes, progress bars, tooltips - with
+  nesting, snapping to the grid and to other elements, a layers panel, properties in the target's own
+  units (position, size, anchor, states to build, notes) and undo. Presets: **Minecraft GUI** (GUI
+  pixels on a 427x240 screen, a 176x166 container with the player inventory, 18px slots, a vanilla-style
+  look drawn from scratch), web, mobile and desktop. **Send** saves `.multimine/sketches/<name>/`
+  (`sketch.json`, the wireframe and a styled mockup) and asks Mastermind to have a **UI Creator** agent
+  build it, capture the real screen and show it in the gallery. **Revisions** marks up that screenshot
+  and sends it back. The Sketcher is built in but uses only the plugin API, like any other tool.
 - **Sessions.** Agents belong to the project; conversations belong to a session. Create, rename,
   duplicate, switch. Claude and Codex threads resume per session.
 
@@ -137,6 +146,7 @@ src/main/
   mcp/             busServer (local MCP server CLI agents call back into), hub (external MCP servers)
   media/           saving generated media
   plugins/         manifest validation, registry and grants, the permission-checked API, mmplugin://
+src/shared/sketch/ the UI Sketcher's model, presets, drawing ops and briefs (pure, unit tested)
 src/renderer/      React panels + a PixiJS space scene (space/)
 templates/         multimine.md and the role templates
 ```

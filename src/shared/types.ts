@@ -30,6 +30,7 @@ export type Role =
   | 'brainstormer'
   | 'context-handler'
   | 'asset-creator'
+  | 'ui-creator'
   | 'critic'
   | 'custom'
 

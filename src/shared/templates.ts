@@ -9,6 +9,7 @@ import brainstormer from '../../templates/agents/brainstormer.md?raw'
 import contextHandler from '../../templates/agents/context-handler.md?raw'
 import critic from '../../templates/agents/critic.md?raw'
 import assetCreator from '../../templates/agents/asset-creator.md?raw'
+import uiCreator from '../../templates/agents/ui-creator.md?raw'
 
 export const MULTIMINE_TEMPLATE = multimineMd
 
@@ -20,6 +21,7 @@ const RAW: Record<Exclude<Role, 'custom'>, string> = {
   brainstormer,
   'context-handler': contextHandler,
   'asset-creator': assetCreator,
+  'ui-creator': uiCreator,
   critic
 }
 
@@ -55,8 +57,9 @@ export const ROLE_LABEL: Record<Role, string> = {
   brainstormer: 'Brainstormer',
   'context-handler': 'Context Handler',
   'asset-creator': 'Asset Creator',
+  'ui-creator': 'UI Creator',
   critic: 'Critic',
   custom: 'Custom'
 }
 
-export const CREATABLE_ROLES: Role[] = ['planner', 'implementer', 'designer', 'brainstormer', 'context-handler', 'asset-creator', 'critic', 'custom']
+export const CREATABLE_ROLES: Role[] = ['planner', 'implementer', 'designer', 'brainstormer', 'context-handler', 'asset-creator', 'ui-creator', 'critic', 'custom']

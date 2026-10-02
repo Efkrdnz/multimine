@@ -3,7 +3,7 @@ import { EFFORTS, PROVIDERS, type AgentSpec, type FallbackHop, type Effort, type
 
 const FRONT = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/
 
-const ROLES: Role[] = ['mastermind', 'planner', 'implementer', 'designer', 'brainstormer', 'context-handler', 'asset-creator', 'critic', 'custom']
+const ROLES: Role[] = ['mastermind', 'planner', 'implementer', 'designer', 'brainstormer', 'context-handler', 'asset-creator', 'ui-creator', 'critic', 'custom']
 const PERMS: Permission[] = ['chat', 'read', 'write']
 
 /** A slug safe for a file name: lower case, dashes, never empty. */

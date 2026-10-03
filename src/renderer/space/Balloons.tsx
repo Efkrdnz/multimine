@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, type RefObject } from 'react'
-import { Check, MessageCircleQuestion, ShieldAlert, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { Check, MessageCircleQuestion, PauseCircle, Play, Send, ShieldAlert, Square, X } from 'lucide-react'
 import type { InboxItem } from '@shared/types'
 import { api, useStore } from '../state/store'
 import type { SpaceStage } from './SpaceStage'
@@ -61,7 +61,9 @@ export function Balloons({ stage }: { stage: RefObject<SpaceStage | null> }) {
             data-testid={`balloon-${id}`}
           >
             <div className="rise relative max-w-[300px] rounded-2xl border border-amber-300/50 bg-[#1a1408]/92 px-3 py-2 text-xs shadow-[0_0_28px_-4px_rgba(251,191,36,0.55)] backdrop-blur">
-              {first.permission ? (
+              {first.watchdog ? (
+                <WatchdogBalloon item={first} name={name} color={color} />
+              ) : first.permission ? (
                 <>
                   <div className="flex items-start gap-1.5 text-amber-100">
                     <ShieldAlert size={14} className="mt-0.5 shrink-0 text-amber-300" />
@@ -101,6 +103,65 @@ export function Balloons({ stage }: { stage: RefObject<SpaceStage | null> }) {
           </div>
         )
       })}
+    </div>
+  )
+}
+
+/**
+ * The loop guard paused this agent: say what it keeps doing, and let the user let it go on, stop it,
+ * or tell it what to do instead (handed to the agent in place of the step it was about to repeat).
+ */
+function WatchdogBalloon({ item, name, color }: { item: InboxItem; name: string; color: string }) {
+  const [telling, setTelling] = useState(false)
+  const [note, setNote] = useState('')
+  const tell = () => note.trim() && void api().decide(item.id, false, note.trim())
+  return (
+    <div className="w-[280px]" data-testid="balloon-watchdog">
+      <div className="flex items-start gap-1.5 text-amber-100">
+        <PauseCircle size={14} className="mt-0.5 shrink-0 text-amber-300" />
+        <span>
+          <b style={{ color }}>{name}</b> {item.title}. Paused until you decide.
+        </span>
+      </div>
+      {telling ? (
+        <div className="mt-2 space-y-1.5">
+          <textarea
+            autoFocus
+            className="field min-h-[54px] !text-[11px]"
+            placeholder="e.g. The world doesn't exist - create it first. / Stop testing and report."
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) (e.preventDefault(), tell())
+              if (e.key === 'Escape') setTelling(false)
+            }}
+            data-testid="balloon-tell-input"
+          />
+          <div className="flex justify-end gap-1.5">
+            <button className="btn btn-ghost !px-2 !py-1 text-[11px]" onClick={() => setTelling(false)}>
+              Back
+            </button>
+            <button className="btn btn-primary !px-2.5 !py-1 text-[11px]" disabled={!note.trim()} onClick={tell} data-testid="balloon-tell-send">
+              <Send size={12} /> Tell it
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <button className="btn btn-primary !px-2.5 !py-1 text-[11px]" onClick={() => setTelling(true)} data-testid="balloon-tell">
+            <Send size={12} /> Tell it...
+          </button>
+          <button className="btn !px-2.5 !py-1 text-[11px]" onClick={() => void api().decide(item.id, true)} title="Let it carry on (the counters reset, a long task gets 15 more minutes)" data-testid="balloon-continue">
+            <Play size={12} /> Continue
+          </button>
+          <button className="btn btn-danger !px-2.5 !py-1 text-[11px]" onClick={() => void api().decide(item.id, false)} title="End the task; it reports back what it did" data-testid="balloon-stop">
+            <Square size={12} /> Stop
+          </button>
+          <button className="btn btn-ghost !px-2 !py-1 text-[11px] text-amber-200/80" onClick={() => useStore.getState().set({ panel: 'inbox' })}>
+            Details
+          </button>
+        </div>
+      )}
     </div>
   )
 }

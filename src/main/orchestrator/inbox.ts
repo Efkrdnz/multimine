@@ -38,6 +38,11 @@ export class Inbox {
     return this.add({ id: newId('a'), ts: Date.now(), kind: 'approval', askedBy, title, planMd, status: 'pending', permission, alwaysLabel })
   }
 
+  /** The loop guard pausing an agent: shown as a balloon with continue, tell it and stop. */
+  watchdog(askedBy: string, title: string, detailMd: string): Promise<InboxItem> {
+    return this.add({ id: newId('w'), ts: Date.now(), kind: 'approval', askedBy, title, planMd: detailMd, status: 'pending', permission: true, watchdog: true })
+  }
+
   /** Records an item that was settled on the spot (automation), for the log. */
   record(item: Omit<InboxItem, 'id' | 'ts'>): InboxItem {
     const full: InboxItem = { ...item, id: newId(item.kind === 'question' ? 'q' : 'a'), ts: Date.now() }

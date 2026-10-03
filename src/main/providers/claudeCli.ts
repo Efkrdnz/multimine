@@ -101,6 +101,22 @@ export class ClaudeCliProvider implements ProviderAdapter {
           mcpServers,
           settingSources: ['user', 'project', 'local'],
           abortController: abort,
+          // the loop guard sees every call, including ones the user's own settings allow outright
+          hooks: req.watch
+            ? {
+                PreToolUse: [
+                  {
+                    timeout: 86_400,
+                    hooks: [
+                      async (input: any) => {
+                        const v = await req.watch!(String(input.tool_name ?? ''), input.tool_input)
+                        return v.ok ? { continue: true } : { hookSpecificOutput: { hookEventName: 'PreToolUse' as const, permissionDecision: 'deny' as const, permissionDecisionReason: v.reason } }
+                      }
+                    ]
+                  }
+                ]
+              }
+            : undefined,
           pathToClaudeCodeExecutable: req.executable || undefined
         }
       })
@@ -117,8 +133,23 @@ export class ClaudeCliProvider implements ProviderAdapter {
           // the session id is the resume handle; announce it once
           if (msg.type === 'system' && msg.subtype === 'init') yield { type: 'resume', id: msg.session_id }
         }
-        if (msg.parent_tool_use_id) continue // a subagent's inner traffic
+        // a sub-agent's inner traffic: its tool calls are shown nested under the call that started it
+        const parent: string | undefined = msg.parent_tool_use_id ?? undefined
+        if (parent) {
+          if (msg.type === 'assistant')
+            for (const block of msg.message?.content ?? []) if (block.type === 'tool_use') yield { type: 'tool-start', id: block.id, name: block.name, input: block.input, parent }
+          if (msg.type === 'user' && Array.isArray(msg.message?.content))
+            for (const block of msg.message.content) if (block.type === 'tool_result') yield { type: 'tool-end', id: block.tool_use_id, output: textOf(block.content), isError: !!block.is_error, parent }
+          if (msg.type === 'tool_progress') yield { type: 'progress', id: parent }
+          continue
+        }
         switch (msg.type) {
+          case 'tool_progress':
+            yield { type: 'progress', id: msg.tool_use_id }
+            break
+          case 'system':
+            if (msg.subtype === 'task_progress' && msg.tool_use_id) yield { type: 'progress', id: msg.tool_use_id, note: String(msg.description ?? '').slice(0, 160) }
+            break
           case 'stream_event': {
             const ev = msg.event
             if (ev?.type === 'message_start') current = ev.message?.id ?? null

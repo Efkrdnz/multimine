@@ -2,10 +2,12 @@ import { join } from 'node:path'
 import { DEFAULT_CATALOG } from '@shared/catalog'
 import { DEFAULT_TIERS } from '@shared/economy'
 import type { AppSettings, ProviderKind } from '@shared/types'
+import { DEFAULT_WATCHDOG } from '../orchestrator/watchdog'
 import { readJson, writeJson } from './fsx'
 
 export const DEFAULT_SETTINGS: AppSettings = {
   automation: false,
+  watchdog: DEFAULT_WATCHDOG,
   plugins: {},
   toolOrder: [],
   defaultFallback: [],
@@ -48,6 +50,7 @@ export class AppConfig {
       ...structuredClone(DEFAULT_SETTINGS),
       ...saved,
       council: { ...DEFAULT_SETTINGS.council, ...(saved.council ?? {}) },
+      watchdog: { ...DEFAULT_WATCHDOG, ...(saved.watchdog ?? {}) },
       economy: { ...DEFAULT_SETTINGS.economy, ...(saved.economy ?? {}), tiers: { ...DEFAULT_TIERS, ...(saved.economy?.tiers ?? {}) } },
       catalog: { ...DEFAULT_CATALOG, ...(saved.catalog ?? {}) },
       baseUrls: { ...DEFAULT_SETTINGS.baseUrls, ...(saved.baseUrls ?? {}) }

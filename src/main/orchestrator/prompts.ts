@@ -11,6 +11,21 @@ export interface PromptInput {
   automation: boolean
 }
 
+/** For every agent that can change the project: check your work without going round in circles. */
+export const VERIFY_RULES = `## Verifying your work
+- Compile and run the project's unit tests as often as you need; they are cheap.
+- Launching the app or game (a game client, an editor, a dev server you watch, a browser) is costly.
+  Do it at most once per change, and only with the project's automatic exit or a timeout - never
+  start it and wait on it, never leave it running.
+- Before a launch, check what it needs: a world or save it quick-plays into, a binary on PATH, a
+  display. If a launch fails for a reason like that, do not retry it: \`ask_user\` or report what is
+  missing and the exact command the user can run.
+- Never repeat a check that already passed, and do not rebuild a test scene you already built. Once
+  it is verified, \`report\` - including how you verified it.
+- If multimine.md has a "How to verify" section, follow it over these defaults.
+- Multimine pauses an agent that relaunches the same thing, repeats a step, or runs far past its
+  budget, and asks the user what to do. If you are told something after such a pause, do that first.`
+
 export const CONTEXT_PROTOCOL = `## Context protocol
 This project keeps a map of itself in \`.multimine/context/\`, owned by the Context Handler.
 - Before exploring the code, read \`.multimine/context/index.md\` (tool \`read_context\`), then the
@@ -70,6 +85,7 @@ export function buildSystemPrompt(p: PromptInput): string {
   }
   if (agent.role === 'context-handler') coordination.push('', 'You alone have `update_context` to write files under `.multimine/context/`.')
   parts.push(coordination.join('\n'))
+  if (agent.permissions === 'write' && agent.role !== 'context-handler') parts.push(VERIFY_RULES)
   if (p.hasContextHandler) parts.push(CONTEXT_PROTOCOL)
   return parts.join('\n\n')
 }
@@ -88,4 +104,8 @@ export const BOOTSTRAP_TASK = `Build the context set for this project from scrat
 2. Write \`index.md\` (overview, layout, a table of every context file), \`registries.md\` (every
    registration point and how to add to it), one \`systems/<name>.md\` per system or mechanic, and
    an empty \`changelog.md\`.
-3. Only write what you verified in the code, with file paths.`
+3. Only write what you verified in the code, with file paths.
+4. Find how this project is checked (its test command, and the command that launches it with an
+   automatic screenshot or exit, if it has one) and what that command needs (for example a world or
+   save it quick-plays into). Write it in \`index.md\` under "How to verify", and say in your report
+   what the user should copy into multimine.md's "How to verify" section.`

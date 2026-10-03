@@ -140,7 +140,65 @@ function General({ settings }: { settings: AppSettings }) {
           />
         </div>
       </section>
+      <WatchdogSection settings={settings} />
     </div>
+  )
+}
+
+/** The loop guard: when an agent is paused and you are asked what to do. */
+function WatchdogSection({ settings }: { settings: AppSettings }) {
+  const w = settings.watchdog
+  const set = (patch: Partial<AppSettings['watchdog']>) => void api().updateSettings({ watchdog: { ...w, ...patch } })
+  const num = (key: 'launchRepeats' | 'exactRepeats' | 'cycleRepeats' | 'budgetMinutes' | 'planBudgetMinutes' | 'quietMinutes', label: string, help: string, min: number, max: number) => (
+    <div className="flex items-center gap-3 text-sm">
+      <span className="flex-1">
+        {label}
+        <span className="block text-xs text-indigo-200/70">{help}</span>
+      </span>
+      <input
+        className="field !w-20 text-center"
+        type="number"
+        min={min}
+        max={max}
+        defaultValue={w[key]}
+        onBlur={(e) => set({ [key]: Math.max(min, Math.min(max, Math.round(Number(e.target.value)) || w[key])) })}
+        data-testid={`watchdog-${key}`}
+      />
+    </div>
+  )
+  return (
+    <section data-testid="watchdog-settings">
+      <div className="label">Loop guard</div>
+      <div className="space-y-3">
+        <Toggle
+          on={w.enabled}
+          onChange={(enabled) => set({ enabled })}
+          title="Pause an agent that is going round in circles"
+          help="When it relaunches the same app with nothing changed, repeats a step, cycles through the same few steps, or runs past its time budget, it waits for you: tell it what to do, let it continue, or stop it."
+          testId="watchdog-enabled"
+        />
+        {w.enabled && (
+          <div className="space-y-3 rounded-xl border border-white/10 bg-black/20 p-3">
+            {num('launchRepeats', 'Launches of the same app with no edit in between', 'Running the game or a dev server is costly; three with nothing changed is a loop.', 2, 20)}
+            {num('exactRepeats', 'Identical steps in a row', 'The same command or call, with no file changed in between.', 2, 50)}
+            {num('cycleRepeats', 'Repeats of a short cycle of steps', 'The same two to eight steps over and over.', 2, 20)}
+            {num('budgetMinutes', 'Minutes a task may run', 'Then it asks whether to keep going (each Continue adds 15 minutes).', 5, 480)}
+            {num('planBudgetMinutes', 'Minutes for a task on an approved plan', 'Gated agents (like the Implementer) work through whole plans.', 5, 480)}
+            {num('quietMinutes', 'Minutes of silence before an agent is marked quiet', 'Only a warning on its orb and in its chat; nothing is stopped.', 1, 120)}
+            <div>
+              <div className="text-sm">Commands that launch an app</div>
+              <div className="mb-1 text-xs text-indigo-200/70">Regular expressions, one per line.</div>
+              <textarea
+                className="field min-h-[90px] font-mono !text-xs"
+                defaultValue={w.launchPatterns.join('\n')}
+                onBlur={(e) => set({ launchPatterns: e.target.value.split('\n').map((x) => x.trim()).filter(Boolean) })}
+                data-testid="watchdog-patterns"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
   )
 }
 

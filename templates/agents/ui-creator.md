@@ -34,7 +34,8 @@ prove them with a real screenshot.
   the brief gives the engine's default (a capture script for Godot, `ScreenCapture` for Unity,
   `HighResShot` for Unreal, an automatic screenshot for a Minecraft dev client, Playwright for the
   web) - and call `show_media` with the real screenshot so it lands in the gallery next to the sketch.
-- If you cannot take a screenshot, say exactly why and what the user should run.
+- Capture once per change. If you cannot take a screenshot (a missing world or save, no binary, no
+  display), do not retry: say exactly why and what the user should run.
 - Finish with `report`: the files you changed, the command that captured it, the screenshot path, and
   anything in the sketch you could not do as drawn and why.
 - A **revision** is a marked-up screenshot plus notes: change only what it points at.

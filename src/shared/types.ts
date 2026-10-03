@@ -79,6 +79,16 @@ export interface ToolCallView {
   input: unknown
   output?: string
   status: 'running' | 'done' | 'error'
+  startedAt?: number
+  endedAt?: number
+  /** The latest sign of life (a heartbeat or a sub-agent step) while it runs. */
+  beatAt?: number
+  /** A sub-agent's own steps, nested under the call that started it (the latest ones). */
+  children?: ToolCallView[]
+  /** How many steps the sub-agent has taken in all, including ones no longer kept. */
+  childCount?: number
+  /** A sub-agent's own word on what it is doing. */
+  progress?: string
 }
 
 export interface MediaItem {
@@ -174,6 +184,11 @@ export interface InboxItem {
   /** Offers a third answer, "always", remembered for the asking agent (e.g. paid fallbacks). */
   alwaysLabel?: string
   always?: boolean
+  /**
+   * The watchdog paused this agent: it was repeating itself or ran past its budget. Approve lets it
+   * continue, deny with a note tells it what to do instead, deny without one stops the task.
+   */
+  watchdog?: boolean
 }
 
 export interface SessionMeta {
@@ -261,8 +276,27 @@ export interface PluginSettings {
   granted: PluginPermission[]
 }
 
+/** The loop guard: when to pause an agent and ask the user. */
+export interface WatchdogSettings {
+  enabled: boolean
+  /** Launches of the same app with no file changed in between before it asks. */
+  launchRepeats: number
+  /** Identical calls (with no edit between) before it asks. */
+  exactRepeats: number
+  /** Times a short cycle of calls may repeat. */
+  cycleRepeats: number
+  /** Minutes a turn may run before it asks; tasks on an approved plan get planBudgetMinutes. */
+  budgetMinutes: number
+  planBudgetMinutes: number
+  /** Minutes of silence before an agent is marked quiet. */
+  quietMinutes: number
+  /** Regular expressions for commands that launch an app, a game or a server. */
+  launchPatterns: string[]
+}
+
 export interface AppSettings {
   automation: boolean
+  watchdog: WatchdogSettings
   plugins: Record<string, PluginSettings>
   /** The order of tiles in the Tools grid (plugin ids). */
   toolOrder: string[]
@@ -377,6 +411,12 @@ export type MainEvent =
       agentId: string
       status: AgentStatus
       activity?: string
+      /** What the activity is acting on: the command, the file, the pattern. */
+      detail?: string
+      /** When the current activity began, for a ticking clock. */
+      since?: number
+      /** Set when the agent has been silent, or one step has run, for a long time: why. */
+      quiet?: string
       temp?: { model: string; effort: Effort; difficulty: string }
       fallback?: { provider: ProviderKind; model: string; reason: string }
     }

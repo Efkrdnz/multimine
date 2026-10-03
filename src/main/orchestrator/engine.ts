@@ -42,6 +42,8 @@ import { SHORT_PROVIDER, modelLabel } from '@shared/catalog'
 import { formatAnswers, Inbox, recommendedAnswers } from './inbox'
 import { runCouncil } from './council'
 import { insideProject, workspaceTools } from './workspace'
+import { verdictFor, Watchdog, type Trip, type WatchVerdict } from './watchdog'
+import { describeTool, duration } from '@shared/activity'
 
 export interface EngineDeps {
   project: ProjectStore
@@ -83,6 +85,21 @@ const text = (t: string, isError = false): ToolOutput => ({ text: t, isError })
  * the start and the end, and a long run of builds would otherwise ship megabytes on every update.
  */
 const CLIP = 4000
+/**
+ * In-process tools (API and mock agents) with the loop guard in front of each: a refused call is
+ * never run, and the model gets the user's word as its result instead.
+ */
+export function guardTools(tools: ToolDef[], watch?: (name: string, input: unknown) => Promise<WatchVerdict>): ToolDef[] {
+  if (!watch) return tools
+  return tools.map((t) => ({
+    ...t,
+    handler: async (args: Record<string, unknown>): Promise<ToolOutput> => {
+      const v = await watch(t.name, args)
+      return v.ok ? t.handler(args) : { text: v.reason, isError: true }
+    }
+  }))
+}
+
 export function clip(out: string): string {
   return out.length <= CLIP ? out : `${out.slice(0, CLIP * 0.6)}\n\n... ${out.length - CLIP} characters not shown ...\n\n${out.slice(-CLIP * 0.4)}`
 }
@@ -98,6 +115,17 @@ export class Engine {
   media: MediaItem[] = []
   inbox!: Inbox
   private status = new Map<string, AgentStatus>()
+  /** What each busy agent is doing, since when, and whether it has gone quiet: the live activity line. */
+  private acts = new Map<string, { activity?: string; detail?: string; since: number; quiet?: string }>()
+  /** When each turn last showed a sign of life (any event from its provider). */
+  private lastBeat = new Map<string, number>()
+  private quietTimer: ReturnType<typeof setInterval> | null = null
+  /** Why a turn was stopped by the watchdog, for the result its caller gets. */
+  private stopReasons = new Map<string, string>()
+  /** Agents already paused by the watchdog: one question at a time, even with calls in parallel. */
+  private pausedNow = new Set<string>()
+  /** An instruction to resume a turn with after the watchdog paused it (providers with no per-call hook). */
+  private redirects = new Map<string, string>()
   private queues = new Map<string, Promise<unknown>>()
   private turns = new Map<string, TurnContext>()
   private waits = new Map<string, string>()
@@ -179,9 +207,90 @@ export class Engine {
 
   // ---------------------------------------------------------------- turns
 
-  private setStatus(agentId: string, status: AgentStatus, activity?: string): void {
+  private setStatus(agentId: string, status: AgentStatus, activity?: string, detail?: string): void {
+    const prev = this.acts.get(agentId)
+    const changed = this.status.get(agentId) !== status || prev?.activity !== activity || prev?.detail !== detail
+    const act = { activity, detail, since: changed || !prev ? Date.now() : prev.since, quiet: changed ? undefined : prev?.quiet }
+    if (status === 'idle' || status === 'error') this.acts.delete(agentId)
+    else this.acts.set(agentId, act)
     this.status.set(agentId, status)
-    this.d.emit({ type: 'status', agentId, status, activity, temp: this.temps.get(agentId), fallback: this.fallbacks.get(agentId) })
+    this.emitStatus(agentId)
+  }
+
+  private emitStatus(agentId: string): void {
+    const act = this.acts.get(agentId)
+    this.d.emit({
+      type: 'status',
+      agentId,
+      status: this.status.get(agentId) ?? 'idle',
+      activity: act?.activity,
+      detail: act?.detail,
+      since: act?.since,
+      quiet: act?.quiet,
+      temp: this.temps.get(agentId),
+      fallback: this.fallbacks.get(agentId)
+    })
+  }
+
+  /**
+   * Marks a busy agent quiet when nothing has come from it for a while, or one step has run for a
+   * long time: the user sees it on the orb and in the chat instead of wondering whether it is stuck.
+   */
+  private checkQuiet(): void {
+    const quietMs = Math.max(1, this.d.config.settings.watchdog?.quietMinutes ?? 5) * 60_000
+    const now = Date.now()
+    for (const agentId of this.turns.keys()) {
+      const act = this.acts.get(agentId)
+      if (!act || this.status.get(agentId) === 'waiting') continue
+      const silent = now - (this.lastBeat.get(agentId) ?? act.since)
+      const running = now - act.since
+      let quiet: string | undefined
+      if (silent > quietMs) quiet = `No sign of life for ${duration(silent)}${act.activity ? ` (${act.activity}${act.detail ? ` ${act.detail}` : ''})` : ''}. It may be waiting on something, such as a window it opened.`
+      else if (act.activity && act.activity !== 'Thinking' && act.activity !== 'Writing' && running > Math.max(quietMs * 2, 10 * 60_000)) quiet = `${act.activity}${act.detail ? ` ${act.detail}` : ''} has been running for ${duration(running)}.`
+      if (quiet !== act.quiet) {
+        act.quiet = quiet
+        this.emitStatus(agentId)
+      }
+    }
+    if (!this.turns.size && this.quietTimer) {
+      clearInterval(this.quietTimer)
+      this.quietTimer = null
+    }
+  }
+
+  /**
+   * The loop guard's word on a call about to run. A trip waits for the user (a balloon over the
+   * agent): continue forgives it, a note is handed to the model instead of running the call, and a
+   * plain no stops the task. Automation never answers this one: it is there for when things go wrong.
+   */
+  private async watchCall(agentId: string, wd: Watchdog, ctl: AbortController, name: string, input: unknown): Promise<WatchVerdict> {
+    if (this.pausedNow.has(agentId)) return { ok: true }
+    const trip = wd.check(name, input, Date.now())
+    if (!trip) return { ok: true }
+    this.pausedNow.add(agentId)
+    try {
+      return await this.askWatchdog(agentId, wd, ctl, trip)
+    } finally {
+      this.pausedNow.delete(agentId)
+    }
+  }
+
+  private async askWatchdog(agentId: string, wd: Watchdog, ctl: AbortController, trip: Trip): Promise<WatchVerdict> {
+    const agent = this.d.project.get(agentId)
+    await this.logBus('approval', agentId, 'user', `Paused: ${agent?.name ?? agentId} ${trip.title}`)
+    const prev = { status: this.status.get(agentId), act: this.acts.get(agentId) }
+    this.setStatus(agentId, 'waiting', 'Paused by the loop guard')
+    const item = await this.inbox.watchdog(agentId, trip.title, `${trip.detail}
+
+**Continue** lets it carry on. **Tell it** gives it an instruction instead of this step. **Stop** ends the task and it reports back.`)
+    const verdict = verdictFor(item)
+    if (verdict.ok) wd.forgive(trip)
+    if (!verdict.ok && verdict.stop && !ctl.signal.aborted) {
+      this.stopReasons.set(agentId, `Stopped by the user: ${agent?.name ?? agentId} ${trip.title}.`)
+      ctl.abort()
+    }
+    if (prev.status && prev.status !== 'waiting' && !ctl.signal.aborted) this.setStatus(agentId, prev.status, prev.act?.activity, prev.act?.detail)
+    return verdict
   }
 
   /**
@@ -352,9 +461,15 @@ export class Engine {
     const ctx: TurnContext = { from, kind, reports: [] }
     this.turns.set(agentId, ctx)
     this.emitChannels()
-    const ctl = new AbortController()
+    let ctl = new AbortController()
     this.controllers.set(agentId, ctl)
-    this.setStatus(agentId, 'thinking')
+    this.setStatus(agentId, 'thinking', 'Thinking')
+    const wset = this.d.config.settings.watchdog
+    const wd = new Watchdog(wset, Date.now(), own.gated ? wset.planBudgetMinutes : wset.budgetMinutes)
+    this.lastBeat.set(agentId, Date.now())
+    this.quietTimer ??= setInterval(() => this.checkQuiet(), 15_000)
+    this.stopReasons.delete(agentId)
+    this.redirects.delete(agentId)
 
     const reply: ChatMessage = { id: newId('r'), agentId, role: 'assistant', from: agentId, text: '', ts: Date.now(), streaming: true, tools: [] }
     this.upsert(reply, true)
@@ -381,7 +496,22 @@ export class Engine {
           this.fallbacks.set(agentId, { provider: hop.provider, model: hop.model, reason: why })
           this.setStatus(agentId, this.status.get(agentId) ?? 'thinking')
         }
-        error = await this.runHop(hopAgent, promptNow, historyNow, !continuing, reply, ctl, sessionId)
+        error = await this.runHop(hopAgent, promptNow, historyNow, !continuing, reply, ctl, sessionId, wd)
+        // the watchdog paused a provider it cannot hold mid-call: resume the same thread with the user's word
+        const redirect = this.redirects.get(agentId)
+        if (redirect && sessionId === this.session.id) {
+          this.redirects.delete(agentId)
+          ctl = new AbortController()
+          this.controllers.set(agentId, ctl)
+          for (const t of reply.tools ?? []) if (t.status === 'running') Object.assign(t, { status: 'error', endedAt: Date.now(), output: 'Interrupted by the watchdog.' })
+          reply.text += `${reply.text ? '\n\n' : ''}*Paused by the loop guard; resumed with your instruction.*\n\n`
+          this.upsert(reply, true)
+          promptNow = redirect
+          historyNow = []
+          continuing = false
+          error = undefined
+          continue
+        }
         if (!error || ctl.signal.aborted || sessionId !== this.session.id) break
         const failure = failureOf(error)
         if (!failure) break
@@ -415,19 +545,21 @@ export class Engine {
     } finally {
       this.turns.delete(agentId)
       this.controllers.delete(agentId)
+      this.lastBeat.delete(agentId)
       this.temps.delete(agentId)
       this.fallbacks.delete(agentId)
       if (this.writing.delete(agentId)) this.writingUntil = Date.now() + 4000
       this.emitChannels()
     }
-    if (ctl.signal.aborted && !error) error = 'Stopped.'
+    if (ctl.signal.aborted && (!error || this.stopReasons.has(agentId))) error = this.stopReasons.get(agentId) ?? 'Stopped.'
+    this.stopReasons.delete(agentId)
     reply.streaming = false
     if (error) reply.error = error
     for (const t of reply.tools ?? []) if (t.status === 'running') t.status = 'error'
     if (sessionId === this.session.id) {
       this.upsert(reply, true)
       await this.persist(reply)
-      this.setStatus(agentId, error && error !== 'Stopped.' ? 'error' : 'idle')
+      this.setStatus(agentId, error && !/^Stopped/.test(error) ? 'error' : 'idle')
     }
 
     if (watchChanges && sessionId === this.session.id) {
@@ -442,7 +574,7 @@ export class Engine {
   }
 
   /** One provider's run of a turn, streaming into `reply`. Returns the error it ended on, if any. */
-  private async runHop(agent: AgentSpec, prompt: string, history: HistoryItem[], mayResume: boolean, reply: ChatMessage, ctl: AbortController, sessionId: string): Promise<string | undefined> {
+  private async runHop(agent: AgentSpec, prompt: string, history: HistoryItem[], mayResume: boolean, reply: ChatMessage, ctl: AbortController, sessionId: string, wd?: Watchdog): Promise<string | undefined> {
     const agentId = agent.id
     const isCli = ProviderRegistry.isCli(agent.provider)
     const resumeId = mayResume ? this.resumeKey(agentId, agent.provider) : undefined
@@ -458,7 +590,7 @@ export class Engine {
       prompt: finalPrompt,
       cwd: this.d.project.dir,
       resumeId,
-      tools: await this.toolsFor(agent, isCli),
+      tools: guardTools(await this.toolsFor(agent, isCli), wd && !isCli ? (n, i) => this.watchCall(agentId, wd, ctl, n, i) : undefined),
       busUrl: isCli ? this.d.busUrl?.(agentId) : undefined,
       externalMcp: this.d.config.settings.mcpServers.filter((s) => agent.mcp.includes(s.id)),
       apiKey: this.d.config.getKey(agent.provider),
@@ -467,28 +599,67 @@ export class Engine {
       signal: ctl.signal,
       ask: (qs) => this.askUser(agentId, qs).then((item) => item.answers ?? {}),
       approvePlan: (plan) => this.requestApproval(agentId, `${agent.name} wants to leave plan mode`, plan).then((i) => ({ approved: !!i.approved, note: i.note })),
-      approveAction: (title, detail, always) => this.approveAction(agentId, title, detail, always)
+      approveAction: (title, detail, always) => this.approveAction(agentId, title, detail, always),
+      // Claude holds each call on a hook; Codex cannot be held, so it is watched as calls start (below)
+      watch: wd && agent.provider === 'claude-cli' ? (n, i) => this.watchCall(agentId, wd, ctl, n, i) : undefined
+    }
+    const findTool = (id: string, parent?: string) => {
+      const top = reply.tools!.find((x) => x.id === (parent ?? id))
+      return parent ? top?.children?.find((x) => x.id === id) : top
     }
     for await (const ev of this.d.providers.get(agent.provider).run(req)) {
       if (sessionId !== this.session.id) break
+      this.lastBeat.set(agentId, Date.now())
       switch (ev.type) {
         case 'text':
           reply.text += ev.delta
-          this.setStatusOnce(agentId, 'working')
+          if (this.acts.get(agentId)?.activity !== 'Writing') this.setStatus(agentId, 'working', 'Writing')
           this.d.emit({ type: 'talk', agentId })
           break
         case 'thinking':
           reply.thinking = (reply.thinking ?? '') + ev.delta
-          this.setStatusOnce(agentId, 'thinking')
+          if (this.acts.get(agentId)?.activity !== 'Thinking') this.setStatus(agentId, 'thinking', 'Thinking')
           break
-        case 'tool-start':
-          reply.tools!.push({ id: ev.id, name: ev.name, input: ev.input, status: 'running' })
-          this.setStatus(agentId, 'working', ev.name.replace(/^mcp__multimine__/, ''))
+        case 'tool-start': {
+          const now = Date.now()
+          const d = describeTool(ev.name, ev.input)
+          const view = { id: ev.id, name: ev.name, input: ev.input, status: 'running' as const, startedAt: now }
+          if (ev.parent) {
+            // a sub-agent's step: kept under the call that started it, the latest hundred of them
+            const top = reply.tools!.find((x) => x.id === ev.parent)
+            if (top) {
+              top.children = [...(top.children ?? []), view].slice(-100)
+              top.childCount = (top.childCount ?? 0) + 1
+              top.beatAt = now
+            }
+            this.setStatus(agentId, 'working', `Sub-agent · ${d.verb}`, d.brief)
+          } else {
+            reply.tools!.push(view)
+            this.setStatus(agentId, 'working', d.verb, d.brief)
+            // Codex runs a command before anyone can hold it: the watchdog can only pause the turn after
+            if (wd && agent.provider === 'codex-cli')
+              void this.watchCall(agentId, wd, ctl, ev.name, ev.input).then((v) => {
+                if (!v.ok && !v.stop) {
+                  this.redirects.set(agentId, v.reason)
+                  ctl.abort()
+                }
+              })
+          }
           break
+        }
         case 'tool-end': {
-          const t = reply.tools!.find((x) => x.id === ev.id)
-          if (t) Object.assign(t, { output: clip(ev.output), status: ev.isError ? 'error' : 'done' })
+          const t = findTool(ev.id, ev.parent)
+          if (t) Object.assign(t, { output: clip(ev.output), status: ev.isError ? 'error' : 'done', endedAt: Date.now() })
+          if (!ev.parent && t) this.setStatus(agentId, 'thinking', 'Thinking')
           if (isCli && t && !t.name.includes('multimine')) void this.captureFromText(agentId, ev.output, t.name)
+          break
+        }
+        case 'progress': {
+          const t = findTool(ev.id)
+          if (t) {
+            t.beatAt = Date.now()
+            if (ev.note) t.progress = ev.note
+          }
           break
         }
         case 'resume':
@@ -568,10 +739,6 @@ export class Engine {
     const run = (cmd: string) =>
       new Promise<string>((resolve) => exec(cmd, { cwd: this.d.project.dir, timeout: 15_000, maxBuffer: 8_000_000 }, (err, out) => resolve(err ? '' : out.trim())))
     return Promise.all([run('git diff HEAD --stat'), run('git diff HEAD')]).then(([diffStat, diff]) => ({ diffStat: diffStat || undefined, diff: diff || undefined }))
-  }
-
-  private setStatusOnce(agentId: string, s: AgentStatus): void {
-    if (this.status.get(agentId) !== s) this.setStatus(agentId, s)
   }
 
   systemPrompt(agent: AgentSpec): string {

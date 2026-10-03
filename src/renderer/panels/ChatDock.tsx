@@ -4,6 +4,7 @@ import { SHORT_PROVIDER, modelLabel } from '@shared/catalog'
 import { ROLE_LABEL } from '@shared/templates'
 import { MASTERMIND_ID } from '@shared/types'
 import { EMPTY_LIST, EMPTY_MAP, api, useStore } from '../state/store'
+import { ActivityLine } from './ActivityLine'
 import { MessageView } from './MessageView'
 import { OrbAvatar } from './OrbAvatar'
 
@@ -49,7 +50,7 @@ function ChatPanel({ agentId }: { agentId: string }) {
             ) : (
               `${modelLabel(catalog, agent.provider, agent.model)} · ${agent.effort}`
             )}{' '}
-            · <span className={st?.status === 'error' ? 'text-red-300' : st?.status === 'waiting' ? 'text-amber-300' : ''}>{st?.activity || STATUS_TEXT[st?.status ?? 'idle']}</span>
+            · <span className={st?.status === 'error' ? 'text-red-300' : st?.status === 'waiting' || st?.quiet ? 'text-amber-300' : ''}>{st?.activity ? `${st.activity}${st.detail ? ` ${st.detail}` : ''}` : STATUS_TEXT[st?.status ?? 'idle']}</span>
           </div>
         </div>
         <button className="btn btn-ghost !p-1.5" title="Edit agent" onClick={() => useStore.getState().set({ modal: { kind: 'agent', agent, isNew: false } })}>
@@ -68,6 +69,7 @@ function ChatPanel({ agentId }: { agentId: string }) {
         {messages.map((m, i) => (
           <MessageView key={m.id} m={m} last={i === messages.length - 1 && !busy} />
         ))}
+        <ActivityLine agentId={agentId} />
         <div ref={end} className="h-2" />
       </div>
       <div className="border-t border-white/10 p-3">

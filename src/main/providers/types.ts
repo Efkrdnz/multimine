@@ -1,5 +1,6 @@
 import type { z } from 'zod'
 import type { AgentSpec, McpServerConfig, Question } from '@shared/types'
+import type { WatchVerdict } from '../orchestrator/watchdog'
 
 /** What a tool returns: text for the model, plus any media it produced. */
 export interface ToolOutput {
@@ -52,13 +53,21 @@ export interface TurnRequest {
    * ask even with auto-approve on (pushing, publishing, destroying history).
    */
   approveAction: (title: string, detail: string, always?: boolean) => Promise<boolean>
+  /**
+   * The loop guard, asked before each tool call runs. It may hold the call while the user decides;
+   * a refusal carries the reason the model is given instead of the tool's result.
+   */
+  watch?: (name: string, input: unknown) => Promise<WatchVerdict>
 }
 
 export type AgentEvent =
   | { type: 'text'; delta: string }
   | { type: 'thinking'; delta: string }
-  | { type: 'tool-start'; id: string; name: string; input: unknown }
-  | { type: 'tool-end'; id: string; output: string; isError?: boolean }
+  /** `parent` is set for a sub-agent's own calls: the id of the call that started the sub-agent. */
+  | { type: 'tool-start'; id: string; name: string; input: unknown; parent?: string }
+  | { type: 'tool-end'; id: string; output: string; isError?: boolean; parent?: string }
+  /** A running call is alive (a heartbeat), optionally with a word on what it is doing. */
+  | { type: 'progress'; id: string; note?: string }
   | { type: 'resume'; id: string }
   | { type: 'usage'; inputTokens: number; outputTokens: number; costUsd?: number }
   | { type: 'error'; message: string }

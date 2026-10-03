@@ -5,6 +5,8 @@ import { AlertTriangle, Brain, CheckCircle2, ChevronRight, Loader2, RotateCcw, W
 import type { ChatMessage, ToolCallView } from '@shared/types'
 import { EMPTY_LIST, api, useStore } from '../state/store'
 import { MediaView } from './MediaView'
+import { useNow } from '../state/useNow'
+import { describeTool, duration, elapsed } from '@shared/activity'
 
 const PLUGINS = [remarkGfm]
 
@@ -26,26 +28,68 @@ function show(v: unknown): string {
   }
 }
 
+function statusIcon(t: ToolCallView, size = 13) {
+  return t.status === 'running' ? <Loader2 size={size} className="shrink-0 animate-spin text-emerald-300" /> : t.status === 'error' ? <XCircle size={size} className="shrink-0 text-red-300" /> : <CheckCircle2 size={size} className="shrink-0 text-emerald-300" />
+}
+
+/** How long a call has run (ticking while it runs), or took. */
+function Took({ t }: { t: ToolCallView }) {
+  const now = useNow(t.status === 'running' && !!t.startedAt)
+  if (!t.startedAt) return null
+  const ms = (t.endedAt ?? now) - t.startedAt
+  if (t.status !== 'running' && ms < 1000) return null
+  return <span className="shrink-0 font-mono text-[10.5px] text-indigo-300/60">{t.status === 'running' ? elapsed(ms) : duration(ms)}</span>
+}
+
 function ToolCard({ t }: { t: ToolCallView }) {
   const [open, setOpen] = useState(false)
+  const d = describeTool(t.name, t.input)
   const name = t.name.replace(/^mcp__multimine__/, '').replace(/^mcp__/, '')
-  const icon = t.status === 'running' ? <Loader2 size={13} className="animate-spin text-emerald-300" /> : t.status === 'error' ? <XCircle size={13} className="text-red-300" /> : <CheckCircle2 size={13} className="text-emerald-300" />
-  const brief = (() => {
-    const i = t.input as Record<string, unknown> | undefined
-    const v = i && (i.to ?? i.agent ?? i.path ?? i.command ?? i.file_path ?? i.pattern ?? i.title ?? i.summary ?? i.file)
-    return typeof v === 'string' ? v : ''
-  })()
+  const kids = t.children ?? []
+  const latest = kids.at(-1)
   return (
-    <div className="my-1 rounded-lg border border-white/10 bg-black/25 text-xs">
+    <div className="my-1 rounded-lg border border-white/10 bg-black/25 text-xs" data-testid="tool-card">
       <button className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left" onClick={() => setOpen(!open)}>
-        <ChevronRight size={12} className={`transition ${open ? 'rotate-90' : ''}`} />
-        <Wrench size={12} className="text-indigo-300" />
-        <span className="font-mono font-semibold text-indigo-100">{name}</span>
-        <span className="flex-1 truncate font-mono text-indigo-300/70">{brief}</span>
-        {icon}
+        <ChevronRight size={12} className={`shrink-0 transition ${open ? 'rotate-90' : ''}`} />
+        <Wrench size={12} className="shrink-0 text-indigo-300" />
+        <span className="shrink-0 font-mono font-semibold text-indigo-100">{name}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-indigo-300/70">{d.brief}</span>
+        <Took t={t} />
+        {statusIcon(t)}
       </button>
+      {(kids.length > 0 || t.progress) && (
+        <div className="border-t border-white/5 px-2.5 py-1 text-[11px] text-indigo-300/80" data-testid="tool-steps">
+          {t.progress && <div className="truncate italic">{t.progress}</div>}
+          {kids.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <span>{t.childCount ?? kids.length} steps</span>
+              {latest && (
+                <span className="min-w-0 truncate">
+                  · {t.status === 'running' ? 'now' : 'last'}: {describeTool(latest.name, latest.input).verb} <span className="font-mono">{describeTool(latest.name, latest.input).brief}</span>
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       {open && (
         <div className="space-y-2 border-t border-white/10 p-2.5">
+          {kids.length > 0 && (
+            <div className="space-y-0.5">
+              {(t.childCount ?? 0) > kids.length && <div className="text-[10.5px] text-indigo-300/50">... {(t.childCount ?? 0) - kids.length} earlier steps</div>}
+              {kids.map((k) => {
+                const kd = describeTool(k.name, k.input)
+                return (
+                  <div key={k.id} className="flex items-center gap-1.5 font-mono text-[11px]">
+                    {statusIcon(k, 11)}
+                    <span className="shrink-0 text-indigo-100">{kd.verb}</span>
+                    <span className="min-w-0 flex-1 truncate text-indigo-300/70">{kd.brief}</span>
+                    <Took t={k} />
+                  </div>
+                )
+              })}
+            </div>
+          )}
           <pre className="scroll-thin max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-indigo-200">{show(t.input)}</pre>
           {t.output !== undefined && <pre className="scroll-thin max-h-72 overflow-auto whitespace-pre-wrap rounded bg-black/30 p-2 font-mono text-[11px] text-slate-200">{t.output || '(empty)'}</pre>}
         </div>

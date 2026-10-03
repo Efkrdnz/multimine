@@ -1,3 +1,4 @@
+import { elapsed } from '@shared/activity'
 import { Container, Graphics, Sprite, Text } from 'pixi.js'
 import type { AgentStatus } from '@shared/types'
 import { glowTexture, hexNum, orbTexture } from './textures'
@@ -40,6 +41,10 @@ export class AgentOrb extends Container {
   look: OrbLook = { name: '', subtitle: '', color: '#7c9cff', radius: 34 }
   status: AgentStatus = 'idle'
   activity = ''
+  /** When the current activity began (0: no clock), and whether the agent has gone quiet. */
+  since = 0
+  quiet = false
+  private quietDrawn = false
   selected = false
   hovered = false
   private t = Math.random() * 10
@@ -114,7 +119,12 @@ export class AgentOrb extends Container {
     this.drawFace(radius * hover * appear)
     this.drawBubble(radius * appear)
 
-    this.activityText.text = this.activity && this.status !== 'idle' ? this.activity.slice(0, 28) : ''
+    if (this.activity && this.status !== 'idle' && this.status !== 'error') {
+      const label = this.activity.length > 30 ? `${this.activity.slice(0, 29)}…` : this.activity
+      this.activityText.text = this.since ? `${label} · ${elapsed(Date.now() - this.since)}` : label
+      // restyling re-renders the text, so only when it changes
+      if (this.quietDrawn !== this.quiet) (this.activityText.style.fill = this.quiet ? 0xfbbf24 : 0xe0e7ff), (this.quietDrawn = this.quiet)
+    } else this.activityText.text = ''
     this.activityText.y = -radius - 16 + bob
     this.nameText.alpha = appear
     this.sub.alpha = appear * (this.look.temp || this.look.fallback ? 0.75 + 0.25 * Math.sin(this.t * 4) : 1)

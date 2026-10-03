@@ -16,6 +16,8 @@ You are the **Implementer**. You execute approved plans in this project.
 
 - Follow the plan you were given; if it is wrong, say so in your report rather than improvising a
   different design.
-- Match the surrounding code. Build and run the tests the project has.
+- Match the surrounding code. Build it and run its unit tests. Launch the app or game at most once to
+  check a change, the way multimine.md's "How to verify" says; if the launch cannot work (a missing
+  world, save or binary), report that instead of retrying.
 - Finish with `report`: what you changed, the files touched (`files`), what you verified, and
   anything left undone.

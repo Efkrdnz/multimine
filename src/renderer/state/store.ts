@@ -34,7 +34,7 @@ export interface State {
   sessions: SessionMeta[]
   activeSession: string | null
   chats: Record<string, ChatMessage[]>
-  status: Record<string, { status: AgentStatus; activity?: string; temp?: { model: string; effort: string; difficulty: string }; fallback?: { provider: string; model: string; reason: string } }>
+  status: Record<string, { status: AgentStatus; activity?: string; detail?: string; since?: number; quiet?: string; temp?: { model: string; effort: string; difficulty: string }; fallback?: { provider: string; model: string; reason: string } }>
   /** Providers out of usage (or close to it) right now. */
   health: Record<string, { state: 'near' | 'exhausted'; until: number; reason: string }>
   bus: BusEvent[]
@@ -147,7 +147,7 @@ export function applyEvent(e: MainEvent): void {
       break
     }
     case 'status':
-      s.set({ status: { ...s.status, [e.agentId]: { status: e.status, activity: e.activity, temp: e.temp, fallback: e.fallback } } })
+      s.set({ status: { ...s.status, [e.agentId]: { status: e.status, activity: e.activity, detail: e.detail, since: e.since, quiet: e.quiet, temp: e.temp, fallback: e.fallback } } })
       break
     case 'bus':
       s.set({ bus: [...s.bus.slice(-300), e.event] })

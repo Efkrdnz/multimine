@@ -11,6 +11,7 @@ designed against a core that has stopped moving.
 | 3 | Plugin system + Tools grid | done (`docs/plugins.md`) |
 | 4 | UI sketcher (the first plugin) | done |
 | 5 | Engine targets for the Sketcher, Asset Board, Data Tables | done: `docs/plans/engine-sketcher-assets-data.md` |
+| 6 | Live agent activity and the loop guard | done |
 
 ---
 

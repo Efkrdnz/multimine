@@ -102,6 +102,16 @@ packets fly), ask you questions through Mastermind, and work on a real project f
   and a request to anyone on the team; the table reloads when they edit the file.
 - Every built-in tool holds no privileges of its own: it goes through the same permission-checked
   plugin API a third-party plugin gets.
+- **See what agents are doing.** Every busy agent shows a live line - "Running gradlew runClient ·
+  4:12", "Editing Ability.java" - in its chat and over its orb; tool cards show how long each step
+  took, and a Claude sub-agent's steps appear nested under the task that started it. An agent that
+  has been silent for a while turns amber ("quiet") with a Stop button.
+- **Loop guard.** An agent that relaunches the same app with nothing changed, repeats a step, cycles
+  through the same few steps, or runs past its time budget is paused, and a balloon over its orb asks
+  you: **Tell it...** (your instruction replaces the step), **Continue**, or **Stop**. Thresholds are
+  in Settings. Agents are also told to launch a game at most once per change and to report a missing
+  world or binary instead of retrying; fill in the "How to verify" section of `multimine.md` with your
+  project's exact commands.
 - **Sessions.** Agents belong to the project; conversations belong to a session. Create, rename,
   duplicate, switch. Claude and Codex threads resume per session.
 

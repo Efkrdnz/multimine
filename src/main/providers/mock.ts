@@ -4,6 +4,8 @@ export interface MockStep {
   text?: string
   /** args may be computed from the outputs of the earlier tool calls in this turn. */
   tool?: { name: string; args: Record<string, unknown> | ((outputs: string[]) => Record<string, unknown>) }
+  /** A provider event as it is, for tests of what the engine does with one (a sub-agent's step, a heartbeat). */
+  event?: AgentEvent
 }
 
 /** A script decides what a mock agent does with a prompt. Tests inject one; the app uses the default. */
@@ -51,6 +53,7 @@ export class MockProvider implements ProviderAdapter {
     let n = 0
     for (const step of steps) {
       if (req.signal.aborted) return
+      if (step.event) yield step.event
       if (step.tool) {
         const id = `mock-${++n}`
         const def: ToolDef | undefined = req.tools.find((t) => t.name === step.tool!.name)

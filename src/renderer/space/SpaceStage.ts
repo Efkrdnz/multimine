@@ -10,7 +10,7 @@ import { Starfield } from './Starfield'
 export interface SceneState {
   agents: AgentSpec[]
   layout: Record<string, { x: number; y: number }>
-  status: Record<string, { status: AgentStatus; activity?: string; temp?: { model: string; effort: string; difficulty: string }; fallback?: { provider: string; model: string; reason: string } }>
+  status: Record<string, { status: AgentStatus; activity?: string; detail?: string; since?: number; quiet?: string; temp?: { model: string; effort: string; difficulty: string }; fallback?: { provider: string; model: string; reason: string } }>
   pending: number
   council: CouncilCritic[]
   channels: Channel[]
@@ -165,7 +165,10 @@ export class SpaceStage {
         fallback: !!fb
       })
       orb.status = state.status[a.id]?.status ?? 'idle'
-      orb.activity = state.status[a.id]?.activity ?? ''
+      const st = state.status[a.id]
+      orb.activity = st?.activity ? `${st.activity}${st.detail ? ` ${st.detail}` : ''}` : ''
+      orb.since = st?.since ?? 0
+      orb.quiet = !!st?.quiet
       orb.selected = state.focused === a.id
     })
     for (const [id, orb] of this.orbs)

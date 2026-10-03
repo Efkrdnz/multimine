@@ -103,6 +103,20 @@ export interface MediaItem {
   title?: string
 }
 
+/** One Claude subscription usage window, as last reported. */
+export interface PlanWindow {
+  /** five_hour, seven_day, seven_day_opus... */
+  window: string
+  label: string
+  /** 0..1 */
+  used: number
+  /** When it resets, ms since the epoch. */
+  resetsAt?: number
+  status: 'ok' | 'near' | 'exhausted'
+  /** When this reading came in. */
+  at: number
+}
+
 export interface Usage {
   /** Fresh input: what was not already in the prompt cache. */
   inputTokens: number
@@ -456,6 +470,10 @@ export type MainEvent =
   | { type: 'council'; critics: CouncilCritic[] }
   | { type: 'settings'; settings: AppSettings }
   | { type: 'usage'; total: Usage; byAgent?: Record<string, Usage> }
+  /** The Claude plan's usage windows; a warning when one has just crossed 90%. */
+  | { type: 'plan-limits'; windows: PlanWindow[]; warning?: string }
+  /** Open a project file in the IDE window, at a line. */
+  | { type: 'ide-open'; path: string; line?: number }
   | { type: 'toast'; level: 'info' | 'error'; text: string }
 
 export const MASTERMIND_ID = 'mastermind'

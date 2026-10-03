@@ -35,6 +35,16 @@ export const BUILTIN: PluginManifest[] = [
     icon: { glyph: 'Table2', gradient: ['#22c55e', '#0ea5e9'] },
     window: { width: 1280, height: 780 },
     permissions: ['team:read', 'agents:message', 'project:read', 'project:write']
+  },
+  {
+    id: 'logic-board',
+    name: 'Logic Board',
+    version: '1.0.0',
+    api: 1,
+    description: 'Design a mechanic as boxes and arrows in plain words - when, if, do, wait - and have the team build exactly that. Each box links to the code that implements it.',
+    icon: { glyph: 'Workflow', gradient: ['#38bdf8', '#a855f7'] },
+    window: { width: 1360, height: 860 },
+    permissions: ['team:read', 'agents:message', 'project:read', 'project:write']
   }
 ]
 

@@ -26,5 +26,5 @@ it('retry runs the last incoming message again after a failed turn', async () =>
   expect(msgs.filter((m) => m.role === 'user').map((m) => m.text)).toEqual(['build the context set', 'build the context set'])
   expect(msgs.at(-1)!.text).toBe('all good')
   await app.shutdown()
-  await rm(dir, { recursive: true, force: true })
+  await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
 })

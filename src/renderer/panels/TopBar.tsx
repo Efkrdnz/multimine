@@ -1,12 +1,55 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Bot, ChevronDown, Copy, FolderOpen, Leaf, Pencil, Plus, Trash2, Zap } from 'lucide-react'
+import { Bot, ChevronDown, Gauge, Copy, FolderOpen, Leaf, Pencil, Plus, Trash2, Zap } from 'lucide-react'
 import type { Usage } from '@shared/types'
 import { tokens, usageLine } from '@shared/usage'
 import { api, useStore } from '../state/store'
 
 /** What a usage weighs: cached context a tenth, output five times (how it is priced). */
 const weight = (u: Usage) => u.inputTokens + (u.cacheWrite ?? 0) * 1.25 + (u.cacheRead ?? 0) * 0.1 + u.outputTokens * 5
+
+const SHORT: Record<string, string> = { five_hour: '5h', seven_day: 'week', seven_day_opus: 'Opus wk', seven_day_sonnet: 'Sonnet wk', seven_day_overage_included: 'week', overage: 'extra' }
+
+const hhmm = (at: number) => {
+  const d = new Date(at)
+  const t = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return at - Date.now() > 20 * 3600_000 ? `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${t}` : t
+}
+
+/** How much of the Claude plan's usage windows is spent, as Claude Code last reported it. */
+function PlanGauge() {
+  const all = useStore((s) => s.planLimits)
+  const windows = all.filter((w) => !w.resetsAt || w.resetsAt > Date.now()).sort((a, b) => order(a.window) - order(b.window)).slice(0, 3)
+  if (!windows.length) return null
+  const last = Math.max(...windows.map((w) => w.at))
+  const ago = Math.round((Date.now() - last) / 60_000)
+  const tip = [
+    ...windows.map((w) => `${w.label}: ${Math.round(w.used * 100)}% used${w.resetsAt ? `, resets ${hhmm(w.resetsAt)}` : ''}${w.status === 'exhausted' ? ' - used up' : ''}`),
+    '',
+    `Claude's own reading, ${ago < 1 ? 'just now' : `${ago} min ago`}. It updates while a Claude agent works.`
+  ].join('\n')
+  return (
+    <div className="flex items-center gap-2.5 rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 font-mono text-[11px] text-indigo-200" title={tip} data-testid="plan-gauge">
+      <Gauge size={13} />
+      {windows.map((w) => {
+        const pct = Math.round(w.used * 100)
+        const color = w.status === 'exhausted' || w.used >= 0.95 ? '#f87171' : w.used >= 0.8 ? '#fbbf24' : '#34d399'
+        return (
+          <span key={w.window} className="flex items-center gap-1.5" data-testid={`plan-${w.window}`}>
+            <span className="text-indigo-300/70">{SHORT[w.window] ?? w.label}</span>
+            <span className="h-1.5 w-12 overflow-hidden rounded-full bg-white/10">
+              <span className="block h-full rounded-full" style={{ width: `${Math.min(100, pct)}%`, background: color }} />
+            </span>
+            <span style={{ color: w.used >= 0.8 ? color : undefined }}>{pct}%</span>
+            {w.resetsAt && <span className="text-indigo-300/50">{hhmm(w.resetsAt)}</span>}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
+const order = (w: string) => ['five_hour', 'seven_day', 'seven_day_overage_included', 'seven_day_opus', 'seven_day_sonnet', 'overage'].indexOf(w) + 1 || 99
 
 /** This session's usage, and which agent spent what. */
 function UsagePill() {
@@ -133,6 +176,7 @@ export function TopBar() {
 
       <div className="flex-1" />
 
+      <PlanGauge />
       <UsagePill />
       <button
         className={`btn ${settings?.economy.enabled ? 'border-emerald-400/60 bg-emerald-500/20 text-emerald-100' : ''}`}

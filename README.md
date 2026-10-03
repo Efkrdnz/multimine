@@ -100,6 +100,17 @@ packets fly), ask you questions through Mastermind, and work on a real project f
   spreadsheet with typed columns, validation, min/max/mean, a chart, sort and filter. A save patches
   the file in its own format - only the edited lines change. **Ask an agent** sends the selected rows
   and a request to anyone on the team; the table reloads when they edit the file.
+- **Logic Board** (in Tools): design a mechanic the way Unreal blueprints look, but every box holds
+  plain words - an **Event** (when it starts), **Condition** (if / else or named cases), **Action**,
+  **Wait**, **Repeat**, a named **Value** used as `{name}`, and **Notes**. Boxes link in the order
+  things happen; drag from a box's edge onto the next one, or onto empty space to pick it. Palettes
+  of ready-made boxes for Minecraft mods, Godot, Unity, Unreal and web apps. The Issues tab names
+  whatever would leave an agent guessing (no event, a box nothing leads to, an unknown `{value}`, a
+  loop that never waits); "What the agent reads" shows the exact outline it gets. **Build** sends it
+  to Mastermind by default - as your approved design, so it goes straight to the Implementer with no
+  planning round - or straight to any agent you pick. The builder writes a code map, and each box
+  then links to the file and line that implements it (click to open it in the code window). Edit a
+  built board and **Update** sends only what changed. Boards live in `.multimine/boards/<name>/`.
 - Every built-in tool holds no privileges of its own: it goes through the same permission-checked
   plugin API a third-party plugin gets.
 - **See what agents are doing.** Every busy agent shows a live line - "Running gradlew runClient ·
@@ -118,6 +129,9 @@ packets fly), ask you questions through Mastermind, and work on a real project f
   earlier tasks are not re-sent on every step; follow-ups resume the task they follow. The loop guard
   also pauses a turn that has spent its usage budget (Settings → Loop guard), and the usage pill in
   the top bar shows each agent's share of the session, with cached context counted apart.
+- **Plan usage gauge.** The top bar shows how much of your Claude plan's 5-hour and weekly windows is
+  used and when each resets, as Claude Code reports it during a turn. At 90% you get a warning (and a
+  desktop notification while Multimine is in the background).
 - **Desktop notifications.** When an agent asks a question, wants a plan approved, needs a
   permission or is paused by the loop guard while Multimine is in the background, Windows shows a
   notification and the taskbar button flashes; clicking it brings the window up on that question.
@@ -184,6 +198,7 @@ src/main/
 src/shared/sketch/ the UI Sketcher's model, targets, layout, drawing ops and briefs (pure, unit tested)
 src/shared/assets/ the Asset Board's board, paths, matching and briefs (pure, unit tested)
 src/shared/data/   Data Tables' parse, type inference, patching writer and diff (pure, unit tested)
+src/shared/logic/  the Logic Board's model, validation, outline, diff, targets and briefs (pure, unit tested)
 src/renderer/      React panels + a PixiJS space scene (space/)
 templates/         multimine.md and the role templates
 ```

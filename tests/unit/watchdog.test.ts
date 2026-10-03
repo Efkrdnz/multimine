@@ -113,7 +113,7 @@ describe('watchdog in a turn', () => {
 
   afterEach(async () => {
     await app.shutdown()
-    await rm(dir, { recursive: true, force: true })
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
   })
 
   const answer = async (fn: (id: string) => Promise<void>) => {

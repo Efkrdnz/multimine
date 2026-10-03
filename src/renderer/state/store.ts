@@ -14,7 +14,8 @@ import type {
   MediaItem,
   ProjectInfo,
   SessionMeta,
-  Usage
+  Usage,
+  PlanWindow
 } from '@shared/types'
 
 export type Panel = 'inbox' | 'media' | 'context' | 'git' | null
@@ -45,12 +46,16 @@ export interface State {
   usage: Usage
   /** This session's usage per agent. */
   usageByAgent: Record<string, Usage>
+  /** The Claude plan's usage windows, as last reported. */
+  planLimits: PlanWindow[]
   openChats: string[]
   focused: string | null
   split: boolean
   panel: Panel
   /** The code window: mounted once opened (so terminals and tabs survive), shown or hidden. */
   ide: 'closed' | 'open' | 'hidden'
+  /** A file the IDE window should open (n tells a repeated request apart). */
+  ideRequest: { path: string; line?: number; n: number } | null
   plugins: PluginInfo[]
   brokenPlugins: { dir: string; errors: string[] }[]
   /** Tool windows opened this run (kept mounted so they keep their state) and the one on screen. */
@@ -89,11 +94,13 @@ export const useStore = create<State>((set, get) => ({
   council: [],
   usage: { inputTokens: 0, outputTokens: 0 },
   usageByAgent: {},
+  planLimits: [],
   openChats: [],
   focused: null,
   split: false,
   panel: null,
   ide: 'closed',
+  ideRequest: null,
   plugins: [],
   brokenPlugins: [],
   openTools: [],
@@ -178,6 +185,13 @@ export function applyEvent(e: MainEvent): void {
       break
     case 'toast':
       s.toast(e.level, e.text)
+      break
+    case 'plan-limits':
+      s.set({ planLimits: e.windows })
+      break
+    case 'ide-open':
+      // the code window takes the left side as the rail's own button does; the tool stays open behind it
+      s.set({ ide: 'open', panel: null, activeTool: null, ideRequest: { path: e.path, line: e.line, n: (s.ideRequest?.n ?? 0) + 1 } })
       break
     case 'reveal': {
       // a clicked notification: a question or a plan opens the inbox; a permission or a pause is

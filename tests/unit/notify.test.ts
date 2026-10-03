@@ -97,7 +97,7 @@ describe('notifications', () => {
       expect(shown).toHaveLength(1)
     } finally {
       await app.shutdown()
-      await rm(dir, { recursive: true, force: true })
+      await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
     }
   })
 })

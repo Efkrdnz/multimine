@@ -1,7 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { join, relative, basename } from 'node:path'
 import type { Api } from '@shared/api'
-import { MASTERMIND_ID, type AgentSpec, type AppSettings, type MainEvent, type McpServerConfig, type ProviderKind } from '@shared/types'
+import { MASTERMIND_ID, type AgentSpec, type AppSettings, type MainEvent, type McpServerConfig, type PlanWindow, type ProviderKind } from '@shared/types'
 import { AppConfig, type Cipher } from './store/appConfig'
 import { ProjectStore } from './store/project'
 import { SessionStore } from './store/sessions'
@@ -14,6 +14,7 @@ import { Engine } from './orchestrator/engine'
 import { BusServer } from './mcp/busServer'
 import { McpHub } from './mcp/hub'
 import { ProviderHealth } from './providers/limits'
+import { PlanLimits } from './providers/planLimits'
 import { PluginRegistry, pluginMcpServer } from './plugins/registry'
 import { callPlugin, type PluginContext } from './plugins/api'
 import type { PluginPermission } from '@shared/types'
@@ -21,7 +22,7 @@ import { Git, GitHub, githubRepo } from './git/git'
 import { ProjectFiles, list as listDir } from './ide/fs'
 import { Terminals, shellQuote } from './ide/terminals'
 import { ManualChangeTracker, ProjectWatcher } from './ide/watcher'
-import { writeJson } from './store/fsx'
+import { readJson, writeJson } from './store/fsx'
 import { roleTemplate } from '@shared/templates'
 import type { TerminalKind } from '@shared/types'
 
@@ -56,6 +57,7 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
   readonly hub = new McpHub()
   /** Which providers are out of usage right now: app-wide, so it survives switching projects. */
   readonly health: ProviderHealth
+  readonly planLimits: PlanLimits
   readonly providers: ProviderRegistry
   project: ProjectStore | null = null
   engine: Engine | null = null
@@ -77,6 +79,11 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     })
     this.terminals = new Terminals(o.emit)
     this.health = new ProviderHealth((h) => o.emit({ type: 'provider-health', health: h }))
+    this.planLimits = new PlanLimits((windows, warning) => {
+      o.emit({ type: 'plan-limits', windows, warning })
+      if (warning) o.emit({ type: 'toast', level: 'error', text: warning })
+      void writeJson(join(o.userDataDir, 'plan-limits.json'), windows).catch(() => undefined)
+    })
     this.plugins = new PluginRegistry(
       join(o.userDataDir, 'plugins'),
       () => this.config.settings.plugins ?? {},
@@ -92,6 +99,10 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
         if (!this.engine) throw new Error('No project is open')
         await this.engine.fromOutside(`plugin:${pluginId}`, name, to, text)
       },
+      task: async (pluginId, name, to, title, text) => {
+        if (!this.engine) throw new Error('No project is open')
+        return this.engine.taskFromOutside(`plugin:${pluginId}`, name, to, title, text)
+      },
       addMedia: async (item) => {
         await this.engine?.addMedia(item)
       },
@@ -103,6 +114,8 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
 
   async start(): Promise<void> {
     await this.config.load()
+    const saved = await readJson<PlanWindow[]>(join(this.o.userDataDir, 'plan-limits.json'), [])
+    if (Array.isArray(saved)) this.planLimits.restore(saved)
     await this.bus.start()
   }
 
@@ -125,7 +138,7 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
   }
 
   async init() {
-    return { settings: this.config.settings, keyed: this.config.keyedProviders(), project: this.project?.info() ?? null }
+    return { settings: this.config.settings, keyed: this.config.keyedProviders(), project: this.project?.info() ?? null, planLimits: this.planLimits.list() }
   }
 
   async openProject(dir: string): Promise<void> {
@@ -142,6 +155,7 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     this.project = project
     this.engine = new Engine({
       health: this.health,
+      planLimits: this.planLimits,
       project,
       sessions,
       config: this.config,

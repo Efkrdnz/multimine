@@ -14,6 +14,8 @@ export const METHOD_PERMISSION: Record<string, PluginPermission | null> = {
   'ui.toast': null,
   'team.list': 'team:read',
   send: 'agents:message',
+  task: 'agents:message',
+  'ide.open': 'project:read',
   'files.list': 'project:read',
   'files.read': 'project:read',
   'files.write': 'project:write',
@@ -28,6 +30,8 @@ export interface PluginContext {
   team(): AgentSpec[]
   /** Hands a message from a tool to an agent: logged on the bus, shown in that agent's chat. */
   send(pluginId: string, pluginName: string, to: string, text: string): Promise<void>
+  /** Hands a task the user started from a tool to an agent; for Mastermind it carries the user's approval. */
+  task(pluginId: string, pluginName: string, to: string, title: string, text: string): Promise<string | undefined>
   addMedia(item: MediaItem): Promise<void>
   media(): MediaItem[]
   emit(e: MainEvent): void
@@ -76,6 +80,19 @@ export async function callPlugin(ctx: PluginContext, plugin: PluginInfo, method:
       const to = String(a(0) || 'mastermind')
       if (!ctx.team().some((x) => x.id === to)) throw new PluginRefused(`No agent "${to}"`)
       await ctx.send(id, plugin.manifest.name, to, String(a(1) ?? '').slice(0, 100_000))
+      return true
+    }
+    case 'task': {
+      const to = String(a(0) || 'mastermind')
+      if (!ctx.team().some((x) => x.id === to)) throw new PluginRefused(`No agent "${to}"`)
+      const approvalId = await ctx.task(id, plugin.manifest.name, to, String(a(1) ?? 'Task').slice(0, 120), String(a(2) ?? '').slice(0, 100_000))
+      return { approvalId: approvalId ?? null }
+    }
+    case 'ide.open': {
+      const path = String(a(0) ?? '')
+      insideProject(project(), path)
+      const line = Number(a(1)) || undefined
+      ctx.emit({ type: 'ide-open', path: path.replace(/\\/g, '/'), line })
       return true
     }
     case 'files.list':

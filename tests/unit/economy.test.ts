@@ -59,5 +59,5 @@ it('a light delegation runs on the cheaper settings for that task only and says 
   expect(seen[1]).toBe('xhigh|true')
   expect(app.engine!.systemPrompt(app.project!.get('mastermind')!)).toContain('difficulty')
   await app.shutdown()
-  await rm(dir, { recursive: true, force: true })
+  await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
 })

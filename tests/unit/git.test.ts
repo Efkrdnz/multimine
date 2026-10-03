@@ -47,5 +47,5 @@ it('stages, commits, branches and logs a real repository', async () => {
   st = await git.status()
   expect(st.files).toHaveLength(0)
   expect((await git.log())[0].subject).toBe('first')
-  await rm(dir, { recursive: true, force: true })
+  await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
 })

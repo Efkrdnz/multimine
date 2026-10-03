@@ -48,7 +48,7 @@ describe('plugin system', () => {
 
   afterEach(async () => {
     await app.shutdown()
-    await rm(dir, { recursive: true, force: true })
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
   })
 
   it('lists the built-in tools enabled, installs a plugin disabled with nothing granted', async () => {

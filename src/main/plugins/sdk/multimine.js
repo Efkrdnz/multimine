@@ -39,6 +39,8 @@
     },
     team: { list: function () { return call('team.list') } },
     send: function (to, text) { return call('send', to, text) },
+    task: function (to, title, text) { return call('task', to, title, text) },
+    ide: { open: function (path, line) { return call('ide.open', path, line) } },
     files: {
       list: function (dir) { return call('files.list', dir || '') },
       read: function (path, encoding) { return call('files.read', path, encoding || 'utf8') },

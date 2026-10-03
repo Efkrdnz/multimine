@@ -22,7 +22,7 @@ describe('ide files', () => {
     expect((await files.findFiles('bldsrv'))[0].path).toBe('src/main/BloodService.java')
     expect(await files.grep('return 25')).toEqual([{ path: 'src/main/BloodService.java', line: 1, text: 'class BloodService { int pay() { return 25; } }' }])
     await expect(files.read('../outside.txt')).rejects.toThrow('outside the project')
-    await rm(dir, { recursive: true, force: true })
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
   })
 
   it('scores a name match above a scattered path match', () => {
@@ -79,7 +79,7 @@ it('a terminal runs a shell in the project root and streams its output', async (
   terms.write(info.id, 'exit\r')
   for (let i = 0; i < 100 && !exited; i++) await new Promise((r) => setTimeout(r, 30))
   expect(exited).toBe(true)
-  await rm(dir, { recursive: true, force: true })
+  await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
 })
 
 it('manual changes reach the Context Handler as one batch with the diff', async () => {
@@ -108,7 +108,7 @@ it('manual changes reach the Context Handler as one batch with the diff', async 
   expect(prompts[0]).toContain('edited the project by hand')
   expect(prompts[0]).toContain('src/Spell.java')
   await app.shutdown()
-  await rm(dir, { recursive: true, force: true })
+  await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
 })
 
 it('a CLI terminal joins the team as an unsaved agent and leaves when it closes', async () => {
@@ -139,5 +139,5 @@ it('a CLI terminal joins the team as an unsaved agent and leaves when it closes'
   for (let i = 0; i < 100 && app.project!.get(agent.id); i++) await new Promise((r) => setTimeout(r, 30))
   expect(app.project!.get(agent.id)).toBeUndefined()
   await app.shutdown()
-  await rm(dir, { recursive: true, force: true })
+  await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
 })

@@ -34,6 +34,6 @@ it('a small CLAUDE.md loads as usual, a large one is excluded and outlined', asy
     expect(doc.note).toContain('not preloaded')
     expect(doc.note).toContain('  - Architecture (lines 4-5)')
   } finally {
-    await rm(dir, { recursive: true, force: true })
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
   }
 })

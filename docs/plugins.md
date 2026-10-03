@@ -47,8 +47,8 @@ example is [`examples/plugins/hello`](../examples/plugins/hello).
 | Permission | Allows |
 |---|---|
 | `team:read` | `team.list()` |
-| `agents:message` | `send(to, text)` |
-| `project:read` | `files.list`, `files.read` |
+| `agents:message` | `send(to, text)`, `task(to, title, text)` - a task the user started; to Mastermind it carries their approval |
+| `project:read` | `files.list`, `files.read`, `ide.open(path, line)` |
 | `project:write` | `files.write` |
 | `media:read` | `media.list()` |
 | `media:write` | `media.show()` |

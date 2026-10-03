@@ -30,7 +30,7 @@ export function LeftRail() {
   const toggleIde = () => set({ ide: ide === 'open' ? 'hidden' : 'open', panel: null, activeTool: null })
   const [tools, setTools] = useState(false)
   return (
-    <div className="absolute left-3 top-16 z-20 flex flex-col gap-2">
+    <div className="absolute left-3 top-16 z-30 flex flex-col gap-2">
       <RailButton testId="add-agent" icon={<Plus size={20} />} label="Create agent" onClick={() => set({ modal: { kind: 'agent', agent: { ...roleTemplate('custom', ''), name: '' }, isNew: true } })} />
       <RailButton testId="inbox" icon={<Inbox size={18} />} label="Mastermind inbox" active={panel === 'inbox'} badge={pending} onClick={() => toggle('inbox')} />
       <RailButton testId="media" icon={<Image size={18} />} label={`Media gallery (${media})`} active={panel === 'media'} onClick={() => toggle('media')} />

@@ -1,8 +1,8 @@
-import type { AgentSpec, AppSettings, CliStatus, GhItem, GitCommit, GitStatus, IdeEntry, IdeHit, MainEvent, McpServerConfig, ModelEntry, PluginInfo, PluginManifest, PluginPermission, ProjectInfo, ProviderKind, TerminalInfo, TerminalKind } from './types'
+import type { AgentSpec, AppSettings, CliStatus, GhItem, GitCommit, GitStatus, IdeEntry, IdeHit, MainEvent, McpServerConfig, ModelEntry, PlanWindow, PluginInfo, PluginManifest, PluginPermission, ProjectInfo, ProviderKind, TerminalInfo, TerminalKind } from './types'
 
 /** Everything the renderer can ask of the main process. One method, one IPC channel. */
 export interface Api {
-  init(): Promise<{ settings: AppSettings; keyed: string[]; project: ProjectInfo | null }>
+  init(): Promise<{ settings: AppSettings; keyed: string[]; project: ProjectInfo | null; planLimits: PlanWindow[] }>
   pickProject(): Promise<string | null>
   openProject(dir: string): Promise<void>
   closeProject(): Promise<void>

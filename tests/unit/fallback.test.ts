@@ -105,7 +105,7 @@ it('a turn cut by a usage limit carries on, in the same reply, on the next subsc
   expect(claude.seen).toHaveLength(1)
   expect(codex.seen).toHaveLength(2)
   await app.shutdown()
-  await rm(dir, { recursive: true, force: true })
+  await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
 })
 
 it('an ordinary error never falls back', async () => {
@@ -117,7 +117,7 @@ it('an ordinary error never falls back', async () => {
   expect(res.error).toBe('compilation failed')
   expect(codex.seen).toHaveLength(0)
   await app.shutdown()
-  await rm(dir, { recursive: true, force: true })
+  await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
 })
 
 it('a paid fallback asks first, and "always" stops it asking', async () => {
@@ -140,7 +140,7 @@ it('a paid fallback asks first, and "always" stops it asking', async () => {
   expect(second.text).toContain('paid run 2')
   expect(app.engine!.inbox.pending()).toHaveLength(0)
   await app.shutdown()
-  await rm(dir, { recursive: true, force: true })
+  await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
 })
 
 it("a Claude warning moves the agent's next task to its fallback before anything is cut", async () => {
@@ -154,5 +154,5 @@ it("a Claude warning moves the agent's next task to its fallback before anything
   expect((await app.engine!.send('c', 'one')).text).toBe('done on claude')
   expect((await app.engine!.send('c', 'two')).text).toBe('done on codex')
   await app.shutdown()
-  await rm(dir, { recursive: true, force: true })
+  await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
 })

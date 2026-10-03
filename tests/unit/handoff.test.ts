@@ -36,5 +36,5 @@ it('a handoff that outlives the wait cap returns early and delivers its report l
   expect(incoming.text).toContain('built it')
   expect(engine.bus.some((b) => b.kind === 'report' && b.from === 'builder' && b.to === 'mastermind')).toBe(true)
   await app.shutdown()
-  await rm(dir, { recursive: true, force: true })
+  await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
 })

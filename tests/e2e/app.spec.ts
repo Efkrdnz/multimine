@@ -361,6 +361,55 @@ test('the workstation runs end to end on mock agents', async () => {
   await expect.poll(busText, { timeout: 10_000 }).toContain('Data request from Game Data Tables')
   await page.getByTestId('toolwin-data-tables').getByTitle('Close', { exact: true }).click()
 
+  // Logic Board: a mechanic as boxes in plain words, built by the team, each box linked to its code
+  await page.getByTestId('tools').click()
+  await page.getByTestId('tool-logic-board').click()
+  await expect(page.getByTestId('logic-board')).toBeVisible()
+  await page.getByTestId('lb-example').click()
+  await expect(page.getByTestId('lb-node-E1')).toBeVisible()
+  await expect(page.getByTestId('lb-node-A4')).toContainText('A4')
+  // select the explosion and add what follows it, linked already
+  await page.getByTestId('lb-node-A4').getByText('A4', { exact: true }).click()
+  await page.getByTestId('lb-ready-Play sound').click()
+  await expect(page.getByTestId('lb-node-A6')).toBeVisible()
+  await page.getByTestId('lb-text-A6').fill('a deep boom where it exploded')
+  await page.getByTestId('lb-tab-spec').click()
+  await expect(page.getByTestId('lb-spec')).toContainText('[C2] IF sneaking: the caster is sneaking')
+  await expect(page.getByTestId('lb-spec')).toContainText('[A6] DO Play sound: a deep boom where it exploded')
+  await page.getByTestId('logic-board').getByTitle('Fit the board in view').click()
+  await page.waitForTimeout(400)
+  await shot(page, '33-logic-board')
+  const boardDir = join(project, '.multimine', 'boards', 'sneak-shot')
+  await expect.poll(() => (existsSync(join(boardDir, 'spec.md')) ? readFileSync(join(boardDir, 'spec.md'), 'utf8') : ''), { timeout: 10_000 }).toContain('[A6] DO Play sound')
+  await expect(page.getByTestId('lb-to')).toHaveValue('mastermind')
+  await page.getByTestId('lb-build').click()
+  await expect.poll(busText, { timeout: 10_000 }).toContain("plugin:logic-board")
+  await expect(page.getByTestId('lb-status')).toContainText('Built - no changes')
+  expect(existsSync(join(boardDir, 'built.json'))).toBe(true)
+  // the builder writes the code map; each box then links to its code
+  mkdirSync(join(project, 'src', 'skills'), { recursive: true })
+  writeFileSync(join(project, 'src', 'skills', 'SneakShot.java'), 'class SneakShot {\n' + '  // ...\n'.repeat(60) + '}\n')
+  writeFileSync(join(boardDir, 'map.json'), JSON.stringify({ E1: [{ file: 'src/skills/SneakShot.java', line: 12 }], A3: [{ file: 'src/skills/SneakShot.java', line: 30, note: 'shoot' }], A4: 'src/skills/SneakShot.java:44' }))
+  await page.getByTestId('lb-refresh').click()
+  await expect(page.getByTestId('lb-code-A3')).toContainText('SneakShot.java:30')
+  // an edit after the build: marked, and Update sends only it
+  await page.getByTestId('lb-text-A4').fill('explode on the spot: radius 5, deals {damage}, no block damage')
+  await page.getByTestId('lb-tab-palette').click()
+  await expect(page.getByTestId('lb-build')).toContainText('Update (1)')
+  await expect(page.getByTestId('lb-changed-A4')).toBeVisible()
+  await page.getByTestId('lb-tab-spec').click()
+  await expect(page.getByTestId('lb-changes')).toContainText('was: explode on the spot: radius 3')
+  await page.waitForTimeout(300)
+  await shot(page, '34-logic-board-update')
+  await page.getByTestId('lb-code-A3').click()
+  await expect(page.getByTestId('ide')).toBeVisible()
+  await expect(page.getByTestId('ide').getByTitle('src/skills/SneakShot.java')).toBeVisible()
+  await page.waitForTimeout(600)
+  await shot(page, '35-logic-board-code-link')
+  await page.getByTestId('tools').click()
+  await page.getByTestId('tool-logic-board').click()
+  await page.getByTestId('toolwin-logic-board').getByTitle('Close', { exact: true }).click()
+
   // what an agent is doing, live; and the loop guard pausing one that relaunches the "game" again and again
   await page.getByTestId('add-agent').click()
   await page.getByTestId('agent-name').fill('Tester')
@@ -428,6 +477,22 @@ test('the workstation runs end to end on mock agents', async () => {
   await page.waitForTimeout(300)
   await shot(page, '32-usage-breakdown')
   await page.getByTestId('usage').click()
+
+  // the Claude plan's usage windows, as Claude Code reports them during a turn
+  await app.evaluate(({ BrowserWindow }) => {
+    const now = Date.now()
+    BrowserWindow.getAllWindows()[0].webContents.send('mm:event', {
+      type: 'plan-limits',
+      windows: [
+        { window: 'five_hour', label: '5-hour', used: 0.86, resetsAt: now + 2 * 3600_000, status: 'near', at: now },
+        { window: 'seven_day', label: 'Weekly', used: 0.41, resetsAt: now + 4 * 86_400_000, status: 'ok', at: now }
+      ]
+    })
+  })
+  await expect(page.getByTestId('plan-five_hour')).toContainText('86%')
+  await expect(page.getByTestId('plan-seven_day')).toContainText('41%')
+  await page.waitForTimeout(300)
+  await page.screenshot({ path: join(shots, '36-plan-gauge.png'), clip: { x: 480, y: 0, width: 1000, height: 56 } })
 
   expect(existsSync(join(project, '.multimine', 'sessions'))).toBe(true)
   expect(existsSync(join(project, 'multimine.md'))).toBe(true)

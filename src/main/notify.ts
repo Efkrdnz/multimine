@@ -53,6 +53,8 @@ export class Notifier {
   handle(e: MainEvent): void {
     if (e.type === 'inbox') this.inbox(e.items)
     else if (e.type === 'status') this.status(e.agentId, e.status)
+    // a usage window crossing 90%: worth hearing about before the team stops mid-task
+    else if (e.type === 'plan-limits' && e.warning && this.allowed()) this.d.show({ title: 'Claude usage', body: e.warning })
   }
 
   private allowed(): boolean {

@@ -407,6 +407,12 @@ export function IdeWindow() {
     if (line) setReveal({ path, line, n: Date.now() })
   }, [])
 
+  // a tool asked for a file at a line (a Logic Board box's code link)
+  const request = useStore((s) => s.ideRequest)
+  useEffect(() => {
+    if (request) void open(request.path, request.line)
+  }, [request, open])
+
   // an open file changed on disk (an agent, another editor): follow it, unless it holds unsaved edits
   useEffect(
     () =>

@@ -40,7 +40,7 @@ export function App() {
     const off = window.mm.onEvent(applyEvent)
     void api()
       .init()
-      .then((r) => useStore.getState().set({ ready: true, settings: r.settings, keyed: r.keyed, project: r.project }))
+      .then((r) => useStore.getState().set({ ready: true, settings: r.settings, keyed: r.keyed, project: r.project, planLimits: r.planLimits ?? [] }))
     void api()
       .pluginList()
       .then((r) => useStore.getState().set({ plugins: r.plugins, brokenPlugins: r.broken }))

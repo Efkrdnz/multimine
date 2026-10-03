@@ -1,4 +1,5 @@
 import { addUsage, NO_USAGE } from '@shared/usage'
+import type { PlanLimits } from '../providers/planLimits'
 import { exec } from 'node:child_process'
 import { readdir, readFile } from 'node:fs/promises'
 import { join, relative } from 'node:path'
@@ -55,6 +56,8 @@ export interface EngineDeps {
   hub?: McpHub
   /** Which providers are out of usage: shared by every project, so one app-wide instance is passed in. */
   health?: ProviderHealth
+  /** The Claude plan's usage windows, app-wide like `health`. */
+  planLimits?: PlanLimits
   /** The URL of an agent's endpoint on the local MCP bus (set once the bus server is up). */
   busUrl?: (agentId: string) => string | undefined
 }
@@ -685,6 +688,7 @@ export class Engine {
           break
         }
         case 'limit':
+          if (ev.window && agent.provider === 'claude-cli') this.d.planLimits?.record(ev.window, ev.used, ev.resetsAt, ev.state)
           // the provider's own warning: the next task this agent (or any on this login) starts goes to its fallback
           if (ev.state === 'ok') this.health.clear(agent.provider)
           else this.health.mark(agent.provider, ev.state, ev.detail ?? 'usage limit', ev.state === 'near' ? 'near' : 'usage', ev.resetsAt)
@@ -775,6 +779,24 @@ export class Engine {
     this.sourceNames.set(sourceId, name)
     await this.logBus('message', sourceId, to, body)
     void this.send(to, body, sourceId, 'message')
+  }
+
+  /**
+   * A task the user started from a tool (the Logic Board's Build). Pressing the button is the user's
+   * approval, so for Mastermind it is recorded as an approved plan and its id rides along: Mastermind
+   * can hand it to a gated agent without asking again. Any other agent gets it as a delegated task,
+   * in a session of its own, ending in a report.
+   */
+  async taskFromOutside(sourceId: string, name: string, to: string, title: string, body: string): Promise<string | undefined> {
+    this.sourceNames.set(sourceId, name)
+    await this.logBus('delegate', sourceId, to, title)
+    if (to === MASTERMIND_ID) {
+      const item = this.inbox.record({ kind: 'approval', askedBy: sourceId, title, planMd: body, status: 'answered', approved: true, note: `Approved from ${name}: you pressed Build.` })
+      void this.send(to, `${body}\n\napproval_id: ${item.id}`, sourceId, 'message')
+      return item.id
+    }
+    void this.send(to, body, sourceId, 'delegate')
+    return undefined
   }
 
   private async logBus(kind: BusKind, from: string, to: string, summary: string): Promise<BusEvent> {
@@ -1058,7 +1080,7 @@ export class Engine {
           if (!ctx) return text('No task in progress to report on.', true)
           ctx.reports.push(r)
           if (ctx.from === 'user') await this.logBus('report', me, 'user', r.summary)
-          return text(`Report recorded${r.planPath ? ` (plan saved to ${r.planPath})` : ''}. It goes back to ${ctx.from === 'user' ? 'the user' : (this.d.project.get(ctx.from)?.name ?? ctx.from)} when your turn ends.`)
+          return text(`Report recorded${r.planPath ? ` (plan saved to ${r.planPath})` : ''}. It goes back to ${ctx.from === 'user' ? 'the user' : (this.d.project.get(ctx.from)?.name ?? this.sourceNames.get(ctx.from) ?? ctx.from)} when your turn ends.`)
         }
       },
       {

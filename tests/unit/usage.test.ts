@@ -105,7 +105,7 @@ describe('usage in a session', () => {
 
   afterEach(async () => {
     await app.shutdown()
-    await rm(dir, { recursive: true, force: true })
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
   })
 
   it('starts every delegated task fresh, and a follow-up resumes the task it follows', async () => {
@@ -162,7 +162,7 @@ describe('the old Implementer default', () => {
       expect(await readFile(join(proj, '.multimine', 'agents', 'implementer.md'), 'utf8')).toContain('effort: xhigh')
       await app.shutdown()
     } finally {
-      await rm(dir, { recursive: true, force: true })
+      await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
     }
   })
 })

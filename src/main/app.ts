@@ -51,7 +51,7 @@ export interface AppOptions {
 }
 
 /** The main-process side of the API: owns settings, the open project, the engine and the bus server. */
-export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'mediaUrl' | 'ideOpenExternal' | 'pluginPickAndInstall'> {
+export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'mediaUrl' | 'ideOpenExternal' | 'pluginPickAndInstall' | 'testNotification'> {
   readonly config: AppConfig
   readonly hub = new McpHub()
   /** Which providers are out of usage right now: app-wide, so it survives switching projects. */

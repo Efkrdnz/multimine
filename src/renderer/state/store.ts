@@ -176,6 +176,14 @@ export function applyEvent(e: MainEvent): void {
     case 'toast':
       s.toast(e.level, e.text)
       break
+    case 'reveal': {
+      // a clicked notification: a question or a plan opens the inbox; a permission or a pause is
+      // answered in the balloon over the agent, so its chat comes forward with the balloon in view
+      const item = e.itemId ? s.inbox.find((x) => x.id === e.itemId) : undefined
+      if (item && item.status === 'pending' && !item.permission) s.set({ panel: 'inbox' })
+      else if (e.agentId && s.project?.agents.some((a) => a.id === e.agentId)) s.openChat(e.agentId)
+      break
+    }
     case 'talk':
       break
     case 'terminal-data':

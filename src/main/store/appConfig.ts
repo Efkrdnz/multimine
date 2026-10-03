@@ -3,11 +3,13 @@ import { DEFAULT_CATALOG } from '@shared/catalog'
 import { DEFAULT_TIERS } from '@shared/economy'
 import type { AppSettings, ProviderKind } from '@shared/types'
 import { DEFAULT_WATCHDOG } from '../orchestrator/watchdog'
+import { DEFAULT_NOTIFICATIONS } from '../notify'
 import { readJson, writeJson } from './fsx'
 
 export const DEFAULT_SETTINGS: AppSettings = {
   automation: false,
   watchdog: DEFAULT_WATCHDOG,
+  notifications: DEFAULT_NOTIFICATIONS,
   plugins: {},
   toolOrder: [],
   defaultFallback: [],
@@ -51,6 +53,7 @@ export class AppConfig {
       ...saved,
       council: { ...DEFAULT_SETTINGS.council, ...(saved.council ?? {}) },
       watchdog: { ...DEFAULT_WATCHDOG, ...(saved.watchdog ?? {}) },
+      notifications: { ...DEFAULT_NOTIFICATIONS, ...(saved.notifications ?? {}) },
       economy: { ...DEFAULT_SETTINGS.economy, ...(saved.economy ?? {}), tiers: { ...DEFAULT_TIERS, ...(saved.economy?.tiers ?? {}) } },
       catalog: { ...DEFAULT_CATALOG, ...(saved.catalog ?? {}) },
       baseUrls: { ...DEFAULT_SETTINGS.baseUrls, ...(saved.baseUrls ?? {}) }

@@ -112,6 +112,12 @@ packets fly), ask you questions through Mastermind, and work on a real project f
   in Settings. Agents are also told to launch a game at most once per change and to report a missing
   world or binary instead of retrying; fill in the "How to verify" section of `multimine.md` with your
   project's exact commands.
+- **Desktop notifications.** When an agent asks a question, wants a plan approved, needs a
+  permission or is paused by the loop guard while Multimine is in the background, Windows shows a
+  notification and the taskbar button flashes; clicking it brings the window up on that question.
+  Settings → General has the switches (also while Multimine is in front; when Mastermind finishes)
+  and a test button. If nothing appears, check that Windows notifications and Focus Assist allow
+  Multimine.
 - **Sessions.** Agents belong to the project; conversations belong to a session. Create, rename,
   duplicate, switch. Claude and Codex threads resume per session.
 

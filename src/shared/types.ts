@@ -294,8 +294,18 @@ export interface WatchdogSettings {
   launchPatterns: string[]
 }
 
+/** Desktop notifications when an agent needs the user. */
+export interface NotificationSettings {
+  enabled: boolean
+  /** Also while the Multimine window is in front (off: only when you are elsewhere). */
+  whenFocused: boolean
+  /** Also when Mastermind finishes a task. */
+  onFinish: boolean
+}
+
 export interface AppSettings {
   automation: boolean
+  notifications: NotificationSettings
   watchdog: WatchdogSettings
   plugins: Record<string, PluginSettings>
   /** The order of tiles in the Tools grid (plugin ids). */
@@ -432,6 +442,8 @@ export type MainEvent =
   | { type: 'plugins'; plugins: PluginInfo[]; broken: { dir: string; errors: string[] }[] }
   | { type: 'bus-reset'; events: BusEvent[] }
   | { type: 'inbox'; items: InboxItem[] }
+  /** A notification was clicked: bring up what it was about. */
+  | { type: 'reveal'; itemId?: string; agentId?: string }
   | { type: 'media'; items: MediaItem[] }
   | { type: 'council'; critics: CouncilCritic[] }
   | { type: 'settings'; settings: AppSettings }

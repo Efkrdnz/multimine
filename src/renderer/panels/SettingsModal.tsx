@@ -8,7 +8,7 @@ import { Modal } from './Modal'
 import { FallbackChain } from './FallbackChain'
 
 const TABS = [
-  ['general', 'Economy & handoffs'],
+  ['general', 'General'],
   ['providers', 'Providers & keys'],
   ['models', 'Models'],
   ['council', 'Council'],
@@ -140,8 +140,50 @@ function General({ settings }: { settings: AppSettings }) {
           />
         </div>
       </section>
+      <NotificationsSection settings={settings} />
       <WatchdogSection settings={settings} />
     </div>
+  )
+}
+
+/** Desktop notifications when an agent needs you. */
+function NotificationsSection({ settings }: { settings: AppSettings }) {
+  const n = settings.notifications
+  const set = (patch: Partial<AppSettings['notifications']>) => void api().updateSettings({ notifications: { ...n, ...patch } })
+  const [tested, setTested] = useState<string | null>(null)
+  return (
+    <section data-testid="notification-settings">
+      <div className="label">Notifications</div>
+      <div className="space-y-2">
+        <Toggle
+          on={n.enabled}
+          onChange={(enabled) => set({ enabled })}
+          title="Notify me when an agent needs me"
+          help="A desktop notification (and a flashing taskbar button) for a question, a plan to approve, a permission, a paid fallback or a loop-guard pause. Click it to jump straight there."
+          testId="notify-enabled"
+        />
+        {n.enabled && (
+          <>
+            <Toggle on={n.whenFocused} onChange={(whenFocused) => set({ whenFocused })} title="Even while Multimine is in front" help="Off: only when you are in another window, since the balloon over the agent already shows it." testId="notify-focused" />
+            <Toggle on={n.onFinish} onChange={(onFinish) => set({ onFinish })} title="Also when Mastermind finishes" help="So you can leave it working and come back when it is done." testId="notify-finish" />
+            <div className="flex items-center gap-3">
+              <button
+                className="btn"
+                onClick={() =>
+                  void api()
+                    .testNotification()
+                    .then((ok) => setTested(ok ? 'Sent. If nothing appeared, check that notifications are on for Multimine in Windows Settings > System > Notifications, and that Focus assist / Do not disturb is off.' : 'This system does not support desktop notifications.'))
+                }
+                data-testid="notify-test"
+              >
+                Send a test notification
+              </button>
+              {tested && <span className="text-xs text-indigo-200/80" data-testid="notify-test-result">{tested}</span>}
+            </div>
+          </>
+        )}
+      </div>
+    </section>
   )
 }
 

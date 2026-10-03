@@ -409,7 +409,16 @@ test('the workstation runs end to end on mock agents', async () => {
   await page.getByTestId('settings').click()
   await page.waitForTimeout(800)
   await shot(page, '30-settings')
+  // desktop notifications: the section, its test button, and what a click on one brings up
+  await page.getByTestId('notification-settings').scrollIntoViewIfNeeded()
+  await expect(page.getByTestId('notify-enabled')).toBeChecked()
+  await page.getByTestId('notify-test').click()
+  await expect(page.getByTestId('notify-test-result')).toBeVisible()
+  await page.waitForTimeout(300)
+  await shot(page, '31-notification-settings')
   await page.keyboard.press('Escape')
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('mm:event', { type: 'reveal', agentId: 'designer' }))
+  await expect(page.getByTestId('chat-designer')).toBeVisible()
 
   expect(existsSync(join(project, '.multimine', 'sessions'))).toBe(true)
   expect(existsSync(join(project, 'multimine.md'))).toBe(true)

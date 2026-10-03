@@ -69,6 +69,9 @@ export interface Api {
   pluginRemove(id: string): Promise<void>
   pluginCall(id: string, method: string, args: unknown[]): Promise<unknown>
 
+  /** Shows a sample desktop notification; false when the system does not support them. */
+  testNotification(): Promise<boolean>
+
   contextFiles(): Promise<{ file: string; text: string }[]>
   openPath(path: string): Promise<void>
   mediaUrl(path: string): Promise<string>
@@ -88,7 +91,7 @@ export const API_METHODS: ApiMethod[] = [
   'ideList', 'ideFind', 'ideGrep', 'ideRead', 'ideWrite', 'ideOpenExternal', 'syncContext',
   'terminalAvailable', 'terminalOpen', 'terminalWrite', 'terminalResize', 'terminalClose',
   'pluginList', 'pluginPickAndInstall', 'pluginInstall', 'pluginSetEnabled', 'pluginRevoke', 'pluginRemove', 'pluginCall',
-  'contextFiles', 'openPath', 'mediaUrl'
+  'testNotification', 'contextFiles', 'openPath', 'mediaUrl'
 ]
 
 export interface Bridge {

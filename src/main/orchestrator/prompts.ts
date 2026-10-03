@@ -23,8 +23,15 @@ export const VERIFY_RULES = `## Verifying your work
 - Never repeat a check that already passed, and do not rebuild a test scene you already built. Once
   it is verified, \`report\` - including how you verified it.
 - If multimine.md has a "How to verify" section, follow it over these defaults.
+
+## Keeping a task lean
+Every step re-sends the whole conversation so far, so a long turn costs more with each step.
+- Grep and read the parts of files you need (Read with offset and limit) rather than whole large files.
+- Do not start sub-agents (Task) for work you can do yourself: each one starts over with its own context.
+- Do not re-explore or re-plan what your task already tells you. When it is done and verified once,
+  \`report\` and stop.
 - Multimine pauses an agent that relaunches the same thing, repeats a step, or runs far past its
-  budget, and asks the user what to do. If you are told something after such a pause, do that first.`
+  time or usage budget, and asks the user what to do. If you are told something after such a pause, do that first.`
 
 export const CONTEXT_PROTOCOL = `## Context protocol
 This project keeps a map of itself in \`.multimine/context/\`, owned by the Context Handler.

@@ -15,7 +15,8 @@ export const DEFAULT_WATCHDOG: WatchdogSettings = {
   exactRepeats: 5,
   cycleRepeats: 3,
   budgetMinutes: 20,
-  planBudgetMinutes: 45,
+  planBudgetMinutes: 30,
+  usageBudget: 3,
   quietMinutes: 5,
   launchPatterns: [
     'runClient',
@@ -38,8 +39,26 @@ export const DEFAULT_WATCHDOG: WatchdogSettings = {
 const IGNORED = /^(BashOutput|TaskOutput|KillShell|KillBash|TodoWrite|TodoRead|mcp__multimine__.*|report|message_agent|list_agents|read_context|show_media|ask_user)$/
 const EDITS = /^(Write|Edit|MultiEdit|NotebookEdit|write_file|edit_file|edit|apply_patch)$/
 
+/**
+ * What one model call costs, in tokens weighed the way they are priced: context read back from the
+ * cache a tenth, context written to it a quarter more, output five times. A long agentic turn is
+ * mostly cache reads of the same context, which is why its size matters on every call.
+ */
+export interface CallUsage {
+  input: number
+  cacheRead: number
+  cacheWrite: number
+  output: number
+}
+
+export function weighted(u: CallUsage): number {
+  return u.input + u.cacheWrite * 1.25 + u.cacheRead * 0.1 + u.output * 5
+}
+
+const millions = (n: number) => (n >= 10_000_000 ? `${Math.round(n / 1e6)}M` : `${(n / 1e6).toFixed(1)}M`)
+
 export interface Trip {
-  kind: 'launch' | 'repeat' | 'cycle' | 'budget'
+  kind: 'launch' | 'repeat' | 'cycle' | 'budget' | 'usage'
   /** One line for a balloon: what it keeps doing. */
   title: string
   /** A fuller account for the inbox. */
@@ -78,6 +97,11 @@ export class Watchdog {
   private readonly started: number
   private budgetMs: number
   private budgetTripped = false
+  /** Weighted tokens this turn may spend before it asks; 0 is no limit. */
+  private usageBudget: number
+  private spent = 0
+  private read = 0
+  private calls = 0
   /** launch signature -> launches since the last edit, and in the whole turn */
   private launches = new Map<string, { sinceEdit: number; total: number; first: number }>()
   private exact = new Map<string, number>()
@@ -91,6 +115,7 @@ export class Watchdog {
   ) {
     this.started = now
     this.budgetMs = budgetMinutes * 60_000
+    this.usageBudget = Math.max(0, cfg.usageBudget ?? 0) * 1_000_000
     this.patterns = cfg.launchPatterns.flatMap((p) => {
       try {
         return [new RegExp(p, 'i')]
@@ -98,6 +123,17 @@ export class Watchdog {
         return []
       }
     })
+  }
+
+  /** One model call finished: what it cost counts toward the turn's usage budget. */
+  spend(u: CallUsage): void {
+    this.spent += weighted(u)
+    this.read += u.input + u.cacheRead + u.cacheWrite
+    this.calls++
+  }
+
+  get usage(): { spent: number; calls: number } {
+    return { spent: this.spent, calls: this.calls }
   }
 
   isLaunch(cmd: string): boolean {
@@ -122,6 +158,18 @@ export class Watchdog {
         key: 'budget',
         title: `has been on this task for ${duration(now - this.started)}`,
         detail: `This turn has been running for ${duration(now - this.started)}, past its budget of ${duration(this.budgetMs)}. The next step it wants to take: ${name}${cmd ? ` \`${shortCommand(cmd)}\`` : ''}.`
+      }
+    }
+
+    if (this.usageBudget > 0 && this.spent > this.usageBudget) {
+      const budget = this.usageBudget
+      // whatever the answer, it asks again only after half the budget more
+      this.usageBudget = this.spent + (this.cfg.usageBudget ?? 0) * 500_000
+      return {
+        kind: 'usage',
+        key: 'usage',
+        title: `has used a lot of usage on this task: ${this.calls} model calls, ${millions(this.read)} tokens of context`,
+        detail: `This turn has made ${this.calls} model calls and read ${millions(this.read)} tokens of context (${millions(this.spent)} weighted, past the budget of ${millions(budget)}). Every call re-reads the whole conversation so far, so a long turn grows costlier with each step. The next step it wants to take: ${name}${cmd ? ` \`${shortCommand(cmd)}\`` : ''}.`
       }
     }
 

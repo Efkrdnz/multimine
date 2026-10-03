@@ -1,3 +1,4 @@
+import { usageLine } from '@shared/usage'
 import { memo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -147,7 +148,7 @@ export const MessageView = memo(function MessageView({ m, last = false }: { m: C
       )}
       {m.usage && !m.streaming && (
         <div className="mt-1 font-mono text-[10px] text-indigo-300/40">
-          {m.usage.inputTokens} in · {m.usage.outputTokens} out{m.usage.costUsd ? ` · $${m.usage.costUsd.toFixed(3)}` : ''}
+          {usageLine(m.usage)}
         </div>
       )}
     </div>

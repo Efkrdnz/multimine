@@ -80,7 +80,11 @@ export function codexEvents(line: string): AgentEvent[] {
           return []
       }
     case 'turn.completed':
-      return [{ type: 'usage', inputTokens: ev.usage?.input_tokens ?? 0, outputTokens: ev.usage?.output_tokens ?? 0 }]
+    {
+      // Codex counts cached input inside input_tokens
+      const cached = ev.usage?.cached_input_tokens ?? 0
+      return [{ type: 'usage', inputTokens: Math.max(0, (ev.usage?.input_tokens ?? 0) - cached), cacheRead: cached, outputTokens: ev.usage?.output_tokens ?? 0 }]
+    }
     case 'turn.failed':
       return [{ type: 'error', message: ev.error?.message ?? 'Codex turn failed' }]
     case 'error':

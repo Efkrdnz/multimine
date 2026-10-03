@@ -37,7 +37,34 @@ export class ProjectStore {
       await store.saveAgent({ ...roleTemplate('mastermind', MASTERMIND_ID), ...mastermindDefaults, id: MASTERMIND_ID, role: 'mastermind' })
     }
     store.layout = await readJson(p.layout, {})
+    store.migrated = await store.migrate()
     return store
+  }
+
+  /** Agents whose settings a migration changed when this project was opened (for a notice). */
+  migrated: string[] = []
+
+  /**
+   * One-time fixes to agents still on an old default. Only the exact old value is touched, and each
+   * migration runs once per project (recorded with the local session data), so a value the user
+   * sets back by hand stays.
+   */
+  private async migrate(): Promise<string[]> {
+    const file = join(this.paths.sessions, 'migrations.json')
+    const done = await readJson<string[]>(file, [])
+    const changed: string[] = []
+    if (!done.includes('implementer-effort-high')) {
+      // the Implementer used to default to Opus at xhigh: the slowest, costliest setting there is
+      for (const a of this.agents.values()) {
+        if (a.role === 'implementer' && a.model === 'claude-opus-5-5' && a.effort === 'xhigh') {
+          await this.saveAgent({ ...a, effort: 'high' })
+          changed.push(a.name)
+        }
+      }
+      done.push('implementer-effort-high')
+      await writeJson(file, done)
+    }
+    return changed
   }
 
   async reloadAgents(): Promise<void> {

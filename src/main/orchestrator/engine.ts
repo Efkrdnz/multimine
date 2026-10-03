@@ -1,3 +1,4 @@
+import { addUsage, NO_USAGE } from '@shared/usage'
 import { exec } from 'node:child_process'
 import { readdir, readFile } from 'node:fs/promises'
 import { join, relative } from 'node:path'
@@ -138,7 +139,9 @@ export class Engine {
   /** Agents running their current task on a cheaper model than their own (economy mode). */
   private temps = new Map<string, TempModel>()
   private flushTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  private totals: Usage = { inputTokens: 0, outputTokens: 0, costUsd: 0 }
+  private totals: Usage = { ...NO_USAGE }
+  /** This session's usage per agent: which one spent what. */
+  private byAgent: Record<string, Usage> = {}
   private mediaStore: MediaStore
 
   readonly health: ProviderHealth
@@ -174,13 +177,13 @@ export class Engine {
       this.emitChannels()
     })
     void this.d.sessions.saveInbox(meta.id, this.inbox.items)
-    this.totals = { inputTokens: 0, outputTokens: 0, costUsd: 0 }
-    for (const msgs of Object.values(this.chats))
+    this.totals = { ...NO_USAGE }
+    this.byAgent = {}
+    for (const [agentId, msgs] of Object.entries(this.chats))
       for (const m of msgs)
         if (m.usage) {
-          this.totals.inputTokens += m.usage.inputTokens
-          this.totals.outputTokens += m.usage.outputTokens
-          this.totals.costUsd = (this.totals.costUsd ?? 0) + (m.usage.costUsd ?? 0)
+          this.totals = addUsage(this.totals, m.usage)
+          this.byAgent[agentId] = addUsage(this.byAgent[agentId], m.usage)
         }
     this.status.clear()
     await this.emitSessions()
@@ -188,7 +191,7 @@ export class Engine {
     this.d.emit({ type: 'bus-reset', events: this.bus })
     this.d.emit({ type: 'inbox', items: this.inbox.items })
     this.d.emit({ type: 'media', items: this.media })
-    this.d.emit({ type: 'usage', total: this.totals })
+    this.d.emit({ type: 'usage', total: this.totals, byAgent: this.byAgent })
     this.d.emit({ type: 'council', critics: [] })
   }
 
@@ -483,8 +486,12 @@ export class Engine {
     // task, with a brief of everything done so far, to the next - in the same reply bubble.
     const hops = this.hopsFor(own, agent)
     let i = this.startHop(hops)
+    // a delegated task is self-contained (the task and its approved plan), so it starts a session of
+    // its own: carrying every earlier task's transcript into each call is what made long sessions so
+    // costly. Follow-ups (messages, reports, the user's own chat) resume the session it started.
+    let fresh = kind === 'delegate'
     let promptNow = prompt
-    let historyNow = history
+    let historyNow = fresh ? [] : history
     let continuing = false
     let error: string | undefined
     try {
@@ -496,7 +503,8 @@ export class Engine {
           this.fallbacks.set(agentId, { provider: hop.provider, model: hop.model, reason: why })
           this.setStatus(agentId, this.status.get(agentId) ?? 'thinking')
         }
-        error = await this.runHop(hopAgent, promptNow, historyNow, !continuing, reply, ctl, sessionId, wd)
+        error = await this.runHop(hopAgent, promptNow, historyNow, !continuing && !fresh, reply, ctl, sessionId, wd)
+        fresh = false
         // the watchdog paused a provider it cannot hold mid-call: resume the same thread with the user's word
         const redirect = this.redirects.get(agentId)
         if (redirect && sessionId === this.session.id) {
@@ -665,17 +673,17 @@ export class Engine {
         case 'resume':
           await this.saveResume(agentId, agent.provider, ev.id)
           break
-        case 'usage':
-          reply.usage = {
-            inputTokens: (reply.usage?.inputTokens ?? 0) + ev.inputTokens,
-            outputTokens: (reply.usage?.outputTokens ?? 0) + ev.outputTokens,
-            costUsd: (reply.usage?.costUsd ?? 0) + (ev.costUsd ?? 0) || undefined
-          }
-          this.totals.inputTokens += ev.inputTokens
-          this.totals.outputTokens += ev.outputTokens
-          this.totals.costUsd = (this.totals.costUsd ?? 0) + (ev.costUsd ?? 0)
-          this.d.emit({ type: 'usage', total: { ...this.totals } })
+        case 'call-usage':
+          wd?.spend(ev)
           break
+        case 'usage': {
+          const u = { inputTokens: ev.inputTokens, outputTokens: ev.outputTokens, cacheRead: ev.cacheRead, cacheWrite: ev.cacheWrite, calls: ev.calls, costUsd: ev.costUsd }
+          reply.usage = addUsage(reply.usage, u)
+          this.totals = addUsage(this.totals, u)
+          this.byAgent[agentId] = addUsage(this.byAgent[agentId], u)
+          this.d.emit({ type: 'usage', total: { ...this.totals }, byAgent: { ...this.byAgent } })
+          break
+        }
         case 'limit':
           // the provider's own warning: the next task this agent (or any on this login) starts goes to its fallback
           if (ev.state === 'ok') this.health.clear(agent.provider)

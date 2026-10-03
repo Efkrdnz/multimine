@@ -1,9 +1,67 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Bot, ChevronDown, Copy, FolderOpen, Leaf, Pencil, Plus, Trash2, Zap } from 'lucide-react'
+import type { Usage } from '@shared/types'
+import { tokens, usageLine } from '@shared/usage'
 import { api, useStore } from '../state/store'
 
-function fmt(n: number): string {
-  return n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n)
+/** What a usage weighs: cached context a tenth, output five times (how it is priced). */
+const weight = (u: Usage) => u.inputTokens + (u.cacheWrite ?? 0) * 1.25 + (u.cacheRead ?? 0) * 0.1 + u.outputTokens * 5
+
+/** This session's usage, and which agent spent what. */
+function UsagePill() {
+  const usage = useStore((s) => s.usage)
+  const byAgent = useStore((s) => s.usageByAgent)
+  const agents = useStore((s) => s.project?.agents ?? [])
+  const [open, setOpen] = useState(false)
+  const rows = Object.entries(byAgent).sort((a, b) => weight(b[1]) - weight(a[1]))
+  const all = rows.reduce((n, [, u]) => n + weight(u), 0) || 1
+  const cached = (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0)
+  return (
+    <div className="relative">
+      <button
+        className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 font-mono text-[11px] text-indigo-200 hover:border-white/25"
+        title="Tokens used this session - click for each agent's share"
+        onClick={() => setOpen((o) => !o)}
+        data-testid="usage"
+      >
+        <Bot size={13} /> {tokens(usage.inputTokens)} in{cached ? ` · ${tokens(cached)} cached` : ''} · {tokens(usage.outputTokens)} out{usage.costUsd ? ` · ≈$${usage.costUsd.toFixed(2)}` : ''}
+      </button>
+      {open && (
+        createPortal(
+        // on the body: the top bar's own stacking context sits under the chat dock
+        <div className="glass fixed right-4 top-14 z-[60] max-h-[70vh] w-[380px] overflow-auto rounded-xl p-3 text-xs" style={{ background: 'rgb(10 12 28 / 0.96)' }} data-testid="usage-breakdown">
+          <div className="mb-2 font-semibold text-indigo-100">Usage this session</div>
+          {!rows.length && <div className="text-indigo-300/60">Nothing yet.</div>}
+          {rows.map(([id, u]) => {
+            const a = agents.find((x) => x.id === id)
+            const share = Math.round((weight(u) / all) * 100)
+            return (
+              <div key={id} className="mb-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 text-indigo-100">
+                    <span className="h-2 w-2 rounded-full" style={{ background: a?.color ?? '#a5b4fc' }} />
+                    {a?.name ?? id}
+                    {a?.model && <span className="text-indigo-300/50">{a.model} · {a.effort}</span>}
+                  </span>
+                  <span className="font-mono text-indigo-200">{share}%</span>
+                </div>
+                <div className="mt-1 h-1 overflow-hidden rounded bg-white/5">
+                  <div className="h-full rounded" style={{ width: `${share}%`, background: a?.color ?? '#a5b4fc' }} />
+                </div>
+                <div className="mt-0.5 font-mono text-[10px] text-indigo-300/60">{usageLine(u)}</div>
+              </div>
+            )
+          })}
+          <div className="mt-1 text-[10px] leading-snug text-indigo-300/50">
+            Shares weigh tokens the way they are priced: cached context a tenth, output five times. Every model call re-sends the whole conversation, so long turns and big instruction files cost the most.
+          </div>
+        </div>,
+        document.body
+        )
+      )}
+    </div>
+  )
 }
 
 export function TopBar() {
@@ -11,7 +69,6 @@ export function TopBar() {
   const sessions = useStore((s) => s.sessions)
   const active = useStore((s) => s.activeSession)
   const settings = useStore((s) => s.settings)
-  const usage = useStore((s) => s.usage)
   const [open, setOpen] = useState(false)
   const current = sessions.find((s) => s.id === active)
   const automation = !!settings?.automation
@@ -76,9 +133,7 @@ export function TopBar() {
 
       <div className="flex-1" />
 
-      <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 font-mono text-[11px] text-indigo-200" title="Tokens used this session">
-        <Bot size={13} /> {fmt(usage.inputTokens)} in · {fmt(usage.outputTokens)} out{usage.costUsd ? ` · $${usage.costUsd.toFixed(2)}` : ''}
-      </div>
+      <UsagePill />
       <button
         className={`btn ${settings?.economy.enabled ? 'border-emerald-400/60 bg-emerald-500/20 text-emerald-100' : ''}`}
         onClick={() => settings && void api().updateSettings({ economy: { ...settings.economy, enabled: !settings.economy.enabled } })}

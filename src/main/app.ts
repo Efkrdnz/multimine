@@ -135,6 +135,8 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
       if (claude.installed) defaults = { provider: 'claude-cli', model: 'claude-opus-5-5', effort: 'high' }
     }
     const project = await ProjectStore.open(dir, defaults)
+    if (project.migrated.length)
+      this.o.emit({ type: 'toast', level: 'info', text: `${project.migrated.join(', ')}: effort lowered from xhigh to high to save usage. Change it back in the agent editor if you want.` })
     const sessions = new SessionStore(project.paths)
     this.engine?.inbox?.cancelAll('Another project was opened.')
     this.project = project

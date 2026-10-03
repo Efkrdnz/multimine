@@ -112,6 +112,12 @@ packets fly), ask you questions through Mastermind, and work on a real project f
   in Settings. Agents are also told to launch a game at most once per change and to report a missing
   world or binary instead of retrying; fill in the "How to verify" section of `multimine.md` with your
   project's exact commands.
+- **Usage.** Claude agents keep their context lean: a project CLAUDE.md over 12 KB is not sent with
+  every call (it is the biggest fixed cost of a long task) - agents get its outline with line
+  numbers and read the sections they need. Each delegated task starts its own Claude session, so
+  earlier tasks are not re-sent on every step; follow-ups resume the task they follow. The loop guard
+  also pauses a turn that has spent its usage budget (Settings → Loop guard), and the usage pill in
+  the top bar shows each agent's share of the session, with cached context counted apart.
 - **Desktop notifications.** When an agent asks a question, wants a plan approved, needs a
   permission or is paused by the loop guard while Multimine is in the background, Windows shows a
   notification and the taskbar button flashes; clicking it brings the window up on that question.

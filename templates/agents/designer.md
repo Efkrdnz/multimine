@@ -3,7 +3,7 @@ name: Designer
 role: designer
 provider: codex-cli
 model: gpt-5.6-sol
-effort: xhigh
+effort: high
 color: "#f472b6"
 permissions: read
 mcp: []

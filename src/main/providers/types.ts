@@ -69,7 +69,10 @@ export type AgentEvent =
   /** A running call is alive (a heartbeat), optionally with a word on what it is doing. */
   | { type: 'progress'; id: string; note?: string }
   | { type: 'resume'; id: string }
-  | { type: 'usage'; inputTokens: number; outputTokens: number; costUsd?: number }
+  /** The turn's totals: fresh input, context read from and written to the cache, output, and cost. */
+  | { type: 'usage'; inputTokens: number; outputTokens: number; cacheRead?: number; cacheWrite?: number; calls?: number; costUsd?: number }
+  /** One model call's usage as it happens (sub-agents' calls included), for the usage budget. */
+  | { type: 'call-usage'; input: number; cacheRead: number; cacheWrite: number; output: number }
   | { type: 'error'; message: string }
   /** The provider's own word on how close its user is to a usage limit (Claude subscriptions). */
   | { type: 'limit'; state: 'ok' | 'near' | 'exhausted'; resetsAt?: number; detail?: string }

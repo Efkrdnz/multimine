@@ -58,6 +58,8 @@ export class AppConfig {
       catalog: { ...DEFAULT_CATALOG, ...(saved.catalog ?? {}) },
       baseUrls: { ...DEFAULT_SETTINGS.baseUrls, ...(saved.baseUrls ?? {}) }
     }
+    // 45 was the old default for plan tasks; the usage budget now does most of that job
+    if (this.settings.watchdog.planBudgetMinutes === 45) this.settings.watchdog.planBudgetMinutes = DEFAULT_WATCHDOG.planBudgetMinutes
     this.keys = await readJson(join(this.dir, 'keys.json'), {})
   }
 

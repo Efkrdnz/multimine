@@ -420,6 +420,15 @@ test('the workstation runs end to end on mock agents', async () => {
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('mm:event', { type: 'reveal', agentId: 'designer' }))
   await expect(page.getByTestId('chat-designer')).toBeVisible()
 
+  // which agent spent what this session
+  await page.keyboard.press('Escape')
+  await page.getByTestId('usage').click()
+  await expect(page.getByTestId('usage-breakdown')).toContainText('Usage this session')
+  await expect(page.getByTestId('usage-breakdown')).toContainText('Mastermind')
+  await page.waitForTimeout(300)
+  await shot(page, '32-usage-breakdown')
+  await page.getByTestId('usage').click()
+
   expect(existsSync(join(project, '.multimine', 'sessions'))).toBe(true)
   expect(existsSync(join(project, 'multimine.md'))).toBe(true)
   await app.close()

@@ -43,6 +43,8 @@ export interface State {
   media: MediaItem[]
   council: CouncilCritic[]
   usage: Usage
+  /** This session's usage per agent. */
+  usageByAgent: Record<string, Usage>
   openChats: string[]
   focused: string | null
   split: boolean
@@ -86,6 +88,7 @@ export const useStore = create<State>((set, get) => ({
   media: [],
   council: [],
   usage: { inputTokens: 0, outputTokens: 0 },
+  usageByAgent: {},
   openChats: [],
   focused: null,
   split: false,
@@ -171,7 +174,7 @@ export function applyEvent(e: MainEvent): void {
       s.set({ settings: e.settings })
       break
     case 'usage':
-      s.set({ usage: e.total })
+      s.set({ usage: e.total, usageByAgent: e.byAgent ?? {} })
       break
     case 'toast':
       s.toast(e.level, e.text)

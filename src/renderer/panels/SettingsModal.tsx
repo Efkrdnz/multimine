@@ -191,7 +191,7 @@ function NotificationsSection({ settings }: { settings: AppSettings }) {
 function WatchdogSection({ settings }: { settings: AppSettings }) {
   const w = settings.watchdog
   const set = (patch: Partial<AppSettings['watchdog']>) => void api().updateSettings({ watchdog: { ...w, ...patch } })
-  const num = (key: 'launchRepeats' | 'exactRepeats' | 'cycleRepeats' | 'budgetMinutes' | 'planBudgetMinutes' | 'quietMinutes', label: string, help: string, min: number, max: number) => (
+  const num = (key: 'launchRepeats' | 'exactRepeats' | 'cycleRepeats' | 'budgetMinutes' | 'planBudgetMinutes' | 'usageBudget' | 'quietMinutes', label: string, help: string, min: number, max: number) => (
     <div className="flex items-center gap-3 text-sm">
       <span className="flex-1">
         {label}
@@ -216,7 +216,7 @@ function WatchdogSection({ settings }: { settings: AppSettings }) {
           on={w.enabled}
           onChange={(enabled) => set({ enabled })}
           title="Pause an agent that is going round in circles"
-          help="When it relaunches the same app with nothing changed, repeats a step, cycles through the same few steps, or runs past its time budget, it waits for you: tell it what to do, let it continue, or stop it."
+          help="When it relaunches the same app with nothing changed, repeats a step, cycles through the same few steps, or runs past its time or usage budget, it waits for you: tell it what to do, let it continue, or stop it."
           testId="watchdog-enabled"
         />
         {w.enabled && (
@@ -226,6 +226,7 @@ function WatchdogSection({ settings }: { settings: AppSettings }) {
             {num('cycleRepeats', 'Repeats of a short cycle of steps', 'The same two to eight steps over and over.', 2, 20)}
             {num('budgetMinutes', 'Minutes a task may run', 'Then it asks whether to keep going (each Continue adds 15 minutes).', 5, 480)}
             {num('planBudgetMinutes', 'Minutes for a task on an approved plan', 'Gated agents (like the Implementer) work through whole plans.', 5, 480)}
+            {num('usageBudget', 'Usage a task may spend (millions of tokens)', 'Weighed as they are priced: cached context a tenth, output five times. 3 is a long, real task; past it the agent asks before its next step. 0 turns it off.', 0, 100)}
             {num('quietMinutes', 'Minutes of silence before an agent is marked quiet', 'Only a warning on its orb and in its chat; nothing is stopped.', 1, 120)}
             <div>
               <div className="text-sm">Commands that launch an app</div>

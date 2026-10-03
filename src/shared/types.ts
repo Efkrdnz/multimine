@@ -104,8 +104,14 @@ export interface MediaItem {
 }
 
 export interface Usage {
+  /** Fresh input: what was not already in the prompt cache. */
   inputTokens: number
   outputTokens: number
+  /** Context read back from the cache (cheap, but sent again on every call) and written to it. */
+  cacheRead?: number
+  cacheWrite?: number
+  /** Model calls made. */
+  calls?: number
   costUsd?: number
 }
 
@@ -288,6 +294,8 @@ export interface WatchdogSettings {
   /** Minutes a turn may run before it asks; tasks on an approved plan get planBudgetMinutes. */
   budgetMinutes: number
   planBudgetMinutes: number
+  /** Millions of weighted tokens (cache reads a tenth, output five times) a turn may spend before it asks; 0: no limit. */
+  usageBudget: number
   /** Minutes of silence before an agent is marked quiet. */
   quietMinutes: number
   /** Regular expressions for commands that launch an app, a game or a server. */
@@ -447,7 +455,7 @@ export type MainEvent =
   | { type: 'media'; items: MediaItem[] }
   | { type: 'council'; critics: CouncilCritic[] }
   | { type: 'settings'; settings: AppSettings }
-  | { type: 'usage'; total: Usage }
+  | { type: 'usage'; total: Usage; byAgent?: Record<string, Usage> }
   | { type: 'toast'; level: 'info' | 'error'; text: string }
 
 export const MASTERMIND_ID = 'mastermind'

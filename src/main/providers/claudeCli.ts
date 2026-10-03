@@ -3,6 +3,7 @@ import { clampEffort } from '@shared/effort'
 import type { Question } from '@shared/types'
 import type { AgentEvent, ProviderAdapter, TurnRequest } from './types'
 import { hardStop } from './guard'
+import { projectInstructions } from './projectDoc'
 
 const WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']
 const READ_TOOLS = ['Read', 'Glob', 'Grep', 'LS', 'WebSearch', 'WebFetch', 'TodoWrite']
@@ -36,7 +37,52 @@ function textOf(content: unknown): string {
  * Claude subscription agents: the Claude Agent SDK, which drives the Claude Code runtime on the
  * user's own login. Real file tools, plan mode, AskUserQuestion and session resume come with it.
  */
+/** One API message's usage, seen as it streams: the same message id can arrive more than once. */
+export class CallMeter {
+  private seen = new Map<string, { input: number; cacheRead: number; cacheWrite: number; output: number }>()
+  readonly total = { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, calls: 0 }
+
+  /** The growth since this message was last seen, or null when nothing grew. */
+  see(id: string | undefined, u: any): { input: number; cacheRead: number; cacheWrite: number; output: number } | null {
+    if (!id || !u) return null
+    const now = { input: u.input_tokens ?? 0, cacheRead: u.cache_read_input_tokens ?? 0, cacheWrite: u.cache_creation_input_tokens ?? 0, output: u.output_tokens ?? 0 }
+    const was = this.seen.get(id)
+    if (!was) this.total.calls++
+    const d = {
+      input: Math.max(0, now.input - (was?.input ?? 0)),
+      cacheRead: Math.max(0, now.cacheRead - (was?.cacheRead ?? 0)),
+      cacheWrite: Math.max(0, now.cacheWrite - (was?.cacheWrite ?? 0)),
+      output: Math.max(0, now.output - (was?.output ?? 0))
+    }
+    this.seen.set(id, { input: Math.max(now.input, was?.input ?? 0), cacheRead: Math.max(now.cacheRead, was?.cacheRead ?? 0), cacheWrite: Math.max(now.cacheWrite, was?.cacheWrite ?? 0), output: Math.max(now.output, was?.output ?? 0) })
+    if (!d.input && !d.cacheRead && !d.cacheWrite && !d.output) return null
+    this.total.input += d.input
+    this.total.cacheRead += d.cacheRead
+    this.total.cacheWrite += d.cacheWrite
+    this.total.output += d.output
+    return d
+  }
+}
+
+/**
+ * What a turn added to its Claude session's running cost total. A new session starts from zero; a
+ * resumed one from the last total seen for it, and with none seen (resumed from before this app
+ * started) nothing is claimed rather than the whole session's cost again.
+ */
+export function costAdded(seen: Map<string, number>, sessionId: string | undefined, resumeId: string | undefined, total: number | undefined): number | undefined {
+  if (total === undefined) return undefined
+  const before = (sessionId ? seen.get(sessionId) : undefined) ?? (resumeId ? seen.get(resumeId) : 0)
+  if (sessionId) seen.set(sessionId, total)
+  return before === undefined ? undefined : Math.max(0, total - before)
+}
+
 export class ClaudeCliProvider implements ProviderAdapter {
+  /**
+   * The SDK's cost is a running total for a Claude session, resumed turns included: the last total
+   * seen per session, so a turn reports only what it added.
+   */
+  private costSeen = new Map<string, number>()
+
   async *run(req: TurnRequest): AsyncIterable<AgentEvent> {
     const { agent } = req
     const abort = new AbortController()
@@ -82,6 +128,9 @@ export class ClaudeCliProvider implements ProviderAdapter {
         : { behavior: 'deny', message: `The user did not allow ${name}.` }
     }
 
+    // a large CLAUDE.md is not sent with every call: the agent gets its outline and reads what it needs
+    const doc = projectInstructions(req.cwd)
+
     let stream
     try {
       stream = query({
@@ -90,7 +139,7 @@ export class ClaudeCliProvider implements ProviderAdapter {
           cwd: req.cwd,
           model: agent.model || undefined,
           effort: clampEffort('claude-cli', agent.effort),
-          systemPrompt: { type: 'preset', preset: 'claude_code', append: req.system },
+          systemPrompt: { type: 'preset', preset: 'claude_code', append: doc.note && agent.permissions !== 'chat' ? `${req.system}\n\n${doc.note}` : req.system },
           resume: req.resumeId,
           includePartialMessages: true,
           // auto-approved writers skip edit prompts; otherwise every prompt reaches canUseTool and the user
@@ -100,6 +149,7 @@ export class ClaudeCliProvider implements ProviderAdapter {
           allowedTools: agent.autoApprove ? Object.keys(mcpServers).map((k) => `mcp__${k}`) : ['mcp__multimine'],
           mcpServers,
           settingSources: ['user', 'project', 'local'],
+          settings: doc.excludes.length ? { claudeMdExcludes: doc.excludes } : undefined,
           abortController: abort,
           // the loop guard sees every call, including ones the user's own settings allow outright
           hooks: req.watch
@@ -127,11 +177,21 @@ export class ClaudeCliProvider implements ProviderAdapter {
 
     const streamed = new Set<string>()
     let current: string | null = null
+    const meter = new CallMeter()
+    let sessionId: string | undefined
     try {
       for await (const msg of stream as AsyncIterable<any>) {
         if (msg.session_id) {
           // the session id is the resume handle; announce it once
-          if (msg.type === 'system' && msg.subtype === 'init') yield { type: 'resume', id: msg.session_id }
+          if (msg.type === 'system' && msg.subtype === 'init') {
+            sessionId = msg.session_id
+            yield { type: 'resume', id: msg.session_id }
+          }
+        }
+        // every model call counts, a sub-agent's as much as the agent's own
+        if (msg.type === 'assistant') {
+          const d = meter.see(msg.message?.id, msg.message?.usage)
+          if (d) yield { type: 'call-usage', ...d }
         }
         // a sub-agent's inner traffic: its tool calls are shown nested under the call that started it
         const parent: string | undefined = msg.parent_tool_use_id ?? undefined
@@ -191,11 +251,19 @@ export class ClaudeCliProvider implements ProviderAdapter {
           }
           case 'result': {
             const u = msg.usage ?? {}
+            const t = meter.total
+            // the running total for the session: what this turn added is the growth since the last one
+            // seen; a session resumed from before this app started has no baseline, so no cost is claimed
+            const total = typeof msg.total_cost_usd === 'number' ? msg.total_cost_usd : undefined
+            const added = costAdded(this.costSeen, sessionId ?? msg.session_id, req.resumeId, total)
             yield {
               type: 'usage',
-              inputTokens: (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
-              outputTokens: u.output_tokens ?? 0,
-              costUsd: msg.total_cost_usd
+              inputTokens: t.calls ? t.input : (u.input_tokens ?? 0),
+              cacheRead: t.calls ? t.cacheRead : (u.cache_read_input_tokens ?? 0),
+              cacheWrite: t.calls ? t.cacheWrite : (u.cache_creation_input_tokens ?? 0),
+              outputTokens: t.calls ? t.output : (u.output_tokens ?? 0),
+              calls: t.calls || undefined,
+              costUsd: added
             }
             if (msg.subtype !== 'success' || msg.is_error) yield { type: 'error', message: friendlyClaudeError((msg.errors ?? [msg.result ?? msg.subtype]).join('; ')) }
             break

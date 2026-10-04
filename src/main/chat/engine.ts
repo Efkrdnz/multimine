@@ -6,7 +6,10 @@ import { z } from 'zod'
 import { newId } from '@shared/ids'
 import { DEFAULT_CHAT_NAME, MOCK_DEFAULTS, newChat, providerLocked } from '@shared/chat'
 import { CONCISE_RULES, RATE_SYSTEM, downshift, parseRating, type Difficulty, type TempModel } from '@shared/economy'
-import type { AgentSpec, AgentStatus, ChatMessage, FallbackHop, InboxItem, MainEvent, MediaItem, ProviderKind, Question, Usage } from '@shared/types'
+import type { AgentSpec, AgentStatus, ChatMessage, FallbackHop, InboxItem, MainEvent, MediaItem, ProviderKind, Question, TableCard, Usage } from '@shared/types'
+import { cellText, parseTable, type Table } from '@shared/tables/model'
+import { contextSection, tableCommandPrompt } from '@shared/tables/prompt'
+import { TableStore } from '../store/tables'
 import type { AppConfig } from '../store/appConfig'
 import type { ProjectStore } from '../store/project'
 import type { ChatStore } from '../store/chats'
@@ -117,7 +120,11 @@ export class Engine {
     this.mediaStore = new MediaStore(d.project.paths.media)
     this.health = d.health ?? new ProviderHealth((h) => d.emit({ type: 'provider-health', health: h }))
     this.inbox = new Inbox((items) => d.emit({ type: 'inbox', items }))
+    this.tables = new TableStore(d.project.dir)
   }
+
+  /** The project's tables, in `.multimine/tables/`. */
+  readonly tables: TableStore
 
   get project(): ProjectStore {
     return this.d.project
@@ -321,8 +328,10 @@ export class Engine {
   send(agentId: string, body: string, from = 'user', opts: SendOptions = {}): Promise<TurnResult> {
     // the incoming message is shown at once, even while the chat is still busy with an earlier turn
     const chat = this.d.project.get(agentId)
-    const prompt = from === 'user' ? body : toolPrompt(from.replace(/^tool:/, ''), body)
-    const userMsg: ChatMessage = { id: newId('u'), agentId, role: 'user', from, text: prompt, ts: Date.now() }
+    // `/table ...` (typed, or sent by the Tables tool) stays in the chat as written; its turn gets the table instructions
+    const command = /^\/table(\s|$)/.test(body.trimStart()) ? ('table' as const) : undefined
+    const prompt = from === 'user' || command ? body : toolPrompt(from.replace(/^tool:/, ''), body)
+    const userMsg: ChatMessage = { id: newId('u'), agentId, role: 'user', from, text: prompt, ts: Date.now(), ...(command ? { command } : {}) }
     if (chat) {
       this.upsert(userMsg, true)
       void this.persist(userMsg).catch(() => undefined)
@@ -341,7 +350,8 @@ export class Engine {
     const eco = this.d.config.settings.economy
     if (opts.temp !== undefined) return Promise.resolve(opts.temp)
     if (opts.quick) return Promise.resolve(downshift(chat, 'light', eco))
-    if (eco.enabled && eco.autoRate && from === 'user') return this.rate(chat, body).then((r) => downshift(chat, r, eco))
+    // building a table reads code and writes careful JSON: never a light job
+    if (eco.enabled && eco.autoRate && from === 'user' && !/^\/table(\s|$)/.test(body.trimStart())) return this.rate(chat, body).then((r) => downshift(chat, r, eco))
     return Promise.resolve(null)
   }
 
@@ -391,7 +401,8 @@ export class Engine {
     if (!chat || chat.name !== DEFAULT_CHAT_NAME) return
     // only the first message names it: the one just sent is already in the chat
     if ((this.chats[agentId] ?? []).filter((m) => m.role === 'user').length > 1) return
-    const name = clipTo(body.split('\n').find((l) => l.trim())?.trim().replace(/^#+\s*/, '') ?? '', 48)
+    const first = body.split('\n').find((l) => l.trim())?.trim().replace(/^#+\s*/, '') ?? ''
+    const name = clipTo(/^\/table(\s|$)/.test(first) ? `Table: ${first.replace(/^\/table\s*/, '')}` : first, 48)
     if (!name) return
     const next = { ...chat, name }
     this.d.project.set(next)
@@ -468,7 +479,7 @@ export class Engine {
     const agent: AgentSpec = temp ? { ...own, model: temp.model, effort: temp.effort } : own
     if (temp) this.temps.set(agentId, temp)
     else this.temps.delete(agentId)
-    const prompt = userMsg.text
+    const prompt = userMsg.command === 'table' ? tableCommandPrompt(userMsg.text.trimStart().replace(/^\/table\s*/, ''), await this.tables.list()) : userMsg.text
     const history = this.history(agentId, userMsg)
 
     this.turns.add(agentId)
@@ -586,7 +597,7 @@ export class Engine {
     let lastContext = 0
     const req: TurnRequest = {
       agent,
-      system: this.systemPrompt(agent),
+      system: this.systemPrompt(agent, await this.tables.list()),
       history,
       prompt: finalPrompt,
       cwd: this.d.project.dir,
@@ -745,10 +756,43 @@ export class Engine {
     return Promise.all([run('git diff HEAD --stat'), run('git diff HEAD')]).then(([diffStat, diff]) => ({ diffStat: diffStat || undefined, diff: diff || undefined }))
   }
 
-  systemPrompt(agent: AgentSpec): string {
+  /** Every chat's system prompt: Multimine's own, the tables switched on as context, economy's rules. */
+  systemPrompt(agent: AgentSpec, tables: Table[] = []): string {
     const eco = this.d.config.settings.economy
     const base = buildSystemPrompt({ agent, projectDir: this.d.project.dir, multimineMd: this.d.project.multimineMd })
-    return eco.enabled && eco.concise ? `${base}\n\n${CONCISE_RULES}` : base
+    return [base, contextSection(tables), eco.enabled && eco.concise ? CONCISE_RULES : ''].filter(Boolean).join('\n\n')
+  }
+
+  /**
+   * A chat saving a table: read leniently, every link checked against its file (the code is the
+   * truth; links that do not match are dropped and reported), the user's context switch kept,
+   * written to `.multimine/tables/`, and shown as a card in the chat.
+   */
+  async saveTable(chatId: string, raw: unknown): Promise<{ table: Table; card: TableCard; problems: string[] }> {
+    const { table: parsed, problems } = parseTable(raw)
+    if (!parsed.columns.length) throw new Error(`The table has no columns${problems.length ? `: ${problems.join('; ')}` : ''}.`)
+    const before = await this.tables.get(parsed.id)
+    const ask = raw && typeof raw === 'object' && typeof (raw as { context?: unknown }).context === 'boolean'
+    const { table, report } = await this.tables.verify({ ...parsed, context: ask ? parsed.context : (before?.context ?? false) })
+    await this.tables.save(table)
+    const first = table.columns.slice(0, 6)
+    const card: TableCard = {
+      id: table.id,
+      name: table.name,
+      rows: table.rows.length,
+      columns: table.columns.length,
+      links: report.links,
+      verified: report.verified,
+      broken: report.broken.slice(0, 20),
+      preview: { columns: first.map((c) => ({ key: c.key, label: c.label })), rows: table.rows.slice(0, 8).map((r) => Object.fromEntries(first.map((c) => [c.key, cellText(r.cells[c.key])]))) }
+    }
+    if (this.d.project.get(chatId)) {
+      const msg: ChatMessage = { id: newId('n'), agentId: chatId, role: 'system', from: 'multimine', text: `Table "${table.name}" saved`, ts: Date.now(), table: card }
+      this.upsert(msg, true)
+      await this.persist(msg)
+    }
+    this.d.emit({ type: 'tables-changed', id: table.id })
+    return { table, card, problems: [...problems, ...report.broken] }
   }
 
   // ---------------------------------------------------------------- tools and plugins
@@ -765,7 +809,7 @@ export class Engine {
       id = undefined
     }
     if (!id) {
-      const name = body.split('\n').find((l) => l.trim() && !/^#+\s*$/.test(l))?.replace(/^#+\s*/, '').trim()
+      const name = body.split('\n').find((l) => l.trim() && !/^#+\s*$/.test(l))?.replace(/^#+\s*/, '').replace(/^\/table\s*/, '').trim()
       const mcp = (opts.mcp ?? []).filter((m) => this.d.config.settings.mcpServers.some((s) => s.id === m))
       const chat = await this.createChat({ name: clipTo(name ? `${toolName}: ${name}` : toolName, 48), mcp })
       // plan mode is Claude's: for any other provider there is nothing to switch on
@@ -889,7 +933,59 @@ export class Engine {
       options: z.array(z.object({ label: z.string(), description: z.string().optional() })).min(1).max(6),
       multiSelect: z.boolean().optional()
     })
+    const cell = z.union([z.string(), z.number(), z.boolean(), z.null()])
+    const link = z.object({ file: z.string(), line: z.number(), before: z.string(), after: z.string() })
     return [
+      {
+        name: 'save_table',
+        description:
+          "Save one of the project's tables (in .multimine/tables/, shown in the Tables tool). Reusing an id replaces that table. Every link is checked against its file; the result lists those that did not match.",
+        shape: {
+          id: z.string().optional().describe('A short slug; reuse an existing id to change that table'),
+          name: z.string(),
+          description: z.string().optional(),
+          columns: z.array(
+            z.object({
+              key: z.string().optional(),
+              label: z.string(),
+              type: z.enum(['text', 'number', 'enum', 'bool']).optional(),
+              values: z.array(z.string()).optional(),
+              colors: z.record(z.string(), z.string()).optional(),
+              note: z.string().optional()
+            })
+          ),
+          rows: z.array(
+            z.object({
+              id: z.string().optional(),
+              cells: z.record(z.string(), cell),
+              file: z.string().optional(),
+              idea: z.boolean().optional(),
+              links: z.record(z.string(), link).optional()
+            })
+          )
+        },
+        handler: async (a) => {
+          try {
+            const { table, card, problems } = await this.saveTable(me, a)
+            const lines = [`Saved the table "${table.name}" (id ${table.id}): ${card.rows} rows, ${card.columns} columns; ${card.verified} of ${card.links} links match the code.`]
+            if (problems.length) lines.push(`Not saved as given - fix these and save again:\n${problems.slice(0, 30).map((p) => `- ${p}`).join('\n')}`)
+            return text(lines.join('\n'))
+          } catch (e) {
+            return text((e as Error).message, true)
+          }
+        }
+      },
+      {
+        name: 'read_table',
+        description: "Read one of the project's tables as JSON (its columns, rows and code links). Without an id, lists them.",
+        shape: { id: z.string().optional() },
+        handler: async (a) => {
+          const all = await this.tables.list()
+          if (!a.id) return text(all.length ? all.map((t) => `${t.id}: ${t.name} (${t.rows.length} rows; ${t.columns.map((c) => c.label).join(', ')})${t.context ? ' - context' : ''}`).join('\n') : 'No tables yet.')
+          const t = all.find((x) => x.id === String(a.id))
+          return t ? text(JSON.stringify(t)) : text(`No table ${a.id}. Tables: ${all.map((x) => x.id).join(', ') || 'none'}.`, true)
+        }
+      },
       {
         name: 'ask_user',
         description: 'Ask the user one to four structured questions. Each has 2-6 options, recommended first. Blocks until answered.',

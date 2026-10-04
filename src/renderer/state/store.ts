@@ -38,6 +38,10 @@ export interface State {
   ide: 'closed' | 'open' | 'hidden'
   /** A file the IDE window should open (n tells a repeated request apart). */
   ideRequest: { path: string; line?: number; n: number } | null
+  /** A table the Tables tool should show (a chat's table card asked for it). */
+  tableRequest: { id: string; n: number } | null
+  /** The last table a chat saved, so the Tables tool reloads it. */
+  tablesChanged: { id: string; n: number } | null
   plugins: PluginInfo[]
   brokenPlugins: { dir: string; errors: string[] }[]
   /** Tool windows opened this run (kept mounted so they keep their state) and the one on screen. */
@@ -73,6 +77,8 @@ export const useStore = create<State>((set, get) => ({
   panel: null,
   ide: 'closed',
   ideRequest: null,
+  tableRequest: null,
+  tablesChanged: null,
   plugins: [],
   brokenPlugins: [],
   openTools: [],
@@ -159,6 +165,9 @@ export function applyEvent(e: MainEvent): void {
       return
     case 'plugins':
       s.set({ plugins: e.plugins, brokenPlugins: e.broken })
+      break
+    case 'tables-changed':
+      s.set({ tablesChanged: { id: e.id, n: (s.tablesChanged?.n ?? 0) + 1 } })
       break
     case 'provider-health':
       s.set({ health: e.health })

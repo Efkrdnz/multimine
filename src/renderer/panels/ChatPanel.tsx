@@ -121,7 +121,7 @@ function EmptyChat({ agent }: { agent: AgentSpec }) {
     { icon: <PenTool size={13} />, name: 'UI Sketcher', what: 'draw a screen, have it built' },
     { icon: <Boxes size={13} />, name: 'Asset Board', what: 'art and sound, made and dropped in' },
     { icon: <Workflow size={13} />, name: 'Logic Board', what: 'a mechanic in plain words' },
-    { icon: <Table2 size={13} />, name: 'Data Tables', what: 'game data as a spreadsheet' }
+    { icon: <Table2 size={13} />, name: 'Tables', what: 'your numbers, linked to the code - try /table' }
   ]
   return (
     <div className="mx-auto mt-[12vh] max-w-[520px] text-center" data-testid="empty-chat">
@@ -145,6 +145,9 @@ function EmptyChat({ agent }: { agent: AgentSpec }) {
     </div>
   )
 }
+
+/** The slash commands the composer offers. */
+const COMMANDS = [{ cmd: '/table', hint: 'make or change a table from a description - linked to the code, kept in the Tables tool' }]
 
 /** What this chat is waiting on the user for, answered right here. */
 function InlinePrompts({ agentId }: { agentId: string }) {
@@ -175,6 +178,8 @@ export function ChatPanel({ agentId }: { agentId: string }) {
   }, [messages])
 
   if (!agent) return null
+  // while the draft is a bare `/word`, offer the commands it could be
+  const commands = /^\/\w*$/.test(draft) ? COMMANDS.filter((c) => c.cmd.startsWith(draft)) : []
   // Quick runs one message on the provider's light tier; it is offered only where that is cheaper
   const light = settings ? downshift(agent, 'light', settings.economy) : null
   const send = () => {
@@ -199,7 +204,18 @@ export function ChatPanel({ agentId }: { agentId: string }) {
       <div className="mx-auto w-full max-w-[860px]">
         <InlinePrompts agentId={agentId} />
       </div>
-      <div className="mx-auto w-full max-w-[860px] p-3">
+      <div className="relative mx-auto w-full max-w-[860px] p-3">
+        {commands.length > 0 && (
+          <div className="glass absolute bottom-full left-3 right-3 z-20 mb-1 rounded-xl p-1" style={{ background: 'rgb(10 12 28 / 0.97)' }} data-testid="slash-menu">
+            {commands.map((c) => (
+              <button key={c.cmd} className="flex w-full items-baseline gap-2 rounded-lg px-2.5 py-1.5 text-left hover:bg-white/5" onMouseDown={(e) => (e.preventDefault(), setDraft(`${c.cmd} `))}>
+                <span className="font-mono text-[12.5px] text-violet-200">{c.cmd}</span>
+                <span className="truncate text-[11.5px] text-indigo-300/70">{c.hint}</span>
+                <span className="ml-auto shrink-0 text-[10px] text-indigo-300/40">Tab</span>
+              </button>
+            ))}
+          </div>
+        )}
         <div className={`flex items-end gap-2 rounded-xl border bg-black/40 p-2 focus-within:border-violet-400/60 ${quick && light ? 'border-amber-400/50' : 'border-white/10'}`}>
           <textarea
             className="scroll-thin max-h-48 min-h-[2.4rem] flex-1 resize-none bg-transparent px-1.5 py-1 text-sm outline-none"
@@ -208,6 +224,11 @@ export function ChatPanel({ agentId }: { agentId: string }) {
             rows={Math.min(8, draft.split('\n').length)}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
+              if (e.key === 'Tab' && commands.length) {
+                e.preventDefault()
+                setDraft(`${commands[0].cmd} `)
+                return
+              }
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
                 send()

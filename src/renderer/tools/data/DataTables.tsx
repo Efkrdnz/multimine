@@ -55,7 +55,7 @@ async function findDataFiles(call: PluginCall): Promise<string[]> {
 }
 
 /**
- * Game Data Tables: the project's JSON and CSV data as a spreadsheet. A save writes the file back in
+ * Data Files: the project's JSON and CSV data as a spreadsheet. A save writes the file back in
  * its own layout, touching only what changed; an agent can be asked about any rows and edits the file
  * itself, which reloads here.
  */

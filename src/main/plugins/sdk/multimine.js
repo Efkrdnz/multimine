@@ -48,7 +48,8 @@
     files: {
       list: function (dir) { return call('files.list', dir || '') },
       read: function (path, encoding) { return call('files.read', path, encoding || 'utf8') },
-      write: function (path, data, encoding) { return call('files.write', path, data, encoding || 'utf8') }
+      write: function (path, data, encoding) { return call('files.write', path, data, encoding || 'utf8') },
+      remove: function (path) { return call('files.remove', path) }
     },
     media: {
       show: function (source, title) { return call('media.show', source, title) },

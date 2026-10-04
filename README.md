@@ -6,8 +6,8 @@ built in and plugins for more.**
 Open a project folder and chat with an agent that works in it, the way you would in Claude Code or
 Codex, with as many chats running side by side as you like. Around the chat sit the tools nobody
 else has: draw a HUD and have it built for Godot, Unity, Unreal or Minecraft; track the art the game
-needs and drop the approved file into place; design a mechanic as boxes in plain words; edit item
-tables as a spreadsheet. Any of them sends its work to a chat with one click.
+needs and drop the approved file into place; design a mechanic as boxes in plain words; keep your
+spells, items and enemies in tables linked to the code, where editing a number edits the class. Any of them sends its work to a chat with one click.
 
 > **Experimental.** Multimine is young and was built mostly with AI. It is developed on Windows and
 > its test suite runs on Linux; macOS is untested. Expect rough edges, and please report them.
@@ -61,7 +61,17 @@ update) go back to the chat that did the first one.
   leave an agent guessing. **Build** sends it as your approved design, so the chat builds it instead
   of planning it again, and writes a code map: each box then links to the line that implements it.
   Edit a built board and **Update** sends only what changed.
-- **Data Tables.** The project's JSON and CSV data (items, enemies, loot, levels) as a spreadsheet
+- **Tables.** Your project's numbers in one place - every spell with its mana, cooldown, element and
+  damage, say - each cell linked to the literal in the code that holds it. Type `/table every spell
+  with mana usage, cooldown, element (with colours) and base damage` in any chat and it builds the
+  table from your code; every link is checked against the file before it counts. Edit a value in the
+  table and **Review & apply** shows the exact line it will change, writes it, and reads the file back
+  to verify it. Change the code and the table follows: the code is the truth. Add rows of your own as
+  ideas with reference values, and **Build it** hands one to a chat with those values. Line and pie
+  charts on demand, and **Context for chats** gives the table to every chat as a few compact lines,
+  so it reads the numbers there instead of opening every class. No model is involved in reading or
+  writing linked values.
+- **Data Files.** The project's JSON and CSV data (items, enemies, loot, levels) as a spreadsheet
   with typed columns, validation, stats and a chart. A save changes only the edited lines. **Ask a
   chat** sends the selected rows and a question to the chat on screen.
 
@@ -69,6 +79,7 @@ update) go back to the chat that did the first one.
 |---|---|
 | ![The UI Sketcher drawing a Minecraft screen](docs/screenshots/sketcher.png) | ![A Godot HUD laid out on every screen size](docs/screenshots/sketcher-mockup.png) |
 | ![The Asset Board with a candidate to approve](docs/screenshots/asset-board.png) | ![The Logic Board](docs/screenshots/logic-board.png) |
+| ![A table of spells linked to the code](docs/screenshots/tables.png) | ![Reviewing a value before it is written to the class](docs/screenshots/tables-review.png) |
 
 ## Around the chat
 

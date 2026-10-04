@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { PLUGIN_API_VERSION, type AgentSpec, type MainEvent, type MediaItem, type PluginInfo, type PluginPermission } from '@shared/types'
 import { insideProject } from '../chat/workspace'
@@ -21,6 +21,7 @@ export const METHOD_PERMISSION: Record<string, PluginPermission | null> = {
   'files.list': 'project:read',
   'files.read': 'project:read',
   'files.write': 'project:write',
+  'files.remove': 'project:write',
   'media.show': 'media:write',
   'media.list': 'media:read'
 }
@@ -136,6 +137,12 @@ export async function callPlugin(ctx: PluginContext, plugin: PluginInfo, method:
       const full = insideProject(project(), String(a(0)))
       await mkdir(dirname(full), { recursive: true })
       await writeFile(full, a(2) === 'base64' ? Buffer.from(String(a(1)), 'base64') : String(a(1)))
+      return true
+    }
+    case 'files.remove': {
+      const full = insideProject(project(), String(a(0)))
+      // one file at a time, never a folder: a plugin cannot wipe a tree with one call
+      await rm(full, { force: true })
       return true
     }
     case 'media.show': {

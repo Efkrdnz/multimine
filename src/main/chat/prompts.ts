@@ -38,7 +38,8 @@ export function buildSystemPrompt(p: PromptInput): string {
       'Besides your own tools you have the Multimine ones (for CLI agents, the `multimine` MCP server):',
       '- `ask_user` for structured questions, rather than plain text at the end of a turn.',
       '- `request_permission` before anything that leaves this machine or cannot be undone (git push, publishing, deleting work).',
-      '- `show_media` for every image, video, sound or model you generate or capture: it lands in the media gallery.'
+      '- `show_media` for every image, video, sound or model you generate or capture: it lands in the media gallery.',
+      "- `read_table` / `save_table` for the project's tables (the user's `/table` requests)."
     ].join('\n')
   )
   if (agent.permissions === 'write') parts.push(VERIFY_RULES)

@@ -50,7 +50,7 @@ user enables them). The smallest working example is
 | `team:read` | `chats.list()` (the name is kept from API 1, so granted plugins are not asked again) |
 | `agents:message` | `send(to, text, options)`, `task(to, title, text, options)` |
 | `project:read` | `files.list`, `files.read`, `ide.open(path, line)` |
-| `project:write` | `files.write` |
+| `project:write` | `files.write`, `files.remove` (one file, never a folder) |
 | `media:read` | `media.list()` |
 | `media:write` | `media.show()` |
 | `network` | your page may make HTTPS requests and load remote images, fonts and styles |
@@ -73,6 +73,7 @@ message when a permission is missing.
   await multimine.task('new', 'Build the inventory', 'the brief', { planMode: true })
   const text = await multimine.files.read('README.md') // 'base64' as a second argument for binary
   await multimine.files.write('notes/todo.md', '# Todo')
+  await multimine.files.remove('notes/old.md')       // a file, never a folder
   await multimine.media.show('data:image/png;base64,...', 'Preview')
   await multimine.storage.set('last', { x: 1 })        // your own store, no permission needed
   await multimine.ui.toast('Done')
@@ -127,8 +128,8 @@ Plugins written for API 1 keep working:
 
 ## The built-in tools
 
-The UI Sketcher (`ui-sketcher`), the Asset Board (`asset-board`), Data Tables (`data-tables`) and the
-Logic Board (`logic-board`) ship with Multimine and are drawn as part of the app, but they hold no
+The UI Sketcher (`ui-sketcher`), the Asset Board (`asset-board`), Tables (`tables`), Data Files
+(`data-tables`) and the Logic Board (`logic-board`) ship with Multimine and are drawn as part of the app, but they hold no
 privileges of their own: each is listed as a plugin, its permissions can be revoked in **Manage**
 like any other, and every file it writes, message it sends and picture it shows goes through the
 same `pluginCall` handlers your plugin's `window.multimine` reaches. Anything they do, a plugin can do.

@@ -28,6 +28,13 @@ test('Multimine runs end to end on the mock provider', async () => {
   // the layout a formatter leaves: objects broken over lines, short arrays kept on one
   const itemsText = JSON.stringify(items, null, 2).replace(/\[\s+([^\[\]{}]*?)\s+\]/g, (_m, inner: string) => `[${inner.split(/,\s+/).join(', ')}]`) + '\n'
   writeFileSync(join(project, 'data', 'items.json'), itemsText)
+  // two spells, for the Tables tool to link to
+  const spellDir = join(project, 'src', 'main', 'java', 'com', 'mana', 'spells')
+  mkdirSync(spellDir, { recursive: true })
+  const spellFile = (cls: string, mana: number, cooldown: string, element: string, damage: number) =>
+    `package com.mana.spells;\n\npublic class ${cls} extends Spell {\n    public static final int MANA_COST = ${mana};\n    public static final float COOLDOWN = ${cooldown};\n    public static final String ELEMENT = "${element}";\n    public static final int BASE_DAMAGE = ${damage};\n}\n`
+  writeFileSync(join(spellDir, 'Fireball.java'), spellFile('Fireball', 20, '2.5f', 'fire', 8))
+  writeFileSync(join(spellDir, 'Mend.java'), spellFile('Mend', 15, '4.0f', 'light', -6))
   mkdirSync(join(root, 'user'))
   const app = await electron.launch({
     args: [resolve('out/main/index.js'), '--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--project', project],
@@ -390,6 +397,103 @@ test('Multimine runs end to end on the mock provider', async () => {
   await page.getByTestId('code').click()
   await page.getByTestId('tool-logic-board').click()
   await page.getByTestId('toolwin-logic-board').getByTitle('Close', { exact: true }).click()
+
+  // Tables: `/table` in a chat builds a table linked to the code; editing a value there rewrites the class
+  await page.getByTestId(`chat-row-${first.id}`).click()
+  await input.fill('/')
+  await expect(panel.getByTestId('slash-menu')).toContainText('/table')
+  await input.press('Tab')
+  await expect(input).toHaveValue('/table ')
+  const link = (cls: string, line: number, before: string) => ({ file: `src/main/java/com/mana/spells/${cls}.java`, line, before, after: ';' })
+  const spellTable = {
+    id: 'spells',
+    name: 'Spells',
+    description: 'Every spell in the mod, read from its class.',
+    columns: [
+      { key: 'name', label: 'Spell', type: 'text' },
+      { key: 'mana', label: 'Mana usage', type: 'number' },
+      { key: 'cooldown', label: 'Cooldown', type: 'number', note: 'seconds' },
+      { key: 'element', label: 'Element', type: 'enum', values: ['fire', 'light'], colors: { fire: '#d95926', light: '#c98500' } },
+      { key: 'damage', label: 'Base damage', type: 'number', note: 'negative heals' }
+    ],
+    rows: (['Fireball', 'Mend'] as const).map((cls) => ({
+      id: cls.toLowerCase(),
+      file: `src/main/java/com/mana/spells/${cls}.java`,
+      cells: { name: cls },
+      links: { mana: link(cls, 4, 'MANA_COST = '), cooldown: link(cls, 5, 'COOLDOWN = '), element: link(cls, 6, 'ELEMENT = '), damage: link(cls, 7, 'BASE_DAMAGE = ') }
+    }))
+  }
+  // the mock stands in for a model: a `/tool` line in the request calls that tool for real
+  await say(`/table /tool save_table ${JSON.stringify(spellTable)}`)
+  const card = panel.getByTestId('table-card')
+  await expect(card).toContainText('Spells', { timeout: 15_000 })
+  await expect(card).toContainText('8 of 8 linked to code')
+  await expect(card).toContainText('-6')
+  await page.waitForTimeout(300)
+  await shot(page, '21c-table-card')
+  await card.getByTestId('table-card-open').click()
+  await expect(page.getByTestId('tables')).toBeVisible()
+  await expect(page.getByTestId('tb-link-summary')).toContainText('8 values linked to code')
+  // a linked value edited here waits for review, then goes into the class and is read back
+  await page.getByTestId('tb-cell-fireball-mana').click()
+  await page.getByTestId('tb-cell-input').fill('25')
+  await page.getByTestId('tb-cell-input').press('Enter')
+  await expect(page.getByTestId('tb-pending')).toContainText('1 value changed here')
+  await page.getByTestId('tb-review').click()
+  await expect(page.getByTestId('tb-change')).toHaveCount(1)
+  await expect(page.getByTestId('tb-change')).toContainText('+ public static final int MANA_COST = 25;')
+  await page.waitForTimeout(300)
+  await shot(page, '21d-table-review')
+  await page.getByTestId('tb-apply').click()
+  await expect.poll(() => readFileSync(join(spellDir, 'Fireball.java'), 'utf8'), { timeout: 10_000 }).toContain('MANA_COST = 25;')
+  expect(readFileSync(join(spellDir, 'Fireball.java'), 'utf8')).toContain('COOLDOWN = 2.5f;')
+  await expect(page.getByTestId('tb-pending')).toHaveCount(0)
+  // the code is the truth: a change made there shows up in the table
+  writeFileSync(join(spellDir, 'Mend.java'), readFileSync(join(spellDir, 'Mend.java'), 'utf8').replace('COOLDOWN = 4.0f', 'COOLDOWN = 3.5f'))
+  await page.getByTestId('tb-refresh').click()
+  await expect(page.getByTestId('tb-cell-mend-cooldown')).toHaveText('3.5')
+  // a row of the user's own: an idea, with reference values
+  await page.getByTestId('tb-add-row').click()
+  await page.getByTestId('tb-cell-input').fill('Arcane Bolt')
+  await page.getByTestId('tb-cell-input').press('Enter')
+  await page.getByTestId('tb-cell-new-idea-mana').click()
+  await page.getByTestId('tb-cell-input').fill('12')
+  await page.getByTestId('tb-cell-input').press('Enter')
+  await page.getByTestId('tb-cell-new-idea-damage').click()
+  await page.getByTestId('tb-cell-input').fill('10')
+  await page.getByTestId('tb-cell-input').press('Enter')
+  await expect(page.getByTestId('tb-pending')).toHaveCount(0)
+  // a new column, and the table given to every chat as context
+  await page.getByTestId('tb-add-col').click()
+  await page.getByTestId('tb-col-label').fill('Cast time')
+  await page.getByTestId('tb-col-add').click()
+  await expect(page.getByTestId('tb-col-cast_time')).toBeVisible()
+  await page.getByTestId('tb-context').check()
+  const tableFile = () => JSON.parse(readFileSync(join(project, '.multimine', 'tables', 'spells.json'), 'utf8'))
+  await expect.poll(() => tableFile().context, { timeout: 10_000 }).toBe(true)
+  await expect.poll(() => tableFile().rows.find((r: any) => r.id === 'new-idea')?.cells, { timeout: 10_000 }).toMatchObject({ name: 'Arcane Bolt', mana: 12, damage: 10 })
+  await page.waitForTimeout(300)
+  await shot(page, '21e-tables')
+  // charts on demand: a line across the spells, a pie by element
+  await page.getByTestId('tb-chart-toggle').click()
+  await expect(page.getByTestId('tb-line-chart')).toBeVisible()
+  await page.getByTestId('tb-line-chart').hover({ position: { x: 60, y: 100 } })
+  await expect(page.getByTestId('tb-chart-tip')).toContainText('Fireball')
+  await page.waitForTimeout(200)
+  await shot(page, '21f-table-line')
+  await page.getByTestId('tb-chart-pie').click()
+  await page.getByTestId('tb-pie-by').selectOption('element')
+  await page.getByTestId('tb-pie-sum').selectOption('mana')
+  await expect(page.getByTestId('tb-pie-chart')).toContainText('fire')
+  await page.waitForTimeout(200)
+  await shot(page, '21g-table-pie')
+  // the idea goes to a chat to build, with its values
+  await page.getByTestId('tb-row-new-idea').hover()
+  await page.getByTestId('tb-implement-new-idea').click()
+  await page.getByTestId('tb-implement-to-new-idea').selectOption(first.id)
+  await page.getByTestId('tb-implement-go-new-idea').click()
+  await expect.poll(() => readFileSync(join(project, '.multimine', 'chats', first.id, 'messages.jsonl'), 'utf8'), { timeout: 10_000 }).toContain('Implement \\"Arcane Bolt\\" from the table \\"Spells\\"')
+  await page.getByTestId('toolwin-tables').getByTitle('Close', { exact: true }).click()
 
   // a new chat; what it is doing, live; and the loop guard pausing it when it relaunches the "game" again and again
   await page.getByTestId('new-chat').click()

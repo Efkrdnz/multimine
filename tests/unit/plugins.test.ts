@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -87,6 +88,12 @@ describe('plugin system', () => {
     await app.pluginCall('ui-sketcher', 'storage.set', ['k', { a: 1 }])
     expect(await app.pluginCall('ui-sketcher', 'storage.get', ['k'])).toEqual({ a: 1 })
     await expect(app.pluginCall('ui-sketcher', 'eval', [])).rejects.toThrow('Unknown method')
+    // a file can be removed; a folder cannot, and nothing outside the project
+    await app.pluginCall('tables', 'files.remove', ['.multimine/sketches/a/sketch.json'])
+    expect(existsSync(join(dir, 'p', '.multimine', 'sketches', 'a', 'sketch.json'))).toBe(false)
+    await expect(app.pluginCall('tables', 'files.remove', ['.multimine/sketches'])).rejects.toThrow()
+    expect(existsSync(join(dir, 'p', '.multimine', 'sketches'))).toBe(true)
+    await expect(app.pluginCall('tables', 'files.remove', ['../outside.txt'])).rejects.toThrow('outside the project')
   })
 
   it("brings a plugin's MCP server in and out with the plugin", async () => {

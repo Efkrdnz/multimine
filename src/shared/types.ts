@@ -149,6 +149,22 @@ export interface ChatMessage {
   streaming?: boolean
   error?: string
   usage?: Usage
+  /** A slash command the user typed (`/table ...`): the text stays as typed, the turn gets the command's prompt. */
+  command?: 'table'
+  /** A table a chat saved, shown as a card in the chat. */
+  table?: TableCard
+}
+
+/** A saved table as a chat shows it: what it holds, how much of it is linked, and its first rows. */
+export interface TableCard {
+  id: string
+  name: string
+  rows: number
+  columns: number
+  links: number
+  verified: number
+  broken: string[]
+  preview: { columns: { key: string; label: string }[]; rows: Record<string, string>[] }
 }
 
 export interface QuestionOption {
@@ -415,4 +431,6 @@ export type MainEvent =
   | { type: 'plan-limits'; windows: PlanWindow[]; warning?: string }
   /** Open a project file in the IDE window, at a line. */
   | { type: 'ide-open'; path: string; line?: number }
+  /** A table was saved by a chat: the Tables tool reloads it. */
+  | { type: 'tables-changed'; id: string }
   | { type: 'toast'; level: 'info' | 'error'; text: string }

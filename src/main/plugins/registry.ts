@@ -27,8 +27,18 @@ export const BUILTIN: PluginManifest[] = [
     permissions: ['team:read', 'agents:message', 'project:read', 'project:write', 'media:read']
   },
   {
+    id: 'tables',
+    name: 'Tables',
+    version: '1.0.0',
+    api: 2,
+    description: "Your project's numbers in tables linked to the code: made by a chat from a description or by hand, edited in place, charted, and given to chats as context.",
+    icon: { glyph: 'Sheet', gradient: ['#a78bfa', '#06b6d4'] },
+    window: { width: 1280, height: 800 },
+    permissions: ['team:read', 'agents:message', 'project:read', 'project:write']
+  },
+  {
     id: 'data-tables',
-    name: 'Data Tables',
+    name: 'Data Files',
     version: '1.0.0',
     api: 2,
     description: "Edit the project's JSON and CSV game data as a spreadsheet, chart it, and ask an agent to rebalance it.",

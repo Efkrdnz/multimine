@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { Columns2, Eraser, Pencil, Send, Square, X } from 'lucide-react'
+import { Columns2, Eraser, Pencil, RotateCcw, Send, Square, X } from 'lucide-react'
 import { SHORT_PROVIDER, modelLabel } from '@shared/catalog'
 import { ROLE_LABEL } from '@shared/templates'
 import { MASTERMIND_ID, type AgentSpec, type Effort } from '@shared/types'
 import { SUPPORTED_EFFORTS } from '@shared/effort'
 import { InboxCard } from './InboxPanel'
+import { tokens } from '@shared/usage'
 import { EMPTY_LIST, EMPTY_MAP, api, useStore } from '../state/store'
 import { ActivityLine } from './ActivityLine'
 import { MessageView } from './MessageView'
@@ -19,6 +20,40 @@ const ACCESS: Record<Access, { label: string; help: string; patch: Partial<Agent
   supervised: { label: 'Supervised', help: 'Asks before every edit and command', patch: { autoApprove: false } },
   auto: { label: 'Auto-accept', help: 'Edits and runs without asking; still needs an approved plan for delegated work', patch: { autoApprove: true, gated: true } },
   full: { label: 'Full access', help: 'Edits, runs and takes tasks without asking. Pushing and destructive commands always ask.', patch: { autoApprove: true, gated: false } }
+}
+
+const AMBER = 80_000
+const RED = 150_000
+
+/** How big the agent's current conversation is: every step it takes reads all of it again. */
+function ContextMeter({ agent }: { agent: AgentSpec }) {
+  const messages = useStore((s) => s.chats[agent.id] ?? EMPTY_LIST)
+  const st = useStore((s) => s.status[agent.id])
+  // the latest reply since the last fresh start that says how large the conversation was
+  let size = 0
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m.fresh) break
+    if (m.usage?.context) {
+      size = m.usage.context
+      break
+    }
+  }
+  if (!size) return null
+  const color = size >= RED ? 'text-red-300' : size >= AMBER ? 'text-amber-300' : 'text-indigo-300/60'
+  const idle = !st || st.status === 'idle' || st.status === 'error'
+  return (
+    <span className="ml-auto flex items-center gap-1.5" data-testid="context-meter">
+      <span className={`font-mono text-[11px] ${color}`} title={`${agent.name}'s conversation is about ${tokens(size)} tokens. Every step it takes reads all of it again${size >= AMBER ? ': starting fresh makes the next steps faster and cheaper' : ''}.`}>
+        Context {tokens(size)}
+      </span>
+      {size >= AMBER && idle && (
+        <button className="rounded-md border border-cyan-400/40 px-1.5 py-0.5 text-[10.5px] text-cyan-100 hover:bg-cyan-400/10" onClick={() => void api().freshStart(agent.id)} title="Start a new conversation: the chat stays, the agent starts clean with a short recap" data-testid="start-fresh">
+          Start fresh
+        </button>
+      )}
+    </span>
+  )
 }
 
 /** Model, effort and access for the agent being talked to, saved to it as they change. */
@@ -64,6 +99,7 @@ function ComposerBar({ agent }: { agent: AgentSpec }) {
           </select>
         </>
       )}
+      <ContextMeter agent={agent} />
     </div>
   )
 }
@@ -129,7 +165,10 @@ export function ChatPanel({ agentId, wide = false }: { agentId: string; wide?: b
         <button className="btn btn-ghost !p-1.5" title="Edit agent" onClick={() => useStore.getState().set({ modal: { kind: 'agent', agent, isNew: false } })}>
           <Pencil size={15} />
         </button>
-        <button className="btn btn-ghost !p-1.5" title="Clear this chat (starts a fresh conversation)" onClick={() => confirm(`Clear ${agent.name}'s chat in this session?`) && void api().clearChat(agentId)}>
+        <button className="btn btn-ghost !p-1.5" title="New conversation: the chat stays, the agent starts clean with a short recap" onClick={() => void api().freshStart(agentId)}>
+          <RotateCcw size={15} />
+        </button>
+        <button className="btn btn-ghost !p-1.5" title="Clear this chat (deletes it and starts a fresh conversation)" onClick={() => confirm(`Clear ${agent.name}'s chat in this session?`) && void api().clearChat(agentId)}>
           <Eraser size={15} />
         </button>
       </div>

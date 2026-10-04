@@ -8,7 +8,7 @@ import { projectPaths, type ProjectPaths } from './paths'
 import { readJson, readText, writeAtomic, writeJson } from './fsx'
 
 /** Fingerprints of the role instructions an old version wrote, whitespace aside. */
-const OLD_PURPOSE = { mastermind: 'eebf71eaa27c3fe8101df0c40c968c161f4bb609', planner: '6e2af982c693b4a754d4df80d05b4f25a93a1002' }
+const OLD_PURPOSE = { mastermind: 'eebf71eaa27c3fe8101df0c40c968c161f4bb609', planner: '6e2af982c693b4a754d4df80d05b4f25a93a1002', leanMastermind: 'efcf2d48849728990ae1684d251144204eb61ea4' }
 
 const purposeHash = (purpose: string) => createHash('sha1').update(purpose.replace(/\s+/g, ' ').trim()).digest('hex')
 
@@ -87,6 +87,13 @@ export class ProjectStore {
       }
       if (lean) notes.push('Mastermind now sends small, clear tasks straight to the Implementer (one approval, no Planner or council), and the Planner no longer asks for an approval of its own.')
       done.push('lean-team-v1')
+    }
+    if (!done.includes('fresh-context-v1')) {
+      // the lean Mastermind, taught that delegated tasks start clean and when to continue instead
+      for (const a of this.agents.values()) {
+        if (a.role === 'mastermind' && purposeHash(a.purpose) === OLD_PURPOSE.leanMastermind) await this.saveAgent({ ...a, purpose: roleTemplate('mastermind', a.id).purpose })
+      }
+      done.push('fresh-context-v1')
     }
     await writeJson(file, done)
     return notes

@@ -193,11 +193,32 @@ function Timeline({ m }: { m: ChatMessage }) {
   )
 }
 
+/** Where the agent started a new conversation: everything above is no longer in its context. */
+function FreshLine({ m }: { m: ChatMessage }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="my-4" data-testid="fresh-line">
+      <div className="flex items-center gap-3 text-[11px] text-cyan-200/80">
+        <span className="h-px flex-1 bg-cyan-300/25" />
+        <span>New conversation · starts from here</span>
+        {m.recap && (
+          <button className="text-cyan-200/60 underline-offset-2 hover:text-cyan-100 hover:underline" onClick={() => setOpen(!open)}>
+            {open ? 'hide recap' : 'recap'}
+          </button>
+        )}
+        <span className="h-px flex-1 bg-cyan-300/25" />
+      </div>
+      {open && m.recap && <div className="mx-auto mt-2 max-w-[640px] whitespace-pre-wrap rounded-lg bg-black/25 p-2 text-[11px] text-indigo-200/70">{m.recap}</div>}
+    </div>
+  )
+}
+
 /** One message. Memoised: a streaming reply re-renders itself, not the whole conversation above it. */
 export const MessageView = memo(function MessageView({ m, last = false }: { m: ChatMessage; last?: boolean }) {
   const agents = useStore((s) => s.project?.agents ?? EMPTY_LIST)
   const media = useStore((s) => s.media)
   const [thinkOpen, setThinkOpen] = useState(false)
+  if (m.fresh) return <FreshLine m={m} />
   if (m.role === 'system') return <div className="my-2 text-center text-[11px] italic text-indigo-300/70">{m.text}</div>
   if (m.role === 'user') {
     const sender = m.from === 'user' ? null : agents.find((a) => a.id === m.from)

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Bot, ChevronDown, Gauge, Copy, FolderOpen, Leaf, Pencil, Plus, Trash2, Zap } from 'lucide-react'
+import { Bot, ChevronDown, Gauge, SquarePen, Copy, FolderOpen, Leaf, Pencil, Plus, Trash2, Zap } from 'lucide-react'
 import type { Usage } from '@shared/types'
 import { tokens, usageLine } from '@shared/usage'
 import { api, useStore } from '../state/store'
@@ -135,6 +135,9 @@ export function TopBar() {
         </button>
       </div>
 
+      <button className="btn" onClick={() => void api().newSession()} title="A new chat: every agent, Mastermind included, starts with a clean context" data-testid="new-chat">
+        <SquarePen size={14} /> New chat
+      </button>
       <div className="relative">
         <button className="btn" onClick={() => setOpen(!open)} data-testid="session-menu">
           <span className="max-w-56 truncate">{current?.name ?? 'No session'}</span>

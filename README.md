@@ -15,6 +15,13 @@ packets fly), ask you questions through Mastermind, and work on a real project f
   run of tool calls on one line, folded behind "Worked for 2m · 14 steps" once the answer is in -
   and questions and approvals are answered inline. Tools open beside the sidebar; the inbox, code,
   git, context and media sheets dock on the right.
+- **Fresh contexts.** Every task Mastermind delegates starts the agent (Implementer, Designer,
+  Planner...) with a clean context; Mastermind continues an agent's last conversation only for a
+  direct follow-up of its last task. **New chat** (top of the sidebar, Ctrl+N) gives everyone,
+  Mastermind included, a clean start and names itself after your first message. The composer shows
+  how large the agent's conversation is ("Context 84k" - every step re-reads it); past 80k a
+  **Start fresh** button (also in the header) gives that one agent a new conversation with a short
+  recap, while the chat stays on screen.
 - **Map**: the team as orbs in space, with links that light up as agents talk. Switch with
   Focus / Map at the top of the sidebar, or the button on the Map's rail.
 

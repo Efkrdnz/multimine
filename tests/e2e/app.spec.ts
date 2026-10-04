@@ -558,6 +558,19 @@ test('the workstation runs end to end on mock agents', async () => {
   await page.waitForTimeout(500)
   await shot(page, '42-focus-git')
   await page.getByTestId('git').click()
+  // a new chat: everyone starts clean, and the chat takes its name from the first message
+  await page.getByTestId('focus-new-chat').click()
+  const nchat = page.getByTestId('chat-mastermind')
+  await expect(nchat.getByTestId('chat-input')).toBeVisible()
+  await nchat.getByTestId('chat-input').fill('Plan the nebula portal block')
+  await nchat.getByTestId('chat-input').press('Enter')
+  await expect(page.getByTestId('focus-session').locator('option:checked')).toHaveText('Plan the nebula portal block', { timeout: 10_000 })
+  await expect(nchat.getByTestId('context-meter')).toContainText('Context', { timeout: 10_000 })
+  // one agent starts over without losing the chat on screen
+  await page.getByTestId('fresh-start').click()
+  await expect(nchat.getByTestId('fresh-line')).toBeVisible()
+  await page.waitForTimeout(400)
+  await shot(page, '43-focus-new-chat')
   await page.getByTestId('layout-map').click()
   await expect(page.getByTestId('session-menu')).toBeVisible()
 

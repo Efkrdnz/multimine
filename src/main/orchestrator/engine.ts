@@ -403,7 +403,7 @@ export class Engine {
   }
 
   /** Queues a turn for an agent. Turns of one agent never overlap; different agents run in parallel. */
-  send(agentId: string, body: string, from = 'user', kind: BusKind = 'message', temp?: TempModel | null): Promise<TurnResult> {
+  send(agentId: string, body: string, from = 'user', kind: BusKind = 'message', temp?: TempModel | null, opts: { continueSession?: boolean } = {}): Promise<TurnResult> {
     // the incoming message is shown at once, even while the agent is still busy with an earlier turn
     const agent = this.d.project.get(agentId)
     const fromName = from === 'user' ? 'user' : (this.d.project.get(from)?.name ?? this.sourceNames.get(from) ?? from)
@@ -412,14 +412,46 @@ export class Engine {
     if (agent) {
       this.upsert(userMsg, true)
       void this.persist(userMsg)
+      if (from === 'user') void this.nameAfter(body)
     }
     const prev = this.queues.get(agentId) ?? Promise.resolve()
-    const next = prev.then(() => this.runTurn(agentId, userMsg, kind, temp ?? undefined))
+    const next = prev.then(() => this.runTurn(agentId, userMsg, kind, temp ?? undefined, opts.continueSession))
     this.queues.set(
       agentId,
       next.catch(() => undefined)
     )
     return next
+  }
+
+  /**
+   * A new conversation with one agent: its chat stays on screen, but it forgets it. The next turn
+   * starts a clean context carrying only a short recap of where things were left.
+   */
+  async freshStart(agentId: string): Promise<boolean> {
+    const agent = this.d.project.get(agentId)
+    if (!agent || this.busy(agentId)) return false
+    const before = (this.chats[agentId] ?? []).filter((m) => (m.role === 'user' || m.role === 'assistant') && m.text.trim())
+    const since = before.slice(before.map((m) => m.fresh).lastIndexOf(true) + 1).slice(-6)
+    const recap = since.map((m) => `${m.role === 'user' ? (m.from === 'user' ? 'User' : `From ${this.d.project.get(m.from)?.name ?? m.from}`) : 'You'}: ${clipTo(m.text.replace(/\s+/g, ' ').trim(), 500)}`).join('\n')
+    for (const k of Object.keys(this.session.resume)) if (k === agentId || k.startsWith(`${agentId}|`)) delete this.session.resume[k]
+    this.session.updated = Date.now()
+    await this.d.sessions.save(this.session)
+    this.d.providers.release(`${agentId}|`)
+    const msg: ChatMessage = { id: newId('n'), agentId, role: 'system', from: 'multimine', text: 'New conversation', ts: Date.now(), fresh: true, recap: recap || undefined }
+    this.upsert(msg, true)
+    await this.persist(msg)
+    return true
+  }
+
+  /** A chat still called by its default name takes its name from the first thing the user says. */
+  private async nameAfter(body: string): Promise<void> {
+    if (!/^(New chat|First session|Session \d)/.test(this.session.name)) return
+    if (Object.values(this.chats).some((list) => list.some((m) => m.role === 'user' && m.from === 'user' && m.text !== body))) return
+    const name = clipTo(body.split('\n').find((l) => l.trim())?.trim() ?? '', 48)
+    if (!name) return
+    const meta = await this.d.sessions.rename(this.session.id, name)
+    if (meta) this.session.name = meta.name
+    await this.emitSessions()
   }
 
   /** Runs the agent's last incoming message again (after a failed turn: an expired login, a dropped connection). */
@@ -447,7 +479,11 @@ export class Engine {
   private history(agentId: string, before: ChatMessage): HistoryItem[] {
     const all = this.chats[agentId] ?? []
     const upto = all.findIndex((m) => m.id === before.id)
-    return (upto >= 0 ? all.slice(0, upto) : all)
+    const earlier = upto >= 0 ? all.slice(0, upto) : all
+    // a fresh start draws a line: nothing before it is this conversation's any more
+    const line = earlier.map((m) => m.fresh).lastIndexOf(true)
+    return earlier
+      .slice(line + 1)
       .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.text.trim())
       .slice(-40)
       .map((m) => ({ role: m.role as 'user' | 'assistant', text: m.text }))
@@ -501,7 +537,7 @@ export class Engine {
     await this.d.sessions.save(this.session)
   }
 
-  private async runTurn(agentId: string, userMsg: ChatMessage, kind: BusKind, temp?: TempModel): Promise<TurnResult> {
+  private async runTurn(agentId: string, userMsg: ChatMessage, kind: BusKind, temp?: TempModel, continueSession = false): Promise<TurnResult> {
     const own = this.d.project.get(agentId)
     if (!own) return { text: '', reports: [], error: `No agent ${agentId}` }
     if (own.terminal) {
@@ -546,7 +582,7 @@ export class Engine {
     // a delegated task is self-contained (the task and its approved plan), and so is a context update,
     // so each starts a session of its own: carrying every earlier task's transcript into each call is what made long sessions so
     // costly. Follow-ups (messages, reports, the user's own chat) resume the session it started.
-    let fresh = kind === 'delegate' || kind === 'context'
+    let fresh = (kind === 'delegate' && !continueSession) || kind === 'context'
     let promptNow = prompt
     let historyNow = fresh ? [] : history
     let continuing = false
@@ -647,8 +683,13 @@ export class Engine {
     let finalPrompt = prompt
     if (agent.provider === 'claude-cli' && !resumeId && history.length) {
       finalPrompt = `# Conversation so far\n${history.map((h) => `${h.role === 'user' ? 'User' : 'You'}: ${h.text}`).join('\n\n')}\n\n# Now\n${prompt}`
+    } else if (!resumeId && !history.length && mayResume) {
+      // the first turn after a fresh start: the recap instead of everything that came before
+      const recap = [...(this.chats[agentId] ?? [])].reverse().find((m) => m.fresh)?.recap
+      if (recap) finalPrompt = `# Where we left off\n${recap}\n\n# Now\n${prompt}`
     }
     let error: string | undefined
+    let lastContext = 0
     const req: TurnRequest = {
       agent,
       system: this.systemPrompt(agent),
@@ -736,10 +777,12 @@ export class Engine {
           break
         case 'call-usage':
           wd?.spend(ev)
+          // how big the conversation is now: what the latest call had to read
+          lastContext = ev.input + ev.cacheRead + ev.cacheWrite
           break
         case 'usage': {
           const u = { inputTokens: ev.inputTokens, outputTokens: ev.outputTokens, cacheRead: ev.cacheRead, cacheWrite: ev.cacheWrite, calls: ev.calls, costUsd: ev.costUsd }
-          reply.usage = addUsage(reply.usage, u)
+          reply.usage = { ...addUsage(reply.usage, u), context: lastContext || ev.inputTokens + (ev.cacheRead ?? 0) + (ev.cacheWrite ?? 0) }
           this.totals = addUsage(this.totals, u)
           this.byAgent[agentId] = addUsage(this.byAgent[agentId], u)
           this.d.emit({ type: 'usage', total: { ...this.totals }, byAgent: { ...this.byAgent } })
@@ -879,14 +922,14 @@ export class Engine {
   }
 
   /** One agent hands something to another and (optionally) waits for the answer. */
-  async relay(from: string, toRef: string, body: string, kind: BusKind, wait: boolean, difficulty?: Difficulty): Promise<ToolOutput> {
+  async relay(from: string, toRef: string, body: string, kind: BusKind, wait: boolean, difficulty?: Difficulty, opts: { continueSession?: boolean } = {}): Promise<ToolOutput> {
     const target = this.d.project.find(toRef)
     if (!target) return text(`No agent "${toRef}". Use list_agents.`, true)
     if (wait && this.wouldDeadlock(from, target.id)) return text(`${target.name} is waiting on you; waiting back would deadlock. Use report, or message without waiting.`, true)
     await this.logBus(kind, from, target.id, body)
     const temp = downshift(target, difficulty, this.d.config.settings.economy)
     if (!wait) {
-      void this.send(target.id, body, from, kind, temp)
+      void this.send(target.id, body, from, kind, temp, opts)
       return text(`Sent to ${target.name}. Not waiting for a reply.`)
     }
     this.waits.set(from, target.id)
@@ -896,7 +939,7 @@ export class Engine {
     // caller's tool-call timeout and its report would have nowhere to go. Past the cap the caller gets
     // its turn back and the report arrives later as a message of its own.
     const capMs = Math.max(0.001, this.d.config.settings.handoffWaitMinutes ?? 10) * 60_000
-    const run = this.send(target.id, body, from, kind, temp)
+    const run = this.send(target.id, body, from, kind, temp, opts)
     let timer: ReturnType<typeof setTimeout> | undefined
     const capped = new Promise<null>((resolve) => (timer = setTimeout(() => resolve(null), capMs)))
     try {
@@ -1265,6 +1308,10 @@ export class Engine {
           agent: z.string(),
           task: z.string(),
           approval_id: z.string().optional(),
+          continue_previous: z
+            .boolean()
+            .optional()
+            .describe("true only when this task directly follows up the same agent's last task (fix or adjust what it just did); otherwise the agent starts with a clean context"),
           difficulty: z.enum(DIFFICULTIES).optional().describe('Economy mode: light and standard tasks run on a cheaper model for this task only')
         },
         handler: async (a) => {
@@ -1276,7 +1323,7 @@ export class Engine {
             if (!approval || approval.kind !== 'approval' || !approval.approved)
               return text(`${target.name} is gated: call request_approval with the plan first, then pass its approval_id here.`, true)
           }
-          return this.relay(me, target.id, String(a.task), 'delegate', true, a.difficulty as Difficulty | undefined)
+          return this.relay(me, target.id, String(a.task), 'delegate', true, a.difficulty as Difficulty | undefined, { continueSession: a.continue_previous === true })
         }
       },
       {
@@ -1333,3 +1380,5 @@ async function listDeep(dir: string, base = dir): Promise<string[]> {
   }
   return out.sort()
 }
+
+const clipTo = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)

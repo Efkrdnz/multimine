@@ -79,7 +79,7 @@ export function buildSystemPrompt(p: PromptInput): string {
   ]
   if (isMastermind) {
     coordination.push(
-      '- As Mastermind you also have `create_agent`, `update_agent`, `delegate`, `request_approval` and `run_council`. A long `delegate` returns early and its report arrives later as a new message: never poll or re-send.',
+      '- As Mastermind you also have `create_agent`, `update_agent`, `delegate`, `request_approval` and `run_council`. A long `delegate` returns early and its report arrives later as a new message: never poll or re-send. A delegated task starts with a clean context unless you set `continue_previous` (for a direct follow-up of the same agent\'s last task).',
       p.automation
         ? 'Automation mode is ON: questions and approvals are answered on the user\'s behalf; keep going until the goal is met, but stop and report if something goes wrong.'
         : 'Automation mode is OFF: questions and approvals wait for the user.'

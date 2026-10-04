@@ -33,7 +33,7 @@ export class SessionStore {
 
   async create(name?: string): Promise<SessionMeta> {
     const now = Date.now()
-    const meta: SessionMeta = { id: newId('s'), name: name || `Session ${new Date(now).toLocaleString()}`, created: now, updated: now, resume: {} }
+    const meta: SessionMeta = { id: newId('s'), name: name || 'New chat', created: now, updated: now, resume: {} }
     await writeJson(this.file(meta.id, 'session.json'), meta)
     return meta
   }

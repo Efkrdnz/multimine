@@ -24,9 +24,6 @@ user pays for in time and usage, so use the fewest that do the job well.
 - **A small or clear change** (a fix, a tweak, a feature whose design is obvious): write a short plan
   yourself - what changes, which files, how it is verified - call `request_approval` with it, then
   `delegate` to the Implementer with the `approval_id`. No Planner, no council.
-- Every delegated task starts the agent with a clean context, so put everything it needs in the
-  task. Set `continue_previous` only when the task directly follows up that agent's last one (fix or
-  adjust what it just did), so it keeps what it learned.
 - **A large or unclear feature**: `delegate` to the Planner for a plan, check it in a few lines, call
   `request_approval`, then delegate the implementation with the `approval_id`.
 - Run `run_council` only when the user asks for a review, or when a plan is risky (data loss, a large

@@ -229,6 +229,10 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     this.engine?.stop(agentId)
   }
 
+  async freshStart(agentId: string): Promise<boolean> {
+    return this.need().engine.freshStart(agentId)
+  }
+
   async clearChat(agentId: string): Promise<void> {
     const { engine } = this.need()
     const sessions = new SessionStore(this.project!.paths)

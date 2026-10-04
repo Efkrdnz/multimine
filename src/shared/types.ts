@@ -126,6 +126,8 @@ export interface Usage {
   cacheWrite?: number
   /** Model calls made. */
   calls?: number
+  /** How large the conversation was at the last call: what every next step has to read again. */
+  context?: number
   costUsd?: number
 }
 
@@ -150,6 +152,9 @@ export interface ChatMessage {
   tools?: ToolCallView[]
   /** The reply in the order it happened: thinking, text and tool calls (see shared/segments). */
   segments?: Segment[]
+  /** A line in the chat where the agent started a new conversation, with the recap it was given. */
+  fresh?: boolean
+  recap?: string
   media?: MediaItem[]
   ts: number
   streaming?: boolean

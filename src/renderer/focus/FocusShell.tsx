@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { BookOpen, Code2, Eraser, FolderOpen, GitBranch, Image, Inbox, LayoutGrid, Leaf, Map, Pencil, Plus, Search, Settings, Upload, Zap } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { BookOpen, Code2, Eraser, RotateCcw, SquarePen, FolderOpen, GitBranch, Image, Inbox, LayoutGrid, Leaf, Map, Pencil, Plus, Search, Settings, Upload, Zap } from 'lucide-react'
 import { SHORT_PROVIDER, modelLabel } from '@shared/catalog'
 import { ROLE_LABEL, roleTemplate } from '@shared/templates'
 import { MASTERMIND_ID, type AgentSpec } from '@shared/types'
@@ -34,6 +34,17 @@ export function LayoutSwitch({ compact = false }: { compact?: boolean }) {
  * and the same drawers and tool windows as the Map, docked beside it.
  */
 export function FocusShell() {
+  // Ctrl+N: a new chat, as in the Claude apps
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'n') {
+        e.preventDefault()
+        void api().newSession()
+      }
+    }
+    window.addEventListener('keydown', key)
+    return () => window.removeEventListener('keydown', key)
+  }, [])
   const focused = useStore((s) => s.focused)
   const agents = useStore((s) => s.project?.agents ?? [])
   const id = focused && agents.some((a) => a.id === focused) ? focused : MASTERMIND_ID
@@ -88,7 +99,10 @@ function Sidebar({ current }: { current: string }) {
         <FolderOpen size={14} className="shrink-0 text-indigo-300" />
         <span className="truncate font-semibold">{project.name}</span>
       </button>
-      <div className="mx-3 mt-1 flex items-center gap-1">
+      <button className="btn btn-primary mx-3 mt-2 justify-center !py-1.5" onClick={() => void api().newSession()} title="A new chat: every agent, Mastermind included, starts with a clean context (Ctrl+N)" data-testid="focus-new-chat">
+        <SquarePen size={14} /> New chat
+      </button>
+      <div className="mx-3 mt-2 flex items-center gap-1">
         <select className="field !py-1 !text-xs" value={active ?? ''} onChange={(e) => void api().switchSession(e.target.value)} title="Session: the conversations of this team" data-testid="focus-session">
           {sessions.map((s) => (
             <option key={s.id} value={s.id}>
@@ -96,9 +110,6 @@ function Sidebar({ current }: { current: string }) {
             </option>
           ))}
         </select>
-        <button className="btn btn-ghost shrink-0 !p-1.5" title="New session" onClick={() => void api().newSession()} data-testid="focus-new-session">
-          <Plus size={14} />
-        </button>
       </div>
       <div className="relative mx-3 mt-2">
         <Search size={12} className="absolute left-2 top-2 text-indigo-300/60" />
@@ -204,7 +215,10 @@ function FocusHeader({ agentId }: { agentId: string }) {
             <button className="btn btn-ghost !p-1" title="Edit agent" onClick={() => set({ modal: { kind: 'agent', agent, isNew: false } })}>
               <Pencil size={13} />
             </button>
-            <button className="btn btn-ghost !p-1" title="Clear this chat (starts a fresh conversation)" onClick={() => confirm(`Clear ${agent.name}'s chat in this session?`) && void api().clearChat(agentId)}>
+            <button className="btn btn-ghost !p-1" title="New conversation: the chat stays, the agent starts clean with a short recap" onClick={() => void api().freshStart(agentId)} data-testid="fresh-start">
+              <RotateCcw size={13} />
+            </button>
+            <button className="btn btn-ghost !p-1" title="Clear this chat (deletes it and starts a fresh conversation)" onClick={() => confirm(`Clear ${agent.name}'s chat in this session?`) && void api().clearChat(agentId)}>
               <Eraser size={13} />
             </button>
           </>

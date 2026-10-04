@@ -151,15 +151,18 @@ named after its message ("UI Sketcher: Build the UI sketch \"Mana Furnace\"").
   turn instead of a Mastermind turn plus a delegated one, no council of critics, no Context Handler
   turns after each task. Benchmark with real logins before putting percentages in the README.
 
-### Phase 6 - Plugin API v2
+### Phase 6 - Plugin API v2 (done)
 
-- `src/main/plugins/api.ts`: `chats.list` (id, name, provider, model, status, active), `send(to,
-  text)` and `task(to, title, text)` where `to` is a chat id, `'active'` or `'new'`.
-- v1 compatibility: `team.list` returns the chats with `role: 'custom'`; `send('mastermind', …)`
-  goes to the active chat. `apiVersion` reports 2; manifests with `"api": 1` keep working.
+- `src/main/plugins/api.ts`: `chats.list` (id, name, provider, model, mcp, busy, active), `send(to,
+  text, options)` and `task(to, title, text, options)` where `to` is a chat id, `'active'` or `'new'`;
+  both resolve to `{ chatId }`. Options apply to a chat the call starts: `mcp` (only servers set up in
+  Settings) and `planMode`.
+- v1 compatibility: `team.list` returns the chats with `role: 'custom'`; `send('mastermind', ...)`
+  goes to the active chat; `task` returns `approvalId: null`. `apiVersion` reports 2; manifests with
+  `"api": 1` keep working, `"api": 3` is refused.
 - `team:read` keeps its name as a permission (a rename would re-prompt every installed plugin).
-- Update `docs/plugins.md`, `src/main/plugins/sdk/multimine.js`, `examples/plugins/hello`, and
-  `plugins.test.ts` / `logicApi.test.ts`.
+- Updated `docs/plugins.md`, `src/main/plugins/sdk/multimine.js`, `examples/plugins/hello`, and
+  `plugins.test.ts` / `pluginApi.test.ts`.
 
 ### Phase 7 - Open-source ready
 

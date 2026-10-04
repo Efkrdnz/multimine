@@ -134,17 +134,22 @@ named after its message ("UI Sketcher: Build the UI sketch \"Mana Furnace\"").
 - **Data Tables** (`tools/data/DataTables.tsx`): "Ask a chat" defaults to the chat on screen: a
   question about the data usually belongs in the conversation that has the context.
 
-### Phase 5 - Usage savers without a Mastermind
+### Phase 5 - Usage savers without a Mastermind (done)
 
 - **Economy mode** keeps the concise rules (`CONCISE_RULES`) and the tier table in Settings.
-- Downshifting was driven by Mastermind's `difficulty` rating. Replace it with **⚡ Quick** in the
-  composer: this message runs on the provider's light tier (Haiku for Claude) and goes back to the
-  chat's model after. Optional (off by default): rate each message with one tiny call on the light
-  tier and downshift automatically; show the rating so it can be overridden.
-- Keep: warm sessions, fresh context, CLAUDE.md outline, usage pill (now per chat), plan gauge and
+- Downshifting was driven by Mastermind's `difficulty` rating. Now **⚡ Quick** in the composer runs
+  one message on the provider's light tier (Haiku for Claude; a lower effort where no light model is
+  set) and the chat goes back to its own model after. Optional, off by default: economy rates each
+  message with one tiny call on the light tier (`RATE_SYSTEM`) and downshifts easy ones; anything
+  unclear counts as heavy. The header shows a cheaper turn in amber with a ⚡.
+- Kept: warm sessions, fresh context, CLAUDE.md outline, usage pill (now per chat), plan gauge and
   90% warning, loop guard and its usage budget.
-- Measure it: a scripted task run with economy off and on, numbers in the README. No unmeasured
-  "saves tokens" claims.
+- Measured: the prompt Multimine adds to every model call, with the template multimine.md, went from
+  4,923 characters for the old Implementer (5,444 for Mastermind) to 2,647 for a chat that can write
+  and 1,334 for a read-only one. `tests/unit/promptBudget.test.ts` keeps it under budget. The bigger
+  savings are structural and were not benchmarked here (no model logins in this environment): one
+  turn instead of a Mastermind turn plus a delegated one, no council of critics, no Context Handler
+  turns after each task. Benchmark with real logins before putting percentages in the README.
 
 ### Phase 6 - Plugin API v2
 

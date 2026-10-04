@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useState } from 'react'
 import { Maximize2, Minimize2, X } from 'lucide-react'
 import type { PluginInfo } from '@shared/types'
-import { useLayout, useStore } from '../state/store'
+import { useStore } from '../state/store'
 import { PluginHost } from './PluginHost'
 import { PluginIcon } from './PluginIcon'
 
@@ -19,32 +19,19 @@ const NATIVE: Record<string, React.ComponentType<{ plugin: PluginInfo }>> = {
 }
 
 function ToolFrame({ plugin, active }: { plugin: PluginInfo; active: boolean }) {
-  const layout = useLayout()
   const [title, setTitle] = useState(plugin.manifest.name)
   const [max, setMax] = useState(false)
-  const [width, setWidth] = useState(() => Math.min(plugin.manifest.window.width, window.innerWidth - 120))
   const close = useCallback(() => {
     const s = useStore.getState()
     s.set({ openTools: s.openTools.filter((t) => t !== plugin.manifest.id), activeTool: s.activeTool === plugin.manifest.id ? null : s.activeTool })
   }, [plugin.manifest.id])
   const Native = NATIVE[plugin.manifest.id]
 
-  const drag = (e: React.MouseEvent) => {
-    e.preventDefault()
-    const sx = e.clientX
-    const w0 = width
-    const move = (ev: MouseEvent) => setWidth(Math.max(420, Math.min(window.innerWidth - 90, w0 + ev.clientX - sx)))
-    const up = () => (window.removeEventListener('mousemove', move), window.removeEventListener('mouseup', up))
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
-  }
-
   return (
     <div
       data-left-drawer={active ? '' : undefined}
-      className={`glass rise absolute bottom-3 top-16 z-20 flex flex-col overflow-hidden rounded-2xl ${layout === 'focus' ? 'left-[276px] right-3' : 'left-[68px]'} ${active ? '' : 'hidden'}`}
-      // in Focus a tool takes the whole space beside the sidebar
-      style={layout === 'focus' ? undefined : { width: max ? 'calc(100vw - 80px)' : width }}
+      // a tool takes the whole space beside the sidebar; maximised, the sidebar too
+      className={`glass rise absolute bottom-3 z-20 flex flex-col overflow-hidden rounded-2xl ${max ? 'left-3 top-3' : 'left-[276px] top-16'} right-3 ${active ? '' : 'hidden'}`}
       data-testid={`toolwin-${plugin.manifest.id}`}
     >
       <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
@@ -66,7 +53,6 @@ function ToolFrame({ plugin, active }: { plugin: PluginInfo; active: boolean }) 
           <PluginHost plugin={plugin} onTitle={setTitle} onClose={close} />
         )}
       </div>
-      {!max && <div className="absolute bottom-0 right-0 top-0 w-1 cursor-col-resize hover:bg-violet-400/40" onMouseDown={drag} />}
     </div>
   )
 }

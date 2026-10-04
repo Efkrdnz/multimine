@@ -11,7 +11,7 @@ export function Welcome() {
     <div className="absolute inset-0 z-10 flex items-center justify-center">
       <div className="glass rise w-[520px] rounded-2xl p-8 text-center">
         <div className="font-display text-4xl font-bold tracking-[0.3em] glow-text">MULTIMINE</div>
-        <p className="mt-3 text-sm text-indigo-200/80">A team of AI agents around a Mastermind. Open a project folder to assemble yours.</p>
+        <p className="mt-3 text-sm text-indigo-200/80">Your coding agents - Claude Code, Codex or any API model - in one window, with game-dev tools built in. Open a project folder to start a chat.</p>
         <button className="btn btn-primary mx-auto mt-6 !px-5 !py-2.5 text-sm" onClick={() => void open()} data-testid="open-project">
           <FolderOpen size={16} /> Open project folder
         </button>

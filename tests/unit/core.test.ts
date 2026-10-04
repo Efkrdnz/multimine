@@ -1,42 +1,33 @@
 import { describe, expect, it } from 'vitest'
-import { parseAgentFile, serializeAgentFile, slugify } from '@shared/agentFile'
+import { MOCK_DEFAULTS, newChat, parseChat } from '@shared/chat'
+import { slugify } from '@shared/ids'
 import { clampEffort } from '@shared/effort'
-import { roleTemplate } from '@shared/templates'
 import { effortOptions } from '../../src/main/providers/aiSdk'
 import { codexArgs, codexEvents, codexPrompt, winQuote } from '../../src/main/providers/codexCli'
 import { friendlyClaudeError } from '../../src/main/providers/claudeCli'
 import { hardStop, readOnlyCommand } from '../../src/main/providers/guard'
 import { findMediaUrls, kindOf } from '../../src/main/media/capture'
-import { buildSystemPrompt, CONTEXT_PROTOCOL } from '../../src/main/orchestrator/prompts'
-import { Inbox, formatAnswers, recommendedAnswers } from '../../src/main/orchestrator/inbox'
+import { buildSystemPrompt, VERIFY_RULES } from '../../src/main/chat/prompts'
+import { Inbox, formatAnswers } from '../../src/main/chat/inbox'
 
-describe('agent files', () => {
-  it('round-trip every field through markdown with frontmatter', () => {
-    const a = { ...roleTemplate('implementer', 'impl'), name: 'Forge Hand', mcp: ['meshy'], purpose: '# Hi\n\nDo things.\n' }
-    const back = parseAgentFile('impl', serializeAgentFile(a))
-    expect(back).toEqual(a)
+describe('chat files', () => {
+  it('round-trip every field through JSON', () => {
+    const c = newChat('c1', MOCK_DEFAULTS, { name: 'HUD work', mcp: ['meshy'], fallback: [{ provider: 'codex-cli', model: 'gpt-5.6', effort: 'high' }] })
+    expect(parseChat('c1', JSON.parse(JSON.stringify(c)))).toEqual(c)
   })
 
   it('falls back to defaults for junk instead of throwing', () => {
-    const a = parseAgentFile('x', '---\nprovider: nonsense\neffort: 11\ncolor: red\n---\nbody')
-    expect(a.provider).toBe('mock')
-    expect(a.effort).toBe('medium')
-    expect(a.color).toBe('#7c9cff')
-    expect(a.purpose).toBe('body\n')
-    expect(parseAgentFile('y', 'no frontmatter at all').name).toBe('y')
+    const c = parseChat('x', { provider: 'nonsense', effort: 11, name: '   ', mcp: [1, 'ok'] })
+    expect(c.provider).toBe('mock')
+    expect(c.effort).toBe('medium')
+    expect(c.name).toBe('New chat')
+    expect(c.mcp).toEqual(['ok'])
+    expect(parseChat('y', null).id).toBe('y')
   })
 
   it('slugs names into file-safe ids', () => {
     expect(slugify('Context Handler!')).toBe('context-handler')
-    expect(slugify('???')).toBe('agent')
-  })
-
-  it('ships a template for every role that parses to that role', () => {
-    for (const role of ['mastermind', 'planner', 'implementer', 'designer', 'brainstormer', 'context-handler', 'critic'] as const)
-      expect(roleTemplate(role).role).toBe(role)
-    expect(roleTemplate('implementer').gated).toBe(true)
-    // the Planner's plan goes to the user through Mastermind's single approval
-    expect(roleTemplate('planner').planMode).toBe(false)
+    expect(slugify('???', 'server')).toBe('server')
   })
 })
 
@@ -59,7 +50,7 @@ describe('effort', () => {
 })
 
 describe('codex cli', () => {
-  const agent = { ...roleTemplate('designer', 'designer'), model: 'gpt-6-astra', effort: 'max' as const }
+  const agent = newChat('designer', MOCK_DEFAULTS, { provider: 'codex-cli', model: 'gpt-6-astra', effort: 'max', permissions: 'read', autoApprove: true })
 
   it('builds exec arguments with model, effort, sandbox, the bus and resume', () => {
     const args = codexArgs({ agent, cwd: '/p', resumeId: 'T1', busUrl: 'http://127.0.0.1:9/mcp/designer?t=x', externalMcp: [] })
@@ -180,30 +171,26 @@ describe('media', () => {
 })
 
 describe('prompts', () => {
-  const agents = [roleTemplate('mastermind', 'mastermind'), roleTemplate('designer', 'designer')]
-  const base = { agents, projectDir: '/p', multimineMd: '# House rules', automation: false }
+  const chat = newChat('c1', MOCK_DEFAULTS)
 
-  it('injects multimine.md, the roster and the coordination tools', () => {
-    const s = buildSystemPrompt({ ...base, agent: agents[1], hasContextHandler: false })
+  it('injects multimine.md and the Multimine tools, and nothing about a team', () => {
+    const s = buildSystemPrompt({ agent: chat, projectDir: '/p', multimineMd: '# House rules' })
     expect(s).toContain('# House rules')
-    expect(s).toContain('`designer`')
-    expect(s).toContain('`report`')
-    expect(s).not.toContain('Context protocol')
-    expect(s).not.toContain('request_approval')
+    expect(s).toContain('`ask_user`')
+    expect(s).toContain('`show_media`')
+    expect(s).not.toMatch(/Mastermind|message_agent|report`|team/)
   })
 
-  it('adds the context protocol once a context handler exists, and mastermind tools for mastermind', () => {
-    expect(buildSystemPrompt({ ...base, agent: agents[1], hasContextHandler: true })).toContain(CONTEXT_PROTOCOL)
-    const mm = buildSystemPrompt({ ...base, agent: agents[0], hasContextHandler: false, automation: true })
-    expect(mm).toContain('request_approval')
-    expect(mm).toContain('Automation mode is ON')
+  it('tells a chat that can write how to verify its work, and a read-only one nothing of the kind', () => {
+    expect(buildSystemPrompt({ agent: chat, projectDir: '/p', multimineMd: '' })).toContain(VERIFY_RULES)
+    expect(buildSystemPrompt({ agent: { ...chat, permissions: 'read' }, projectDir: '/p', multimineMd: '' })).not.toContain(VERIFY_RULES)
   })
 })
 
 describe('inbox', () => {
   it('blocks the asker until answered, and records the answer', async () => {
     let seen = 0
-    const inbox = new Inbox([], () => seen++)
+    const inbox = new Inbox(() => seen++)
     const q = [{ question: 'Colour?', options: [{ label: 'Red' }, { label: 'Blue' }] }]
     const pending = inbox.ask('designer', 'Colour?', q)
     expect(inbox.pending()).toHaveLength(1)
@@ -212,15 +199,13 @@ describe('inbox', () => {
     expect(item.answers).toEqual({ 'Colour?': 'Blue' })
     expect(formatAnswers(item)).toContain('Blue')
     expect(seen).toBe(2)
-    expect(recommendedAnswers(q)).toEqual({ 'Colour?': 'Red' })
   })
 
-  it('refuses pending approvals when cancelled and expires stale ones on load', async () => {
-    const inbox = new Inbox([], () => undefined)
-    const p = inbox.approval('mastermind', 'Plan', 'x')
-    inbox.cancelAll('switched')
+  it('refuses pending approvals when cancelled', async () => {
+    const inbox = new Inbox(() => undefined)
+    const p = inbox.approval('c1', 'Plan', 'x')
+    inbox.cancelAll('closed')
     expect((await p).approved).toBe(false)
-    const reloaded = new Inbox([{ id: 'a', ts: 1, kind: 'approval', askedBy: 'm', title: 't', status: 'pending' }], () => undefined)
-    expect(reloaded.pending()).toHaveLength(0)
+    expect(inbox.pending()).toHaveLength(0)
   })
 })

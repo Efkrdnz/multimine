@@ -1,16 +1,15 @@
-import { readdir, readFile } from 'node:fs/promises'
-import { join, relative, basename } from 'node:path'
+import { join, basename } from 'node:path'
 import type { Api } from '@shared/api'
-import { MASTERMIND_ID, type AgentSpec, type AppSettings, type MainEvent, type McpServerConfig, type PlanWindow, type ProviderKind } from '@shared/types'
+import type { AgentSpec, AppSettings, MainEvent, McpServerConfig, PlanWindow, ProviderKind } from '@shared/types'
 import { AppConfig, type Cipher } from './store/appConfig'
 import { ProjectStore } from './store/project'
-import { SessionStore } from './store/sessions'
+import { ChatStore } from './store/chats'
 import { ProviderRegistry } from './providers/registry'
 import { listVendorModels } from './providers/aiSdk'
 import { detectClaude, detectCodex } from './providers/detect'
 import type { MockScript } from './providers/mock'
 import type { ProviderAdapter } from './providers/types'
-import { Engine } from './orchestrator/engine'
+import { Engine } from './chat/engine'
 import { BusServer } from './mcp/busServer'
 import { McpHub } from './mcp/hub'
 import { ProviderHealth } from './providers/limits'
@@ -21,21 +20,9 @@ import type { PluginPermission } from '@shared/types'
 import { Git, GitHub, githubRepo } from './git/git'
 import { ProjectFiles, list as listDir } from './ide/fs'
 import { Terminals, shellQuote } from './ide/terminals'
-import { ManualChangeTracker, ProjectWatcher } from './ide/watcher'
+import { ProjectWatcher } from './ide/watcher'
 import { readJson, writeJson } from './store/fsx'
-import { roleTemplate } from '@shared/templates'
 import type { TerminalKind } from '@shared/types'
-
-/** What a CLI in the IDE terminal is told about the team, through the MCP server's instructions. */
-function terminalInstructions(name: string): string {
-  return (
-    `You are "${name}", a session in the user's own terminal inside Multimine, connected to its team of agents through ` +
-    'this `multimine` server. Use list_agents to see the team; message_agent to ask or tell a teammate something ' +
-    '(Mastermind coordinates the team); ask_user for structured questions; request_permission before pushing or ' +
-    'destroying work; show_media for anything you generate. Messages teammates send you reach the user as a banner, ' +
-    'not as your input, so the user decides what to do with them.'
-  )
-}
 
 export interface AppOptions {
   userDataDir: string
@@ -43,12 +30,10 @@ export interface AppOptions {
   emit: (e: MainEvent) => void
   mockScript?: MockScript
   mockDelayMs?: number
-  /** How long the project must be quiet before manual changes go to the Context Handler (default 2 minutes). */
-  manualQuietMs?: number
   /** Stand-in adapters for real providers (tests). */
   providerOverrides?: Partial<Record<ProviderKind, ProviderAdapter>>
-  /** Skip CLI detection when choosing Mastermind's provider (tests). */
-  forceMockMastermind?: boolean
+  /** Skip CLI detection when choosing what a first chat runs on (tests). */
+  skipDetect?: boolean
 }
 
 /** The main-process side of the API: owns settings, the open project, the engine and the bus server. */
@@ -66,16 +51,17 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
   readonly plugins: PluginRegistry
   private pluginCtx: PluginContext
   private watcher: ProjectWatcher | null = null
-  private tracker: ManualChangeTracker | null = null
   private files: ProjectFiles | null = null
+  /** The chat on screen: where a tool's 'active' messages go. */
+  private activeChat: string | null = null
 
   constructor(private readonly o: AppOptions) {
     this.config = new AppConfig(o.userDataDir, o.cipher)
     this.providers = new ProviderRegistry(o.mockScript, o.mockDelayMs, o.providerOverrides)
-    this.bus = new BusServer((agentId) => {
-      const agent = this.project?.get(agentId)
-      if (!agent || !this.engine) return null
-      return { tools: this.engine.coordinationTools(agent), instructions: agent.terminal ? terminalInstructions(agent.name) : undefined }
+    this.bus = new BusServer((chatId) => {
+      const chat = this.project?.get(chatId)
+      if (!chat || !this.engine) return null
+      return { tools: this.engine.coordinationTools(chat) }
     })
     this.terminals = new Terminals(o.emit)
     this.health = new ProviderHealth((h) => o.emit({ type: 'provider-health', health: h }))
@@ -94,14 +80,12 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     this.pluginCtx = {
       projectDir: () => this.project?.dir ?? null,
       projectName: () => (this.project ? basename(this.project.dir) : null),
-      team: () => this.project?.list() ?? [],
-      send: async (pluginId, name, to, text) => {
+      chats: () => this.project?.list() ?? [],
+      activeChat: () => this.activeChat,
+      busy: (id) => this.engine?.busy(id) ?? false,
+      send: async (_pluginId, name, to, text, opts) => {
         if (!this.engine) throw new Error('No project is open')
-        await this.engine.fromOutside(`plugin:${pluginId}`, name, to, text)
-      },
-      task: async (pluginId, name, to, title, text) => {
-        if (!this.engine) throw new Error('No project is open')
-        return this.engine.taskFromOutside(`plugin:${pluginId}`, name, to, title, text)
+        return this.engine.fromTool(name, to, text, this.activeChat ?? undefined, opts)
       },
       addMedia: async (item) => {
         await this.engine?.addMedia(item)
@@ -123,8 +107,7 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     this.providers.release()
     this.terminals.closeAll()
     await this.watcher?.stop()
-    this.tracker?.dispose()
-    this.engine?.inbox?.cancelAll('Multimine closed.')
+    await this.engine?.close('Multimine closed.')
     await this.hub.closeAll()
     await this.bus.stop()
   }
@@ -143,29 +126,23 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
   }
 
   async openProject(dir: string): Promise<void> {
-    let defaults: Partial<AgentSpec> = {}
-    if (!this.o.forceMockMastermind) {
-      const claude = await detectClaude(this.config.settings.claudePath)
-      if (claude.installed) defaults = { provider: 'claude-cli', model: 'claude-opus-5-5', effort: 'high' }
-    }
-    const project = await ProjectStore.open(dir, defaults)
+    const project = await ProjectStore.open(dir)
+    await this.detectDefaults()
+    await this.engine?.close('Another project was opened.')
     this.providers.release()
-    for (const text of project.migrated) this.o.emit({ type: 'toast', level: 'info', text })
-    const sessions = new SessionStore(project.paths)
-    this.engine?.inbox?.cancelAll('Another project was opened.')
     this.project = project
+    this.activeChat = null
     this.engine = new Engine({
       health: this.health,
       planLimits: this.planLimits,
       project,
-      sessions,
+      store: new ChatStore(project.paths),
       config: this.config,
       providers: this.providers,
       emit: this.o.emit,
       hub: this.hub,
       busUrl: (id) => this.bus.url(id)
     })
-    this.emitProject()
     await this.engine.open()
     await this.startWatching(project.dir)
     await this.pluginsChanged()
@@ -173,15 +150,25 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     this.o.emit({ type: 'settings', settings: this.config.settings })
   }
 
+  /**
+   * The first time Multimine runs, new chats start on the Claude Code login if there is one; the
+   * offline stand-in otherwise. Settings -> General changes it from then on.
+   */
+  private async detectDefaults(): Promise<void> {
+    if (this.config.settings.chatDefaults.provider !== 'mock' || this.config.settings.chatDefaultsChosen || this.o.skipDetect) return
+    const claude = await detectClaude(this.config.settings.claudePath)
+    if (claude.installed) await this.config.update({ chatDefaults: { ...this.config.settings.chatDefaults, provider: 'claude-cli', model: 'claude-opus-5-5', effort: 'high' } })
+  }
+
   async closeProject(): Promise<void> {
     this.terminals.closeAll()
     await this.watcher?.stop()
-    this.tracker?.dispose()
     this.watcher = null
-    this.tracker = null
-    this.engine?.inbox?.cancelAll('The project was closed.')
+    await this.engine?.close('The project was closed.')
+    this.providers.release()
     this.project = null
     this.engine = null
+    this.activeChat = null
     this.emitProject()
   }
 
@@ -190,39 +177,44 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     this.emitProject()
   }
 
-  async saveAgent(agent: AgentSpec, isNew: boolean): Promise<AgentSpec> {
-    const { project, engine } = this.need()
-    if (agent.terminal || project.get(agent.id)?.terminal) throw new Error('A terminal session is not an agent file; close its terminal to remove it.')
-    if (isNew) return engine.createAgent(agent, 'user')
-    if (!project.get(agent.id)) throw new Error(`No agent ${agent.id}`)
-    const saved = await project.saveAgent(agent.id === MASTERMIND_ID ? { ...agent, role: 'mastermind', gated: false } : agent)
-    this.emitProject()
-    return saved
+  async createChat(patch?: Partial<AgentSpec>): Promise<AgentSpec> {
+    const chat = await this.need().engine.createChat(patch ?? {})
+    this.activeChat = chat.id
+    return chat
   }
 
-  async deleteAgent(id: string): Promise<void> {
-    if (this.project?.get(id)?.terminal) throw new Error('Close its terminal to remove a terminal session.')
-    await this.need().project.deleteAgent(id)
-    this.providers.release(`${id}|`)
-    this.emitProject()
+  async saveChat(chat: AgentSpec): Promise<AgentSpec> {
+    return this.need().engine.saveChat(chat)
   }
 
-  async setPosition(id: string, x: number, y: number): Promise<void> {
-    await this.need().project.setPosition(id, x, y)
+  async deleteChat(id: string): Promise<void> {
+    await this.need().engine.deleteChat(id)
+    if (this.activeChat === id) this.activeChat = null
   }
 
-  async send(agentId: string, text: string): Promise<void> {
+  async setActiveChat(id: string | null): Promise<void> {
+    this.activeChat = id
+  }
+
+  async send(agentId: string, text: string, opts?: { quick?: boolean }): Promise<void> {
     const { engine } = this.need()
-    void engine.send(agentId, text, 'user').then((r) => {
-      if (r.error && r.error !== 'Stopped.') this.o.emit({ type: 'toast', level: 'error', text: `${this.project?.get(agentId)?.name ?? agentId}: ${r.error.slice(0, 300)}` })
-    })
+    void engine
+      .send(agentId, text, 'user', { quick: !!opts?.quick })
+      .then((r) => this.reportError(agentId, r.error))
+      .catch((e) => this.reportError(agentId, String((e as Error).message ?? e)))
   }
 
   async retry(agentId: string): Promise<void> {
     const { engine } = this.need()
-    void engine.retry(agentId)?.then((r) => {
-      if (r.error && r.error !== 'Stopped.') this.o.emit({ type: 'toast', level: 'error', text: `${this.project?.get(agentId)?.name ?? agentId}: ${r.error.slice(0, 300)}` })
-    })
+    void engine
+      .retry(agentId)
+      ?.then((r) => this.reportError(agentId, r.error))
+      .catch((e) => this.reportError(agentId, String((e as Error).message ?? e)))
+  }
+
+  /** A turn that ended on an error says so in a toast too, unless the user stopped it. */
+  private reportError(agentId: string, error?: string): void {
+    if (error && error !== 'Stopped.') this.o.emit({ type: 'toast', level: 'error', text: `${this.project?.get(agentId)?.name ?? agentId}: ${error.slice(0, 300)}` })
   }
 
   async stop(agentId: string): Promise<void> {
@@ -234,47 +226,7 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
   }
 
   async clearChat(agentId: string): Promise<void> {
-    const { engine } = this.need()
-    const sessions = new SessionStore(this.project!.paths)
-    await sessions.clearChat(engine.session.id, agentId)
-    for (const k of Object.keys(engine.session.resume)) if (k === agentId || k.startsWith(`${agentId}|`)) delete engine.session.resume[k]
-    await sessions.save(engine.session)
-    engine.chats[agentId] = []
-    // a cleared chat is a new conversation: its warm process goes too
-    this.providers.release(`${agentId}|`)
-    this.o.emit({ type: 'chat-reset', chats: engine.chats })
-  }
-
-  async newSession(name?: string): Promise<void> {
-    await this.need().engine.newSession(name)
-    this.providers.release()
-  }
-
-  async switchSession(id: string): Promise<void> {
-    await this.need().engine.switchSession(id)
-    // the old session's warm processes are not coming back soon: let them go
-    this.providers.release()
-  }
-
-  async renameSession(id: string, name: string): Promise<void> {
-    const sessions = new SessionStore(this.need().project.paths)
-    const meta = await sessions.rename(id, name)
-    if (meta && this.engine!.session.id === id) this.engine!.session.name = name
-    await this.engine!.emitSessions()
-  }
-
-  async deleteSession(id: string): Promise<void> {
-    const { engine, project } = this.need()
-    const sessions = new SessionStore(project.paths)
-    await sessions.remove(id)
-    if (engine.session.id === id) await engine.open()
-    else await engine.emitSessions()
-  }
-
-  async duplicateSession(id: string): Promise<void> {
-    const { engine, project } = this.need()
-    const copy = await new SessionStore(project.paths).duplicate(id)
-    if (copy) await engine.switchSession(copy.id)
+    await this.need().engine.clearChat(agentId)
   }
 
   async answer(id: string, answers: Record<string, string>, note?: string): Promise<void> {
@@ -287,7 +239,8 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
 
   async updateSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
     const before = this.config.settings.mcpServers
-    const settings = await this.config.update(patch)
+    // once the user picks new-chat defaults, start-up detection leaves them alone
+    const settings = await this.config.update(patch.chatDefaults ? { ...patch, chatDefaultsChosen: true } : patch)
     if (patch.mcpServers) for (const s of before) await this.hub.drop(s.id)
     this.o.emit({ type: 'settings', settings })
     return settings
@@ -373,22 +326,11 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
 
   private async startWatching(dir: string): Promise<void> {
     await this.watcher?.stop()
-    this.tracker?.dispose()
     this.files = new ProjectFiles(dir)
-    this.tracker = new ManualChangeTracker({
-      quietMs: (this.o.manualQuietMs ?? 120_000),
-      isAgentWriting: () => this.engine?.agentWriting() ?? false,
-      changed: (count, files) => this.o.emit({ type: 'manual-changes', count, files }),
-      flush: (batch) => void this.engine?.manualChanges(batch)
-    })
     this.watcher = new ProjectWatcher()
     this.watcher.start(
       dir,
-      (path, kind) => {
-        this.o.emit({ type: 'file-changed', path, kind })
-        // without a Context Handler there is nobody to tell, so nothing is collected
-        if (this.project?.contextHandler()) this.tracker?.record(path, kind)
-      },
+      (path, kind) => this.o.emit({ type: 'file-changed', path, kind }),
       () => this.files?.invalidate()
     )
   }
@@ -416,56 +358,19 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
 
   async ideWrite(path: string, text: string): Promise<void> {
     await this.ide().write(path, text)
-    // a save in the IDE window is the user's, even while an agent happens to be working
-    if (this.project?.contextHandler()) this.tracker?.record(path, 'changed', true)
-  }
-
-  async syncContext(): Promise<boolean> {
-    if (!this.project?.contextHandler()) return false
-    this.tracker?.flushNow()
-    // the hand edits just collected join whatever the team did, and all of it goes now
-    await new Promise((r) => setTimeout(r, 0))
-    return (await this.engine?.flushContext()) ?? false
   }
 
   async terminalAvailable() {
     return this.terminals.available()
   }
 
-  /** A shell in the project root; for `claude`/`codex`, the CLI starts in it as a member of the team. */
+  /** A shell in the project root; for `claude`/`codex`, with that CLI started in it. */
   async terminalOpen(kind: TerminalKind, cols: number, rows: number) {
-    const { project, engine } = this.need()
+    const { project } = this.need()
     if (kind === 'shell') return this.terminals.open(project.dir, kind, cols, rows, 'Terminal')
     const label = kind === 'claude' ? 'Claude Code' : 'Codex'
-    const id = project.freeId(`terminal-${kind}`)
-    const agent = {
-      ...roleTemplate('custom', id),
-      id,
-      name: `${label} (terminal)`,
-      provider: kind === 'claude' ? ('claude-cli' as const) : ('codex-cli' as const),
-      model: '',
-      color: kind === 'claude' ? '#f59e0b' : '#10b981',
-      permissions: 'write' as const,
-      terminal: true,
-      purpose: 'A live CLI session in the user terminal.'
-    }
-    project.addVirtual(agent)
-    engine.chats[id] ??= []
-    this.emitProject()
-    const url = this.bus.url(id)
-    let startup: string
-    if (kind === 'claude') {
-      const cfg = join(this.o.userDataDir, `terminal-mcp-${id}.json`)
-      await writeJson(cfg, { mcpServers: { multimine: { type: 'http', url } } })
-      startup = `${this.config.settings.claudePath || 'claude'} --mcp-config ${shellQuote(cfg)}`
-    } else {
-      // codex reads a -c value that is not valid TOML as a plain string, so the URL needs no inner quotes
-      startup = `${this.config.settings.codexPath || 'codex'} -c ${shellQuote(`mcp_servers.multimine.url=${url}`)}`
-    }
-    return this.terminals.open(project.dir, kind, cols, rows, label, startup, id, () => {
-      this.project?.removeVirtual(id)
-      this.emitProject()
-    })
+    const startup = kind === 'claude' ? this.config.settings.claudePath || 'claude' : this.config.settings.codexPath || 'codex'
+    return this.terminals.open(project.dir, kind, cols, rows, label, shellQuote(startup))
   }
 
   async terminalWrite(id: string, data: string) {
@@ -544,20 +449,6 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     if (!repo) throw new Error('This project has no GitHub remote named origin.')
     const gh = this.github()
     return gh.createPr(repo, st.branch, base || (await gh.defaultBranch(repo)), title, body)
-  }
-
-  async contextFiles(): Promise<{ file: string; text: string }[]> {
-    const { project } = this.need()
-    const out: { file: string; text: string }[] = []
-    const walk = async (dir: string) => {
-      for (const e of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
-        const full = join(dir, e.name)
-        if (e.isDirectory()) await walk(full)
-        else if (e.name.endsWith('.md')) out.push({ file: relative(project.paths.context, full).split('\\').join('/'), text: await readFile(full, 'utf8') })
-      }
-    }
-    await walk(project.paths.context)
-    return out.sort((a, b) => (a.file === 'index.md' ? -1 : b.file === 'index.md' ? 1 : a.file.localeCompare(b.file)))
   }
 
   projectName(): string {

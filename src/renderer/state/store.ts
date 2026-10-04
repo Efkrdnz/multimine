@@ -1,25 +1,9 @@
 import { create } from 'zustand'
 import { pushTerminalData } from '../ide/terminalBus'
-import type {
-  AgentSpec,
-  AgentStatus,
-  AppSettings,
-  BusEvent,
-  Channel,
-  PluginInfo,
-  ChatMessage,
-  CouncilCritic,
-  InboxItem,
-  MainEvent,
-  MediaItem,
-  ProjectInfo,
-  SessionMeta,
-  Usage,
-  PlanWindow
-} from '@shared/types'
+import type { AgentSpec, AgentStatus, AppSettings, PluginInfo, ChatMessage, InboxItem, MainEvent, MediaItem, ProjectInfo, Usage, PlanWindow } from '@shared/types'
 
-export type Panel = 'inbox' | 'media' | 'context' | 'git' | null
-export type Modal = { kind: 'agent'; agent: AgentSpec; isNew: boolean } | { kind: 'settings'; tab?: string } | { kind: 'plugins' } | null
+export type Panel = 'media' | 'instructions' | 'git' | null
+export type Modal = { kind: 'chat'; agent: AgentSpec } | { kind: 'settings'; tab?: string } | { kind: 'plugins' } | null
 
 interface Toast {
   id: number
@@ -32,25 +16,21 @@ export interface State {
   settings: AppSettings | null
   keyed: string[]
   project: ProjectInfo | null
-  sessions: SessionMeta[]
-  activeSession: string | null
+  /** Every chat's messages, by chat id. */
   chats: Record<string, ChatMessage[]>
   status: Record<string, { status: AgentStatus; activity?: string; detail?: string; since?: number; quiet?: string; temp?: { model: string; effort: string; difficulty: string }; fallback?: { provider: string; model: string; reason: string } }>
   /** Providers out of usage (or close to it) right now. */
   health: Record<string, { state: 'near' | 'exhausted'; until: number; reason: string }>
-  bus: BusEvent[]
-  channels: Channel[]
+  /** What chats are waiting on the user for: questions, plans, permissions. */
   inbox: InboxItem[]
   media: MediaItem[]
-  council: CouncilCritic[]
   usage: Usage
-  /** This session's usage per agent. */
+  /** Usage per chat. */
   usageByAgent: Record<string, Usage>
   /** The Claude plan's usage windows, as last reported. */
   planLimits: PlanWindow[]
-  openChats: string[]
+  /** The chat on screen. */
   focused: string | null
-  split: boolean
   panel: Panel
   /** The code window: mounted once opened (so terminals and tabs survive), shown or hidden. */
   ide: 'closed' | 'open' | 'hidden'
@@ -63,17 +43,11 @@ export interface State {
   activeTool: string | null
   /** A plugin waiting for the user to agree to its permissions, and what to do after. */
   consent: { pluginId: string; thenOpen: boolean } | null
-  /** Files changed by hand that the Context Handler has not been told about yet. */
-  manual: { count: number; files: string[] }
-  /** Changes (tasks and hand-edit batches) waiting for the Context Handler's next update. */
-  contextPending: number
-  /** Messages teammates sent to a terminal session, shown as a banner over its tab. */
-  terminalNotes: Record<string, { from: string; text: string; ts: number }[]>
   modal: Modal
   toasts: Toast[]
   set: (patch: Partial<State>) => void
+  /** Puts a chat on screen (closing any tool in front of it). */
   openChat: (id: string) => void
-  closeChat: (id: string) => void
   toast: (level: Toast['level'], text: string) => void
 }
 
@@ -84,22 +58,15 @@ export const useStore = create<State>((set, get) => ({
   settings: null,
   keyed: [],
   project: null,
-  sessions: [],
-  activeSession: null,
   chats: {},
   status: {},
-  bus: [],
-  channels: [],
   health: {},
   inbox: [],
   media: [],
-  council: [],
   usage: { inputTokens: 0, outputTokens: 0 },
   usageByAgent: {},
   planLimits: [],
-  openChats: [],
   focused: null,
-  split: false,
   panel: null,
   ide: 'closed',
   ideRequest: null,
@@ -108,19 +75,12 @@ export const useStore = create<State>((set, get) => ({
   openTools: [],
   activeTool: null,
   consent: null,
-  manual: { count: 0, files: [] },
-  contextPending: 0,
-  terminalNotes: {},
   modal: null,
   toasts: [],
   set: (patch) => set(patch),
   openChat: (id) => {
-    const open = get().openChats.includes(id) ? get().openChats : [...get().openChats, id]
-    set({ openChats: open, focused: id })
-  },
-  closeChat: (id) => {
-    const open = get().openChats.filter((x) => x !== id)
-    set({ openChats: open, focused: get().focused === id ? (open.at(-1) ?? null) : get().focused })
+    set({ focused: id, activeTool: null })
+    void window.mm.api.setActiveChat(id)
   },
   toast: (level, text) => {
     const t = { id: ++toastId, level, text }
@@ -129,25 +89,25 @@ export const useStore = create<State>((set, get) => ({
   }
 }))
 
-/** Live events the space scene animates (bus packets, talking mouths) without going through React. */
+/** Live events a component needs without going through React state (a file changed on disk). */
 type Listener = (e: MainEvent) => void
-const sceneListeners = new Set<Listener>()
-export function onSceneEvent(l: Listener): () => void {
-  sceneListeners.add(l)
-  return () => sceneListeners.delete(l)
+const listeners = new Set<Listener>()
+export function onMainEvent(l: Listener): () => void {
+  listeners.add(l)
+  return () => listeners.delete(l)
 }
 
 export function applyEvent(e: MainEvent): void {
   const s = useStore.getState()
   switch (e.type) {
     case 'project': {
-      const ids = new Set(e.project?.agents.map((a) => a.id) ?? [])
-      s.set({ project: e.project, openChats: e.project ? s.openChats.filter((id) => ids.has(id)) : [] })
+      // the chat on screen stays while it exists; otherwise the most recent one comes up
+      const ids = e.project?.agents.map((a) => a.id) ?? []
+      const focused = s.focused && ids.includes(s.focused) ? s.focused : (ids[0] ?? null)
+      s.set({ project: e.project, focused })
+      if (focused !== s.focused) void window.mm.api.setActiveChat(focused)
       break
     }
-    case 'sessions':
-      s.set({ sessions: e.sessions, activeSession: e.active })
-      break
     case 'chat-reset':
       s.set({ chats: e.chats })
       break
@@ -162,23 +122,11 @@ export function applyEvent(e: MainEvent): void {
     case 'status':
       s.set({ status: { ...s.status, [e.agentId]: { status: e.status, activity: e.activity, detail: e.detail, since: e.since, quiet: e.quiet, temp: e.temp, fallback: e.fallback } } })
       break
-    case 'bus':
-      s.set({ bus: [...s.bus.slice(-300), e.event] })
-      break
-    case 'channels':
-      s.set({ channels: e.channels })
-      break
-    case 'bus-reset':
-      s.set({ bus: e.events.slice(-300) })
-      break
     case 'inbox':
       s.set({ inbox: e.items })
       break
     case 'media':
       s.set({ media: e.items })
-      break
-    case 'council':
-      s.set({ council: e.critics })
       break
     case 'settings':
       s.set({ settings: e.settings })
@@ -192,23 +140,17 @@ export function applyEvent(e: MainEvent): void {
     case 'plan-limits':
       s.set({ planLimits: e.windows })
       break
-    case 'context-pending':
-      s.set({ contextPending: e.count })
-      break
     case 'ide-open':
       // the code window takes the left side as the rail's own button does; the tool stays open behind it
       s.set({ ide: 'open', panel: null, activeTool: null, ideRequest: { path: e.path, line: e.line, n: (s.ideRequest?.n ?? 0) + 1 } })
       break
     case 'reveal': {
-      // a clicked notification: a question or a plan opens the inbox; a permission or a pause is
-      // answered in the balloon over the agent, so its chat comes forward with the balloon in view
+      // a clicked notification: the chat that asked comes up, with its question in view
       const item = e.itemId ? s.inbox.find((x) => x.id === e.itemId) : undefined
-      if (item && item.status === 'pending' && !item.permission) s.set({ panel: 'inbox' })
-      else if (e.agentId && s.project?.agents.some((a) => a.id === e.agentId)) s.openChat(e.agentId)
+      const id = item?.askedBy ?? e.agentId
+      if (id && s.project?.agents.some((a) => a.id === id)) s.openChat(id)
       break
     }
-    case 'talk':
-      break
     case 'terminal-data':
       pushTerminalData(e.id, e.data)
       return
@@ -218,14 +160,8 @@ export function applyEvent(e: MainEvent): void {
     case 'provider-health':
       s.set({ health: e.health })
       break
-    case 'manual-changes':
-      s.set({ manual: { count: e.count, files: e.files } })
-      break
-    case 'terminal-note':
-      s.set({ terminalNotes: { ...s.terminalNotes, [e.agentId]: [...(s.terminalNotes[e.agentId] ?? []), { from: e.from, text: e.text, ts: Date.now() }] } })
-      break
   }
-  for (const l of sceneListeners) l(e)
+  for (const l of listeners) l(e)
 }
 
 export const api = () => window.mm.api
@@ -234,8 +170,5 @@ export const api = () => window.mm.api
 export const EMPTY_LIST: never[] = []
 export const EMPTY_MAP: Record<string, never> = {}
 
-/** Which layout is on: Focus (sidebar, one chat) or Map (the space view). */
-export const useLayout = (): 'focus' | 'map' => useStore((s) => s.settings?.layout ?? 'focus')
-
-/** Where the side sheets dock: beside the rail in Map, on the right of the chat in Focus. */
-export const SIDE_DOCK = { map: 'left-[68px]', focus: 'right-3' } as const
+/** Where the side sheets (git, media, instructions, code) dock: on the right of the chat. */
+export const SIDE_DOCK = 'right-3'

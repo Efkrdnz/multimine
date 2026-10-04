@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, ImageOff, MousePointer2, Send, Square, Type, Undo2 } from 'lucide-react'
-import { revisionBrief, sketchDir, uiCreator } from '@shared/sketch/brief'
-import type { Sketch } from '@shared/sketch/model'
+import { revisionBrief, sketchDir } from '@shared/sketch/brief'
+import { slug, type Sketch } from '@shared/sketch/model'
 import { useStore } from '../../state/store'
+import { ChatTarget, chatLabel, useChats, type Sent } from '../ChatTarget'
+import type { PluginCall } from '../pluginApi'
 
 interface Shot {
   id: string
@@ -22,10 +24,10 @@ const MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg
 const mimeOf = (p: string) => MIME[p.split('.').pop()?.toLowerCase() ?? ''] ?? 'image/png'
 
 /**
- * The real screens the UI Creator brought back, from the gallery: pick one, mark what is wrong on it,
- * say what to change, and the marked-up picture goes back to whoever builds the UI.
+ * The real screens a chat brought back, from the gallery: pick one, mark what is wrong on it, say
+ * what to change, and the marked-up picture goes back to the chat that built it (or another).
  */
-export function Revisions({ sketch, call }: { sketch: Sketch; call: <T>(m: string, ...a: unknown[]) => Promise<T> }) {
+export function Revisions({ sketch, call }: { sketch: Sketch; call: PluginCall }) {
   const toast = useStore((s) => s.toast)
   const [shots, setShots] = useState<Shot[] | null>(null)
   const [thumbs, setThumbs] = useState<Record<string, string>>({})
@@ -58,12 +60,12 @@ export function Revisions({ sketch, call }: { sketch: Sketch; call: <T>(m: strin
   return (
     <div className="scroll-thin min-h-0 flex-1 overflow-y-auto p-4" data-testid="sk-revisions">
       <div className="mb-3 text-xs leading-relaxed text-indigo-300/80">
-        Screenshots in the gallery. When the UI Creator captures the real screen it lands here: open one, mark what should change and send it back as a revision.
+        Screenshots in the gallery. When the chat building the sketch captures the real screen it lands here: open one, mark what should change and send it back as a revision.
       </div>
       {shots === null && <div className="text-xs text-indigo-300/70">Loading the gallery...</div>}
       {shots?.length === 0 && (
         <div className="flex flex-col items-center gap-2 py-16 text-sm text-indigo-300/70">
-          <ImageOff size={28} /> No screenshots yet. Send the sketch to Mastermind and the real screen comes back here.
+          <ImageOff size={28} /> No screenshots yet. Send the sketch to a chat and the real screen comes back here.
         </div>
       )}
       <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
@@ -78,8 +80,14 @@ export function Revisions({ sketch, call }: { sketch: Sketch; call: <T>(m: strin
   )
 }
 
-function Markup({ sketch, shot, src, call, onBack }: { sketch: Sketch; shot: Shot; src: string; call: <T>(m: string, ...a: unknown[]) => Promise<T>; onBack: () => void }) {
+function Markup({ sketch, shot, src, call, onBack }: { sketch: Sketch; shot: Shot; src: string; call: PluginCall; onBack: () => void }) {
   const toast = useStore((s) => s.toast)
+  const chats = useChats(call)
+  const [to, setTo] = useState('new')
+  // the chat the sketch was sent to builds its revisions too, while it exists
+  useEffect(() => {
+    void call<string | null>('storage.get', `chat:${slug(sketch.name)}`).then((id) => id && setTo(id)).catch(() => undefined)
+  }, [call, sketch.name])
   const [size, setSize] = useState<{ w: number; h: number } | null>(null)
   const [marks, setMarks] = useState<Mark[]>([])
   const [tool, setTool] = useState<'box' | 'arrow' | 'text' | null>('box')
@@ -134,10 +142,10 @@ function Markup({ sketch, shot, src, call, onBack }: { sketch: Sketch; shot: Sho
       const n = existing.filter((f) => /^revision-\d+\.png$/.test(f.name)).length + 1
       const path = `${dir}/revision-${n}.png`
       await call('files.write', path, c.toDataURL('image/png').split(',')[1], 'base64')
-      const team = await call<{ id: string; name: string; role: string }[]>('team.list')
-      const to = uiCreator(team)
-      await call('send', to?.id ?? 'mastermind', revisionBrief(sketch, path, notes))
-      toast('info', `Revision ${n} sent to ${to?.name ?? 'Mastermind'}`)
+      const target = to === 'new' || chats.some((c) => c.id === to) ? to : 'new'
+      const sent = await call<Sent>('send', target, revisionBrief(sketch, path, notes))
+      await call('storage.set', `chat:${slug(sketch.name)}`, sent.chatId)
+      toast('info', `Revision ${n} sent to ${chatLabel(chats, target, sent)}`)
       onBack()
     } catch (e) {
       toast('error', `Could not send the revision: ${String((e as Error).message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`)
@@ -202,6 +210,10 @@ function Markup({ sketch, shot, src, call, onBack }: { sketch: Sketch; shot: Sho
         <div>
           <div className="label">What to change</div>
           <textarea className="field min-h-[120px] !text-xs" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="The arrow should sit between the slots; the title is too low..." data-testid="sk-revision-notes" />
+        </div>
+        <div>
+          <div className="label">Send to</div>
+          <ChatTarget chats={chats} value={to} onChange={setTo} testId="sk-revision-to" className="!w-full" />
         </div>
         <div className="mt-auto flex gap-2">
           <button className="btn" onClick={onBack}>

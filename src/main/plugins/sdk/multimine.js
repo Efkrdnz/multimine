@@ -25,7 +25,7 @@
     })
   }
   window.multimine = {
-    apiVersion: 1,
+    apiVersion: 2,
     call: call,
     info: function () { return call('info') },
     storage: {
@@ -37,9 +37,13 @@
       setTitle: function (title) { return call('ui.setTitle', title) },
       close: function () { return call('ui.close') }
     },
+    chats: { list: function () { return call('chats.list') } },
+    // api 1: every chat, listed as an agent with role "custom"
     team: { list: function () { return call('team.list') } },
-    send: function (to, text) { return call('send', to, text) },
-    task: function (to, title, text) { return call('task', to, title, text) },
+    // to: a chat id, 'active' (the chat on screen) or 'new'; resolves to { chatId }.
+    // options, for a new chat: mcp - MCP server ids (set up in Settings) it starts with; planMode - start in plan mode
+    send: function (to, text, options) { return call('send', to, text, options) },
+    task: function (to, title, text, options) { return call('task', to, title, text, options) },
     ide: { open: function (path, line) { return call('ide.open', path, line) } },
     files: {
       list: function (dir) { return call('files.list', dir || '') },

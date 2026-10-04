@@ -1,27 +1,8 @@
 import { useState } from "react";
-import { Check, Inbox, ShieldAlert, X, Zap } from "lucide-react";
+import { Check, MessageCircleQuestion, ShieldAlert, X } from "lucide-react";
 import type { InboxItem } from "@shared/types";
-import { api, useStore } from "../state/store";
-import { Drawer } from "./Drawer";
+import { api } from "../state/store";
 import { Markdown } from "./MessageView";
-import { OrbAvatar } from "./OrbAvatar";
-
-function Asker({ id }: { id: string }) {
-  const a = useStore((s) => s.project?.agents.find((x) => x.id === id));
-  return (
-    <span
-      className="inline-flex items-center gap-1.5 text-xs font-semibold"
-      style={{ color: a?.color }}
-    >
-      <OrbAvatar
-        color={a?.color ?? "#888"}
-        size={16}
-        brain={id === "mastermind"}
-      />{" "}
-      {a?.name ?? id}
-    </span>
-  );
-}
 
 function QuestionCard({ item }: { item: InboxItem }) {
   const [picked, setPicked] = useState<Record<string, string[]>>({});
@@ -123,24 +104,28 @@ function ApprovalCard({ item }: { item: InboxItem }) {
             placeholder="Tell it what to do instead (optional)"
             value={note}
             onChange={(e) => setNote(e.target.value)}
+            data-testid="prompt-tell-input"
           />
           <div className="flex gap-2">
             <button
               className="btn btn-primary flex-1 justify-center"
               disabled={!note.trim()}
               onClick={() => void api().decide(item.id, false, note.trim())}
+              data-testid="prompt-tell"
             >
               Tell it
             </button>
             <button
               className="btn flex-1 justify-center"
               onClick={() => void api().decide(item.id, true)}
+              data-testid="prompt-continue"
             >
               Continue
             </button>
             <button
               className="btn btn-danger flex-1 justify-center"
               onClick={() => void api().decide(item.id, false)}
+              data-testid="prompt-stop"
             >
               Stop
             </button>
@@ -179,6 +164,7 @@ function ApprovalCard({ item }: { item: InboxItem }) {
               onClick={() =>
                 void api().decide(item.id, false, note || undefined)
               }
+              data-testid="inbox-reject"
             >
               <X size={14} /> Reject
             </button>
@@ -189,8 +175,8 @@ function ApprovalCard({ item }: { item: InboxItem }) {
   );
 }
 
-/** One inbox item: a question or an approval to answer, or the record of one. Also shown in the Focus chat. */
-export function InboxCard({ item }: { item: InboxItem }) {
+/** What a chat waits on the user for - a question, a plan, a permission, a loop-guard pause - answered in the chat. */
+export function PromptCard({ item }: { item: InboxItem }) {
   return (
     <div
             className={`rounded-xl border p-4 ${item.status === "pending" ? "border-amber-400/30 bg-amber-500/5" : "border-white/10 bg-black/20"}`}
@@ -199,9 +185,8 @@ export function InboxCard({ item }: { item: InboxItem }) {
               {item.kind === "approval" ? (
                 <ShieldAlert size={15} className="text-orange-300" />
               ) : (
-                <Inbox size={15} className="text-amber-300" />
+                <MessageCircleQuestion size={15} className="text-amber-300" />
               )}
-              <Asker id={item.askedBy} />
               <span className="flex-1" />
               <span className="text-[10px] text-indigo-300/60">
                 {new Date(item.ts).toLocaleTimeString()}
@@ -236,57 +221,11 @@ export function InboxCard({ item }: { item: InboxItem }) {
                     </div>
                   ))
                 )}
-                {item.status === "auto" && item.autoReason && (
-                  <div className="flex items-center gap-1 text-orange-300">
-                    <Zap size={11} /> {item.autoReason}
-                  </div>
-                )}
                 {item.note && (
                   <div className="text-indigo-200/70">Note: {item.note}</div>
                 )}
               </div>
             )}
           </div>
-  );
-}
-
-export function InboxPanel() {
-  const inbox = useStore((s) => s.inbox);
-  const [tab, setTab] = useState<"pending" | "history">("pending");
-  const pending = inbox.filter((i) => i.status === "pending");
-  const history = inbox
-    .filter((i) => i.status !== "pending")
-    .slice()
-    .reverse();
-  const list = tab === "pending" ? pending : history;
-  return (
-    <Drawer
-      title="Mastermind inbox"
-      icon={<Inbox size={17} className="text-amber-300" />}
-    >
-      <div className="mb-4 flex gap-1 rounded-lg bg-black/30 p-1 text-xs">
-        {(["pending", "history"] as const).map((t) => (
-          <button
-            key={t}
-            className={`flex-1 rounded-md py-1.5 font-semibold capitalize ${tab === t ? "bg-violet-500/30 text-white" : "text-indigo-300"}`}
-            onClick={() => setTab(t)}
-          >
-            {t} {t === "pending" && pending.length ? `(${pending.length})` : ""}
-          </button>
-        ))}
-      </div>
-      {list.length === 0 && (
-        <div className="mt-8 text-center text-sm text-indigo-300/60">
-          {tab === "pending"
-            ? "Nothing is waiting on you."
-            : "No answered items yet."}
-        </div>
-      )}
-      <div className="space-y-4">
-        {list.map((item) => (
-          <InboxCard key={item.id} item={item} />
-        ))}
-      </div>
-    </Drawer>
   );
 }

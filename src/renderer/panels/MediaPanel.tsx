@@ -44,7 +44,7 @@ export function MediaPanel() {
               <div key={m.id} className="cursor-pointer rounded-xl border border-white/10 bg-black/25 p-2 hover:border-violet-400/40" onClick={() => setBig(m)}>
                 <MediaView item={m} compact />
                 <div className="mt-1.5 flex items-center gap-1 text-[10px] text-indigo-300/80">
-                  <span style={{ color: a?.color }}>{a?.name ?? m.agentId}</span> · {m.kind} · <span className="truncate">{m.title ?? m.source}</span>
+                  <span className="text-indigo-200">{a?.name ?? m.agentId.replace(/^plugin:/, '')}</span> · {m.kind} · <span className="truncate">{m.title ?? m.source}</span>
                 </div>
               </div>
             )

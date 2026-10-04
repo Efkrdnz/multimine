@@ -148,5 +148,6 @@ describe('data tables', () => {
     expect(brief).toContain('`items.json` (4 rows; columns id:int, name:string, damage:int, speed:number, rarity:enum(common|rare)')
     expect(brief).toContain('"name":"Dragon Bow"')
     expect(brief).toContain('Edit `items.json` directly')
+    expect(brief.split('\n')[0]).toBe('# Dragon Bow is overpowered; bring it in line with the Iron S…')
   })
 })

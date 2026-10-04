@@ -1,10 +1,9 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { roleTemplate } from '@shared/templates'
+import { describe, expect, it } from 'vitest'
 import { ProjectFiles, fuzzyScore, list } from '../../src/main/ide/fs'
-import { ManualChangeTracker, ignoredPath } from '../../src/main/ide/watcher'
+import { ignoredPath } from '../../src/main/ide/watcher'
 import { Terminals } from '../../src/main/ide/terminals'
 import { MultimineApp } from '../../src/main/app'
 
@@ -31,33 +30,11 @@ describe('ide files', () => {
   })
 })
 
-describe('manual change tracking', () => {
-  afterEach(() => vi.useRealTimers())
-
-  it('batches after a quiet spell, skips what agents wrote, and nets out add+delete', () => {
-    vi.useFakeTimers()
-    let agent = false
-    const batches: string[][] = []
-    const t = new ManualChangeTracker({ quietMs: 1000, isAgentWriting: () => agent, changed: () => undefined, flush: (b) => batches.push([...b.entries()].map(([f, k]) => `${k}:${f}`)) })
-    t.record('a.java', 'changed')
-    vi.advanceTimersByTime(600)
-    t.record('b.java', 'added')
-    t.record('b.java', 'changed')
-    t.record('tmp.txt', 'added')
-    t.record('tmp.txt', 'deleted')
-    agent = true
-    t.record('agent.java', 'changed')
-    t.record('saved-in-ide.java', 'changed', true)
-    vi.advanceTimersByTime(999)
-    expect(batches).toHaveLength(0)
-    vi.advanceTimersByTime(1)
-    expect(batches).toEqual([['changed:a.java', 'added:b.java', 'changed:saved-in-ide.java']])
-  })
-
+describe('the project watcher', () => {
   it('ignores build output, VCS and Multimine itself', () => {
     expect(ignoredPath('/p', '/p/build/x.class')).toBe(true)
     expect(ignoredPath('/p', '/p/.git/HEAD')).toBe(true)
-    expect(ignoredPath('/p', '/p/.multimine/context/index.md')).toBe(true)
+    expect(ignoredPath('/p', '/p/.multimine/chats/c1/messages.jsonl')).toBe(true)
     expect(ignoredPath('/p', '/p/src/A.java')).toBe(false)
   })
 })
@@ -82,63 +59,27 @@ it('a terminal runs a shell in the project root and streams its output', async (
   await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
 })
 
-it('manual changes reach the Context Handler as one batch with the diff', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'mm-manual-'))
-  const prompts: string[] = []
+it('a Claude Code terminal is a plain terminal running the CLI in the project folder', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'mm-tcli-'))
+  const out: string[] = []
   const app = new MultimineApp({
     userDataDir: join(dir, 'u'),
     cipher: { encrypt: (s) => s, decrypt: (s) => s },
-    emit: () => undefined,
+    emit: (e) => e.type === 'terminal-data' && out.push(e.data),
     mockDelayMs: 0,
-    forceMockMastermind: true,
-    manualQuietMs: 50,
-    mockScript: (req) => {
-      if (req.agent.role === 'context-handler') prompts.push(req.prompt)
-      return [{ text: 'ok' }]
-    }
-  })
-  await app.start()
-  await app.openProject(join(dir, 'p'))
-  await app.updateSettings({ contextIdleMinutes: 0.002 })
-  await app.saveAgent({ ...roleTemplate('context-handler', ''), provider: 'mock' }, true)
-  await new Promise((r) => setTimeout(r, 100)) // its bootstrap turn
-  prompts.length = 0
-  await app.ideWrite('src/Spell.java', 'class Spell {}')
-  for (let i = 0; i < 100 && !prompts.length; i++) await new Promise((r) => setTimeout(r, 20))
-  expect(prompts).toHaveLength(1)
-  expect(prompts[0]).toContain('Edited by hand')
-  expect(prompts[0]).toContain('src/Spell.java')
-  await app.shutdown()
-  await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
-})
-
-it('a CLI terminal joins the team as an unsaved agent and leaves when it closes', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'mm-tagent-'))
-  const notes: string[] = []
-  const app = new MultimineApp({
-    userDataDir: join(dir, 'u'),
-    cipher: { encrypt: (s) => s, decrypt: (s) => s },
-    emit: (e) => e.type === 'terminal-note' && notes.push(e.text),
-    mockDelayMs: 0,
-    forceMockMastermind: true
+    skipDetect: true
   })
   await app.start()
   await app.updateSettings({ claudePath: 'echo' }) // stands in for `claude`
   await app.openProject(join(dir, 'p'))
+  const chatsBefore = app.project!.list().length
   const info = await app.terminalOpen('claude', 80, 24)
-  const agent = app.project!.get(info.agentId!)!
-  expect(agent.terminal).toBe(true)
-  expect(app.project!.list().map((a) => a.id)).toContain(agent.id)
-  // a teammate's message is shown to the user, not run
-  const res = await app.engine!.send(agent.id, 'please review X', 'mastermind')
-  expect(res.text).toContain('terminal session')
-  expect(notes[0]).toContain('please review X')
-  // delegation to it is refused
-  const delegate = app.engine!.coordinationTools(app.project!.get('mastermind')!).find((t) => t.name === 'delegate')!
-  expect((await delegate.handler({ agent: agent.id, task: 'x' })).isError).toBe(true)
+  expect(info).toMatchObject({ kind: 'claude', title: 'Claude Code' })
+  expect(app.project!.list()).toHaveLength(chatsBefore)
+  // the CLI is typed into the shell once it is up: `echo` prints an empty line and returns
+  for (let i = 0; i < 100 && !out.join('').includes('echo'); i++) await new Promise((r) => setTimeout(r, 30))
+  expect(out.join('')).toContain('echo')
   await app.terminalClose(info.id)
-  for (let i = 0; i < 100 && app.project!.get(agent.id); i++) await new Promise((r) => setTimeout(r, 30))
-  expect(app.project!.get(agent.id)).toBeUndefined()
   await app.shutdown()
   await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
 })

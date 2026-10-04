@@ -1,9 +1,9 @@
 {
   "id": "hello",
-  "name": "Hello Team",
-  "version": "1.0.0",
-  "api": 1,
-  "description": "The smallest useful plugin: lists your team and sends Mastermind a message.",
+  "name": "Hello",
+  "version": "2.0.0",
+  "api": 2,
+  "description": "The smallest useful plugin: lists your chats and sends one of them a message.",
   "icon": { "glyph": "Hand", "gradient": ["#34d399", "#0ea5e9"] },
   "entry": "index.html",
   "window": { "width": 520, "height": 560 },

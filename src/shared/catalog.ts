@@ -2,7 +2,7 @@ import type { ModelEntry, ProviderKind } from './types'
 
 /**
  * Starting presets only. Every list is editable in Settings, any model id can be typed in the
- * agent editor, and "Refresh models" asks the vendor for its live list where it has one.
+ * chat settings, and "Refresh models" asks the vendor for its live list where it has one.
  */
 export const DEFAULT_CATALOG: Record<ProviderKind, ModelEntry[]> = {
   'claude-cli': [

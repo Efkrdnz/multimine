@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   addAsset,
   approve,
-  assetCreator,
   boardJson,
   canMove,
   emptyBoard,
@@ -86,7 +85,7 @@ describe('asset board', () => {
     expect(parseBoard('nonsense').assets).toEqual([])
   })
 
-  it('briefs the Asset Creator with the spec, the style and the title rule', () => {
+  it('briefs a chat with the spec, the style, how to generate it and the title rule', () => {
     let b = addAsset(emptyBoard(), 'Mana Shard', 'sprite', 'minecraft', 'magical').board
     b = updateAsset(b, 'mana-shard', { spec: { notes: 'a glowing blue crystal' } as never })
     b = { ...b, style: { text: 'vanilla-like, 16 colours', palette: ['#3b82f6'] } }
@@ -99,6 +98,8 @@ describe('asset board', () => {
     expect(brief).toContain('src/main/resources/assets/magical/textures/item/mana_shard.png')
     expect(brief).not.toMatch(/\n\n\n/)
     expect(revisionBrief(b.assets[0], 'brighter')).toContain('What to change: brighter')
-    expect(assetCreator([{ id: 'a', name: 'Planner', role: 'planner' }, { id: 'b', name: 'Artist', role: 'asset-creator' }])!.id).toBe('b')
+    expect(brief.split('\n')[0]).toBe('# Make the asset "Mana Shard"')
+    expect(brief).toContain('poll its status')
+    expect(brief).not.toMatch(/Asset Creator|Mastermind|report`/)
   })
 })

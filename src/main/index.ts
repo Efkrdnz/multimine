@@ -64,7 +64,7 @@ const mm = new MultimineApp({
   cipher,
   emit,
   mockDelayMs: process.env.MULTIMINE_MOCK_DELAY ? Number(process.env.MULTIMINE_MOCK_DELAY) : undefined,
-  forceMockMastermind: process.env.MULTIMINE_FORCE_MOCK === '1'
+  skipDetect: process.env.MULTIMINE_FORCE_MOCK === '1'
 })
 
 function argProject(): string | null {

@@ -1,15 +1,13 @@
-import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { roleTemplate } from '@shared/templates'
-import { serializeAgentFile } from '@shared/agentFile'
 import type { MainEvent } from '@shared/types'
 import { addUsage, usageLine } from '@shared/usage'
 import { MultimineApp } from '../../src/main/app'
 import type { MockScript } from '../../src/main/providers/mock'
 import { CallMeter, costAdded } from '../../src/main/providers/claudeCli'
-import { DEFAULT_WATCHDOG, Watchdog, weighted } from '../../src/main/orchestrator/watchdog'
+import { DEFAULT_WATCHDOG, Watchdog, weighted } from '../../src/main/chat/watchdog'
 
 const T0 = 1_000_000
 const call = (cacheRead: number, output = 500) => ({ input: 200, cacheRead, cacheWrite: 1000, output })
@@ -71,17 +69,19 @@ describe('usage accounting', () => {
   })
 })
 
-describe('usage in a session', () => {
+describe('usage in a project', () => {
   let dir: string
   let app: MultimineApp
   let events: MainEvent[]
+  let worker: string
+  let spender: string
   const resumes: Record<string, (string | undefined)[]> = {}
   let n = 0
 
   const script: MockScript = (req) => {
-    ;(resumes[req.agent.id] ??= []).push(req.resumeId)
+    ;(resumes[req.agent.name] ??= []).push(req.resumeId)
     const resume = { event: { type: 'resume' as const, id: `thread-${++n}` } }
-    if (req.agent.id === 'spender')
+    if (req.agent.name === 'Spender')
       return [
         resume,
         ...Array.from({ length: 4 }, () => ({ event: { type: 'call-usage' as const, input: 1_000_000, cacheRead: 0, cacheWrite: 0, output: 0 } })),
@@ -96,11 +96,11 @@ describe('usage in a session', () => {
     events = []
     n = 0
     for (const k of Object.keys(resumes)) delete resumes[k]
-    app = new MultimineApp({ userDataDir: join(dir, 'user'), cipher: { encrypt: (s) => s, decrypt: (s) => s }, emit: (e) => events.push(e), mockScript: script, mockDelayMs: 0, forceMockMastermind: true })
+    app = new MultimineApp({ userDataDir: join(dir, 'user'), cipher: { encrypt: (s) => s, decrypt: (s) => s }, emit: (e) => events.push(e), mockScript: script, mockDelayMs: 0, skipDetect: true })
     await app.start()
     await app.openProject(join(dir, 'proj'))
-    await app.saveAgent({ ...roleTemplate('custom', ''), name: 'Worker', provider: 'mock', model: 'mock', permissions: 'write', autoApprove: true }, true)
-    await app.saveAgent({ ...roleTemplate('custom', ''), name: 'Spender', provider: 'mock', model: 'mock', permissions: 'write', autoApprove: true }, true)
+    worker = (await app.createChat({ name: 'Worker', autoApprove: true })).id
+    spender = (await app.createChat({ name: 'Spender', autoApprove: true })).id
   })
 
   afterEach(async () => {
@@ -108,25 +108,25 @@ describe('usage in a session', () => {
     await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
   })
 
-  it('starts every delegated task fresh, and a follow-up resumes the task it follows', async () => {
-    await app.engine!.send('worker', 'hello')
-    await app.engine!.send('worker', 'first task', 'mastermind', 'delegate')
-    await app.engine!.send('worker', 'second task', 'mastermind', 'delegate')
-    await app.engine!.send('worker', 'also fix the typo', 'mastermind', 'message')
-    expect(resumes.worker).toEqual([undefined, undefined, undefined, 'thread-3'])
+  it('resumes the conversation on every turn until a fresh start', async () => {
+    await app.engine!.send(worker, 'hello')
+    await app.engine!.send(worker, 'first task')
+    await app.engine!.freshStart(worker)
+    await app.engine!.send(worker, 'second task')
+    expect(resumes.Worker).toEqual([undefined, 'thread-1', undefined])
   })
 
-  it('adds up each agent\'s share with cached context apart', async () => {
-    await app.engine!.send('worker', 'one')
-    await app.engine!.send('worker', 'two')
+  it('adds up each chat\'s share with cached context apart', async () => {
+    await app.engine!.send(worker, 'one')
+    await app.engine!.send(worker, 'two')
     const last = events.filter((e): e is Extract<MainEvent, { type: 'usage' }> => e.type === 'usage').at(-1)!
     // the mock adds its own plain count at the end of every turn
-    expect(last.byAgent!.worker).toMatchObject({ cacheRead: 4000, cacheWrite: 200, calls: 6 })
+    expect(last.byAgent![worker]).toMatchObject({ cacheRead: 4000, cacheWrite: 200, calls: 6 })
     expect(last.total.cacheRead).toBe(4000)
   })
 
   it('pauses a turn that has spent its usage budget before its next step', async () => {
-    const turn = app.engine!.send('spender', 'build it')
+    const turn = app.engine!.send(spender, 'build it')
     let item
     for (let i = 0; i < 500 && !item; i++) {
       item = app.engine!.inbox.pending().find((x) => x.watchdog)
@@ -135,62 +135,5 @@ describe('usage in a session', () => {
     expect(item!.title).toContain('has used a lot of usage on this task: 4 model calls, 4.0M tokens of context')
     await app.decide(item!.id, true)
     expect((await turn).text).toContain('done')
-  })
-})
-
-describe('the old Implementer default', () => {
-  it('is lowered from xhigh to high once, and a value set by hand afterwards stays', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'mm-mig-'))
-    try {
-      const proj = join(dir, 'proj')
-      await mkdir(join(proj, '.multimine', 'agents'), { recursive: true })
-      const old = { ...roleTemplate('implementer', 'implementer'), effort: 'xhigh' as const }
-      const mine = { ...roleTemplate('implementer', 'builder'), name: 'Builder', model: 'claude-sonnet-5-5', effort: 'xhigh' as const }
-      await writeFile(join(proj, '.multimine', 'agents', 'implementer.md'), serializeAgentFile(old))
-      await writeFile(join(proj, '.multimine', 'agents', 'builder.md'), serializeAgentFile(mine))
-      const events: MainEvent[] = []
-      const app = new MultimineApp({ userDataDir: join(dir, 'user'), cipher: { encrypt: (s) => s, decrypt: (s) => s }, emit: (e) => events.push(e), mockDelayMs: 0, forceMockMastermind: true })
-      await app.start()
-      await app.openProject(proj)
-      expect(app.project!.get('implementer')!.effort).toBe('high')
-      expect(app.project!.get('builder')!.effort).toBe('xhigh')
-      expect(events.some((e) => e.type === 'toast' && e.text.includes('Implementer: effort lowered from xhigh to high'))).toBe(true)
-      // set back by hand: the migration has run and leaves it
-      await app.saveAgent({ ...app.project!.get('implementer')!, effort: 'xhigh' }, false)
-      await app.openProject(proj)
-      expect(app.project!.get('implementer')!.effort).toBe('xhigh')
-      expect(await readFile(join(proj, '.multimine', 'agents', 'implementer.md'), 'utf8')).toContain('effort: xhigh')
-      await app.shutdown()
-    } finally {
-      await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
-    }
-  })
-})
-
-describe('the lean team migration', () => {
-  it('moves Mastermind and the Planner off the old instructions, and leaves edited ones alone', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'mm-lean-'))
-    try {
-      const proj = join(dir, 'proj')
-      await mkdir(join(proj, '.multimine', 'agents'), { recursive: true })
-      const legacy = (f: string) => readFile(join(__dirname, '..', 'fixtures', 'legacy', f), 'utf8')
-      await writeFile(join(proj, '.multimine', 'agents', 'mastermind.md'), await legacy('mastermind.md'))
-      await writeFile(join(proj, '.multimine', 'agents', 'planner.md'), await legacy('planner.md'))
-      const mine = (await legacy('planner.md')).replace('You are the **Planner**', 'You are my **Planner**').replace('name: Planner', 'name: Architect')
-      await writeFile(join(proj, '.multimine', 'agents', 'architect.md'), mine)
-      const events: MainEvent[] = []
-      const app = new MultimineApp({ userDataDir: join(dir, 'user'), cipher: { encrypt: (s) => s, decrypt: (s) => s }, emit: (e) => events.push(e), mockDelayMs: 0, forceMockMastermind: true })
-      await app.start()
-      await app.openProject(proj)
-      expect(app.project!.get('mastermind')!.purpose).toContain('Match the process to the size of the request')
-      expect(app.project!.get('planner')!.planMode).toBe(false)
-      expect(app.project!.get('planner')!.purpose).toContain('do not ask for approval yourself')
-      expect(app.project!.get('architect')!.planMode).toBe(true)
-      expect(app.project!.get('architect')!.purpose).toContain('You are my **Planner**')
-      expect(events.some((e) => e.type === 'toast' && e.text.includes('straight to the Implementer'))).toBe(true)
-      await app.shutdown()
-    } finally {
-      await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
-    }
   })
 })

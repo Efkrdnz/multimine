@@ -44,7 +44,7 @@ export const defaultMockScript: MockScript = (req) => {
       text:
         `**${req.agent.name}** here (mock provider - no AI attached).\n\n` +
         `You said: _${first.slice(0, 160)}_\n\n` +
-        `Give me a real brain in the agent editor: pick a provider (Claude or Codex subscription, or an API key), a model and an effort. ` +
+        `Give me a real brain in this chat's settings (the sliders in the header): pick a provider (Claude or Codex subscription, or an API key) and a model. ` +
         `Tools I could use right now: ${req.tools.map((t) => `\`${t.name}\``).join(', ') || 'none'}.`
     }
   ]

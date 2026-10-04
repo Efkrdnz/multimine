@@ -3,7 +3,7 @@ import type { TargetId } from '../sketch/targets'
 /**
  * The asset board: what art and sound the project needs, what each one must be, where it goes, and
  * how far it has got. It lives in `.multimine/assets/board.json` so it is committed with the project.
- * The Asset Creator never writes into the project: it shows each attempt in the gallery titled
+ * The chat making an asset never writes it into the project: it shows each attempt in the gallery titled
  * `asset:<id>`, the board picks those up as candidates, and only an approval copies one into place.
  */
 export const BOARD_PATH = '.multimine/assets/board.json'
@@ -269,19 +269,27 @@ function styleLines(style: StyleGuide): string[] {
   return out
 }
 
-/** What the Asset Creator is asked to make. */
+/** The MCP servers that generate art, by the ids their presets in Settings use. */
+export const GENERATORS = ['meshy', 'wavespeed', 'higgsfield']
+
+/** What a chat is asked to make. It carries everything an asset maker needs to know, so any chat can do it. */
 export function requestBrief(a: Asset, board: Board, engine: string | null): string {
   return [
-    `Asset request from the Asset Board: "${a.name}" (\`${a.id}\`), a ${KIND_LABEL[a.kind].toLowerCase()}${engine ? ` for a ${engine} project` : ''}.`,
+    `# Make the asset "${a.name}"`,
+    `From the Asset Board: \`${a.id}\`, a ${KIND_LABEL[a.kind].toLowerCase()}${engine ? ` for a ${engine} project` : ''}.`,
     `- Size: ${a.spec.size}`,
     `- Format: ${a.spec.format}`,
     a.spec.notes.trim() ? `- What it is: ${a.spec.notes.trim()}` : null,
     ...styleLines(board.style).map((l) => `- ${l}`),
     `- It will be placed at ${a.targetPath} once approved.`,
     '',
-    'Generate it (one to three variations), then call `show_media` for each result with the title',
-    `\`asset:${a.id} <short description>\` - that title is how the board finds it. Do not write it into the project yourself: the user picks one on the board and it is copied into place.`,
-    'Finish with `report`: the prompts you used and the gallery titles.'
+    'Make it with the generation tools you have (Meshy for 3D models, WaveSpeed or Higgsfield for images and video, through MCP):',
+    '- Write a precise prompt: subject, style, palette, view, background, resolution or poly budget. Game assets want clean silhouettes and a plain background.',
+    '- Generation is asynchronous: start the task, poll its status, and download the result when it is done. Do not stop at "task started".',
+    `- Make one to three variations and call \`show_media\` for each with the title \`asset:${a.id} <short description>\` - that title is how the board finds it.`,
+    '- Do not write it into the project yourself: the user picks one on the board and it is copied into place.',
+    '- If you have no generation tool, say which one is missing (Meshy, WaveSpeed) so the user can switch it on for this chat.',
+    'Finish with the prompts you used and the gallery titles.'
   ]
     .filter((l): l is string => l !== null)
     .join('\n')
@@ -290,16 +298,12 @@ export function requestBrief(a: Asset, board: Board, engine: string | null): str
 /** Sends an asset back: what was wrong with what came, and the same rules for the next try. */
 export function revisionBrief(a: Asset, note: string): string {
   return [
-    `Revision for "${a.name}" (\`${a.id}\`) from the Asset Board: the candidates were not right.`,
+    `# Revise the asset "${a.name}"`,
+    `From the Asset Board (\`${a.id}\`): the candidates were not right.`,
     note.trim() ? `What to change: ${note.trim()}` : '',
     `Spec: ${a.spec.size}, ${a.spec.format}.`,
-    `Show each new attempt with \`show_media\` titled \`asset:${a.id} <short description>\`, do not write it into the project, and report.`
+    `Show each new attempt with \`show_media\` titled \`asset:${a.id} <short description>\`, and do not write it into the project.`
   ]
     .filter(Boolean)
     .join('\n')
-}
-
-/** The agent asset requests go to: an Asset Creator by role, then by name. */
-export function assetCreator<T extends { id: string; name: string; role: string }>(team: readonly T[]): T | undefined {
-  return team.find((a) => a.role === 'asset-creator') ?? team.find((a) => /asset/i.test(a.name))
 }

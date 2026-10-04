@@ -8,22 +8,21 @@ export interface Api {
   closeProject(): Promise<void>
   saveMultimineMd(text: string): Promise<void>
 
-  saveAgent(agent: AgentSpec, isNew: boolean): Promise<AgentSpec>
-  deleteAgent(id: string): Promise<void>
-  setPosition(id: string, x: number, y: number): Promise<void>
+  /** A new chat on the defaults from Settings; `patch` wins over them. */
+  createChat(patch?: Partial<AgentSpec>): Promise<AgentSpec>
+  /** Changes a chat's settings or name. */
+  saveChat(chat: AgentSpec): Promise<AgentSpec>
+  deleteChat(id: string): Promise<void>
+  /** The chat on screen: where a tool's messages to 'active' go. */
+  setActiveChat(id: string | null): Promise<void>
 
-  send(agentId: string, text: string): Promise<void>
+  /** `quick`: this message runs on the light tier of the chat's provider. */
+  send(agentId: string, text: string, opts?: { quick?: boolean }): Promise<void>
   stop(agentId: string): Promise<void>
   retry(agentId: string): Promise<void>
-  /** A new conversation with one agent: the chat stays, the agent starts clean with a short recap. */
+  /** A new conversation in the same chat: the messages stay, the agent starts clean with a short recap. */
   freshStart(agentId: string): Promise<boolean>
   clearChat(agentId: string): Promise<void>
-
-  newSession(name?: string): Promise<void>
-  switchSession(id: string): Promise<void>
-  renameSession(id: string, name: string): Promise<void>
-  deleteSession(id: string): Promise<void>
-  duplicateSession(id: string): Promise<void>
 
   answer(id: string, answers: Record<string, string>, note?: string): Promise<void>
   decide(id: string, approved: boolean, note?: string, always?: boolean): Promise<void>
@@ -56,7 +55,6 @@ export interface Api {
   ideRead(path: string): Promise<{ text: string; binary: boolean; tooBig: boolean }>
   ideWrite(path: string, text: string): Promise<void>
   ideOpenExternal(path: string, app: 'idea' | 'code' | 'system'): Promise<void>
-  syncContext(): Promise<boolean>
   terminalAvailable(): Promise<{ ok: boolean; error?: string }>
   terminalOpen(kind: TerminalKind, cols: number, rows: number): Promise<TerminalInfo>
   terminalWrite(id: string, data: string): Promise<void>
@@ -74,7 +72,6 @@ export interface Api {
   /** Shows a sample desktop notification; false when the system does not support them. */
   testNotification(): Promise<boolean>
 
-  contextFiles(): Promise<{ file: string; text: string }[]>
   openPath(path: string): Promise<void>
   mediaUrl(path: string): Promise<string>
 }
@@ -83,17 +80,16 @@ export type ApiMethod = keyof Api
 
 export const API_METHODS: ApiMethod[] = [
   'init', 'pickProject', 'openProject', 'closeProject', 'saveMultimineMd',
-  'saveAgent', 'deleteAgent', 'setPosition',
+  'createChat', 'saveChat', 'deleteChat', 'setActiveChat',
   'send', 'stop', 'retry', 'clearChat', 'freshStart',
-  'newSession', 'switchSession', 'renameSession', 'deleteSession', 'duplicateSession',
   'answer', 'decide',
   'updateSettings', 'setKey', 'detectClis', 'refreshModels', 'testMcp',
   'gitStatus', 'gitInit', 'gitDiff', 'gitStage', 'gitUnstage', 'gitCommit', 'gitLog', 'gitShow', 'gitBranches', 'gitCheckout', 'gitPull', 'gitPush',
   'ghInfo', 'ghList', 'ghCreatePr',
-  'ideList', 'ideFind', 'ideGrep', 'ideRead', 'ideWrite', 'ideOpenExternal', 'syncContext',
+  'ideList', 'ideFind', 'ideGrep', 'ideRead', 'ideWrite', 'ideOpenExternal',
   'terminalAvailable', 'terminalOpen', 'terminalWrite', 'terminalResize', 'terminalClose',
   'pluginList', 'pluginPickAndInstall', 'pluginInstall', 'pluginSetEnabled', 'pluginRevoke', 'pluginRemove', 'pluginCall',
-  'testNotification', 'contextFiles', 'openPath', 'mediaUrl'
+  'testNotification', 'openPath', 'mediaUrl'
 ]
 
 export interface Bridge {

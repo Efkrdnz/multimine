@@ -3,9 +3,9 @@ import Editor, { type OnMount } from '@monaco-editor/react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
-import { ChevronDown, ChevronRight, Code2, ExternalLink, File, Folder, FolderOpen, Plus, RefreshCw, Save, Search, SquareTerminal, X, MessageSquareText } from 'lucide-react'
+import { ChevronDown, ChevronRight, Code2, ExternalLink, File, Folder, FolderOpen, Plus, Save, Search, SquareTerminal, X } from 'lucide-react'
 import type { IdeEntry, IdeHit, TerminalInfo, TerminalKind } from '@shared/types'
-import { SIDE_DOCK, api, onSceneEvent, useLayout, useStore } from '../state/store'
+import { SIDE_DOCK, api, onMainEvent, useStore } from '../state/store'
 import { languageOf } from './monaco'
 import { attachTerminal, forgetTerminal } from './terminalBus'
 
@@ -23,7 +23,7 @@ function TreeNode({ entry, depth, open, onOpen }: { entry: IdeEntry; depth: numb
   // folders follow files coming and going
   useEffect(
     () =>
-      onSceneEvent((e) => {
+      onMainEvent((e) => {
         if (expanded && e.type === 'file-changed' && e.kind !== 'changed' && e.path.startsWith(`${entry.path}/`) && !e.path.slice(entry.path.length + 1).includes('/')) load()
       }),
     [expanded, entry.path, load]
@@ -58,7 +58,7 @@ function Navigator({ open, active }: { open: (path: string, line?: number) => vo
 
   const loadRoot = useCallback(() => void api().ideList('').then(setRoot), [])
   useEffect(loadRoot, [loadRoot, project])
-  useEffect(() => onSceneEvent((e) => e.type === 'file-changed' && e.kind !== 'changed' && !e.path.includes('/') && loadRoot()), [loadRoot])
+  useEffect(() => onMainEvent((e) => e.type === 'file-changed' && e.kind !== 'changed' && !e.path.includes('/') && loadRoot()), [loadRoot])
 
   useEffect(() => {
     const q = query.trim()
@@ -239,9 +239,6 @@ function EditorPane({ tabs, setTabs, active, setActive, reveal }: { tabs: Tab[];
 function TerminalView({ info, visible }: { info: TerminalInfo; visible: boolean }) {
   const host = useRef<HTMLDivElement>(null)
   const fit = useRef<FitAddon | null>(null)
-  const notes = useStore((s) => (info.agentId ? s.terminalNotes[info.agentId] : undefined))
-  const agents = useStore((s) => s.project?.agents)
-  const [dismissed, setDismissed] = useState(0)
 
   useEffect(() => {
     const term = new Terminal({
@@ -281,25 +278,9 @@ function TerminalView({ info, visible }: { info: TerminalInfo; visible: boolean 
     if (visible) setTimeout(() => fit.current?.fit(), 30)
   }, [visible])
 
-  const shown = (notes ?? []).slice(dismissed)
   return (
     <div className={`absolute inset-0 ${visible ? '' : 'invisible'}`}>
       <div ref={host} className="h-full w-full px-2 pt-1" data-testid={`terminal-${info.kind}`} />
-      {shown.length > 0 && (
-        <div className="absolute right-3 top-2 z-10 max-w-[70%] space-y-1">
-          {shown.slice(-3).map((n) => (
-            <div key={n.ts} className="rise rounded-lg border border-violet-400/40 bg-[#140f2e]/95 px-3 py-2 text-xs shadow-lg">
-              <div className="mb-0.5 flex items-center gap-1 font-semibold text-violet-200">
-                <MessageSquareText size={12} /> {agents?.find((a) => a.id === n.from)?.name ?? n.from} says
-              </div>
-              <div className="max-h-24 overflow-y-auto whitespace-pre-wrap text-indigo-100">{n.text}</div>
-            </div>
-          ))}
-          <button className="text-[10px] text-indigo-300 underline" onClick={() => setDismissed(notes!.length)}>
-            dismiss
-          </button>
-        </div>
-      )}
     </div>
   )
 }
@@ -317,7 +298,7 @@ function TerminalPane() {
   }, [])
   useEffect(
     () =>
-      onSceneEvent((e) => {
+      onMainEvent((e) => {
         if (e.type !== 'terminal-exit') return
         forgetTerminal(e.id)
         setTerms((ts) => {
@@ -357,10 +338,10 @@ function TerminalPane() {
         <button className="btn btn-ghost !px-1.5 !py-0.5 text-[10px]" onClick={() => void open('shell')} disabled={!!unavailable} data-testid="term-new">
           <Plus size={11} /> Terminal
         </button>
-        <button className="btn btn-ghost !px-1.5 !py-0.5 text-[10px] text-amber-200" onClick={() => void open('claude')} disabled={!!unavailable} title="Claude Code in this terminal, joined to your team">
+        <button className="btn btn-ghost !px-1.5 !py-0.5 text-[10px] text-amber-200" onClick={() => void open('claude')} disabled={!!unavailable} title="A terminal running Claude Code in the project folder">
           <Plus size={11} /> Claude Code
         </button>
-        <button className="btn btn-ghost !px-1.5 !py-0.5 text-[10px] text-emerald-200" onClick={() => void open('codex')} disabled={!!unavailable} title="Codex in this terminal, joined to your team">
+        <button className="btn btn-ghost !px-1.5 !py-0.5 text-[10px] text-emerald-200" onClick={() => void open('codex')} disabled={!!unavailable} title="A terminal running Codex in the project folder">
           <Plus size={11} /> Codex
         </button>
       </div>
@@ -386,12 +367,6 @@ function TerminalPane() {
 
 export function IdeWindow() {
   const ide = useStore((s) => s.ide)
-  const layout = useLayout()
-  const manual = useStore((s) => s.manual)
-  const pendingContext = useStore((s) => s.contextPending)
-  // the team's tasks waiting for the map, plus hand edits not yet collected
-  const waiting = pendingContext + manual.count
-  const hasHandler = useStore((s) => !!s.project?.agents.some((a) => a.role === 'context-handler'))
   const [tabs, setTabsState] = useState<Tab[]>([])
   const [active, setActive] = useState<string | null>(null)
   const [reveal, setReveal] = useState<{ path: string; line: number; n: number } | null>(null)
@@ -420,7 +395,7 @@ export function IdeWindow() {
   // an open file changed on disk (an agent, another editor): follow it, unless it holds unsaved edits
   useEffect(
     () =>
-      onSceneEvent((e) => {
+      onMainEvent((e) => {
         if (e.type !== 'file-changed') return
         const t = tabsRef.current.find((x) => x.path === e.path)
         if (!t || t.readOnly) return
@@ -442,7 +417,8 @@ export function IdeWindow() {
     const w0 = width
     const h0 = termH
     const move = (ev: MouseEvent) => {
-      if (kind === 'width') setWidth(Math.max(560, Math.min(window.innerWidth - 140, w0 + ev.clientX - sx)))
+      // docked on the right, so dragging the left edge leftwards widens it
+      if (kind === 'width') setWidth(Math.max(560, Math.min(window.innerWidth - 300, w0 - (ev.clientX - sx))))
       else setTermH(Math.max(90, Math.min(window.innerHeight - 260, h0 - (ev.clientY - sy))))
     }
     const up = () => {
@@ -456,23 +432,12 @@ export function IdeWindow() {
   const dirty = useMemo(() => tabs.filter((t) => t.text !== t.saved).length, [tabs])
 
   return (
-    <div data-left-drawer={ide === 'open' ? '' : undefined} className={`glass rise absolute bottom-3 ${SIDE_DOCK[layout]} top-16 z-20 flex max-w-[calc(100vw-300px)] flex-col overflow-hidden rounded-2xl ${ide === 'open' ? '' : 'hidden'}`} style={{ width }} data-testid="ide">
+    <div data-left-drawer={ide === 'open' ? '' : undefined} className={`glass rise absolute bottom-3 ${SIDE_DOCK} top-16 z-20 flex max-w-[calc(100vw-300px)] flex-col overflow-hidden rounded-2xl ${ide === 'open' ? '' : 'hidden'}`} style={{ width }} data-testid="ide">
       <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
         <Code2 size={16} className="text-violet-300" />
         <div className="font-display text-sm font-bold">Code</div>
         {dirty > 0 && <span className="text-[10px] text-amber-300">{dirty} unsaved</span>}
         <div className="flex-1" />
-        {hasHandler && (
-          <button
-            className={`btn !py-1 text-[11px] ${waiting ? 'border-cyan-400/50 text-cyan-100' : ''}`}
-            disabled={!waiting}
-            onClick={() => void api().syncContext()}
-            title={waiting ? `Update the context map now${manual.count ? `, including your edits to ${manual.files.slice(0, 12).join(', ')}` : ''}` : 'Changes go to the Context Handler in one batch once the team is quiet'}
-            data-testid="sync-context"
-          >
-            <RefreshCw size={11} /> Sync context{waiting ? ` (${waiting})` : ''}
-          </button>
-        )}
         <button className="btn btn-ghost !p-1" onClick={() => useStore.getState().set({ ide: 'hidden' })} title="Hide (terminals keep running)">
           <X size={15} />
         </button>
@@ -487,7 +452,7 @@ export function IdeWindow() {
           </div>
         </div>
       </div>
-      <div className="absolute bottom-0 right-0 top-0 w-1 cursor-col-resize hover:bg-violet-400/40" onMouseDown={drag('width')} />
+      <div className="absolute bottom-0 left-0 top-0 w-1 cursor-col-resize hover:bg-violet-400/40" onMouseDown={drag('width')} />
     </div>
   )
 }

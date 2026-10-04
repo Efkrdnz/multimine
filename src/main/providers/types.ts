@@ -1,6 +1,6 @@
 import type { z } from 'zod'
 import type { AgentSpec, McpServerConfig, Question } from '@shared/types'
-import type { WatchVerdict } from '../orchestrator/watchdog'
+import type { WatchVerdict } from '../chat/watchdog'
 
 /** What a tool returns: text for the model, plus any media it produced. */
 export interface ToolOutput {

@@ -2,38 +2,28 @@ import { useState } from 'react'
 import { Save, Trash2 } from 'lucide-react'
 import { DEFAULT_CATALOG, PROVIDER_LABEL, needsKey } from '@shared/catalog'
 import { SUPPORTED_EFFORTS, clampEffort } from '@shared/effort'
-import { CREATABLE_ROLES, ROLE_LABEL, roleTemplate } from '@shared/templates'
-import { EFFORTS, MASTERMIND_ID, PERMISSIONS, PROVIDERS, type AgentSpec, type Role } from '@shared/types'
+import { EFFORTS, PERMISSIONS, PROVIDERS, type AgentSpec } from '@shared/types'
 import { api, useStore } from '../state/store'
 import { Modal } from './Modal'
-import { OrbAvatar } from './OrbAvatar'
 import { FallbackChain } from './FallbackChain'
-
-const SWATCHES = ['#c084fc', '#60a5fa', '#34d399', '#f472b6', '#fbbf24', '#22d3ee', '#f87171', '#a3e635', '#fb923c', '#e879f9', '#38bdf8', '#facc15']
 
 const AUTO_HELP: Record<string, string> = {
   'claude-cli': 'Claude Code: on accepts edits and allows commands and tools without asking; off sends every permission prompt to you.',
   'codex-cli': 'Codex: on runs with full access (network, outside the sandbox); off keeps it in the workspace sandbox. Codex cannot ask mid-run, so pushes go through request_permission.',
-  api: 'API agents: on lets file writes and commands run; off asks you for each one.'
+  api: 'API models: on lets file writes and commands run; off asks you for each one.'
 }
 
 const PERM_HELP = { chat: 'Talks only; never touches files.', read: 'Reads the project; cannot change it.', write: 'Reads and edits the project, runs commands.' }
 
-export function AgentEditor({ agent, isNew }: { agent: AgentSpec; isNew: boolean }) {
+/** Everything about one chat that does not fit in the composer: its name, provider, permissions, MCP servers and fallbacks. */
+export function ChatSettings({ agent }: { agent: AgentSpec }) {
   const settings = useStore((s) => s.settings)
   const keyed = useStore((s) => s.keyed)
   const close = () => useStore.getState().set({ modal: null })
   const [a, setA] = useState<AgentSpec>(agent)
   const [saving, setSaving] = useState(false)
-  const isMm = a.id === MASTERMIND_ID
   const patch = (p: Partial<AgentSpec>) => setA((x) => ({ ...x, ...p }))
   const models = settings?.catalog[a.provider] ?? DEFAULT_CATALOG[a.provider]
-
-  const pickRole = (role: Role) => {
-    if (!isNew) return patch({ role })
-    const t = roleTemplate(role, '')
-    setA({ ...t, name: a.name || (role === 'custom' ? '' : t.name) })
-  }
 
   const pickProvider = (provider: AgentSpec['provider']) => {
     const list = settings?.catalog[provider] ?? DEFAULT_CATALOG[provider]
@@ -42,12 +32,11 @@ export function AgentEditor({ agent, isNew }: { agent: AgentSpec; isNew: boolean
   }
 
   const save = async () => {
-    if (!a.name.trim()) return useStore.getState().toast('error', 'Give the agent a name.')
+    if (!a.name.trim()) return useStore.getState().toast('error', 'Give the chat a name.')
     setSaving(true)
     try {
-      const saved = await api().saveAgent({ ...a, name: a.name.trim() }, isNew)
+      await api().saveChat({ ...a, name: a.name.trim() })
       close()
-      if (isNew) useStore.getState().openChat(saved.id)
     } catch (e) {
       useStore.getState().toast('error', String((e as Error).message ?? e))
     } finally {
@@ -56,46 +45,21 @@ export function AgentEditor({ agent, isNew }: { agent: AgentSpec; isNew: boolean
   }
 
   const remove = async () => {
-    if (!confirm(`Delete ${a.name}? Its agent file is removed; chats stay in their sessions.`)) return
-    await api().deleteAgent(a.id)
-    useStore.getState().closeChat(a.id)
+    if (!confirm(`Delete the chat "${a.name}" and everything said in it?`)) return
+    await api().deleteChat(a.id)
     close()
   }
 
   const missingKey = needsKey(a.provider) && !keyed.includes(a.provider)
 
   return (
-    <Modal title={isNew ? 'Create agent' : `Edit ${agent.name}`} onClose={close}>
-      <div className="grid min-h-0 flex-1 grid-cols-[220px_1fr] gap-0 overflow-hidden">
-        <div className="flex flex-col items-center gap-3 border-r border-white/10 p-5">
-          <OrbAvatar color={a.color} size={130} brain={isMm} status="idle" />
-          <div className="text-center font-display text-lg font-bold">{a.name || 'Unnamed'}</div>
-          <div className="text-center text-xs text-indigo-300">{ROLE_LABEL[a.role]}</div>
-          {!isMm && (
-            <div className="mt-2 grid grid-cols-6 gap-1.5">
-              {SWATCHES.map((c) => (
-                <button key={c} className={`h-6 w-6 rounded-full border-2 ${a.color === c ? 'border-white' : 'border-transparent'}`} style={{ background: c }} onClick={() => patch({ color: c })} />
-              ))}
-            </div>
-          )}
-          {!isMm && <input className="field mt-1 text-center font-mono text-xs" value={a.color} onChange={(e) => /^#[0-9a-f]{0,6}$/i.test(e.target.value) && patch({ color: e.target.value })} />}
-        </div>
-
+    <Modal title={`Chat settings: ${agent.name}`} onClose={close}>
+      <div className="min-h-0 flex-1 overflow-hidden">
         <div className="scroll-thin min-h-0 overflow-y-auto p-5">
           <div className="grid grid-cols-2 gap-4">
-            <div>
+            <div className="col-span-2">
               <label className="label">Name</label>
-              <input className="field" value={a.name} onChange={(e) => patch({ name: e.target.value })} placeholder="e.g. Context Keeper" autoFocus data-testid="agent-name" />
-            </div>
-            <div>
-              <label className="label">Role {isNew && <span className="normal-case text-indigo-300/60">(fills a starting template)</span>}</label>
-              <select className="field" value={a.role} disabled={isMm} onChange={(e) => pickRole(e.target.value as Role)} data-testid="agent-role">
-                {(isMm ? ['mastermind' as Role] : CREATABLE_ROLES).map((r) => (
-                  <option key={r} value={r}>
-                    {ROLE_LABEL[r]}
-                  </option>
-                ))}
-              </select>
+              <input className="field" value={a.name} onChange={(e) => patch({ name: e.target.value })} autoFocus data-testid="agent-name" />
             </div>
 
             <div className="col-span-2">
@@ -162,11 +126,6 @@ export function AgentEditor({ agent, isNew }: { agent: AgentSpec; isNew: boolean
               <div className="mt-1 text-[11px] text-indigo-300/70">{PERM_HELP[a.permissions]}</div>
             </div>
             <div className="space-y-2 pt-5">
-              {!isMm && (
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={a.gated} onChange={(e) => patch({ gated: e.target.checked })} /> Gated: needs an approved plan before work
-                </label>
-              )}
               <label className="flex items-start gap-2 text-sm" title={AUTO_HELP[a.provider] ?? AUTO_HELP.api}>
                 <input type="checkbox" className="mt-1" checked={a.autoApprove} onChange={(e) => patch({ autoApprove: e.target.checked })} data-testid="agent-auto-approve" />
                 <span>
@@ -182,7 +141,7 @@ export function AgentEditor({ agent, isNew }: { agent: AgentSpec; isNew: boolean
             <div className="col-span-2 rounded-xl border border-sky-400/20 bg-sky-500/5 p-3">
                 <label className="label !text-sky-200">Fallback when out of usage</label>
                 <div className="mb-2 text-[11px] text-indigo-200/70">
-                  If {a.provider === 'mock' ? 'its provider' : 'this provider'} runs out of usage or its login stops working, {a.name || 'the agent'} continues on the next one, mid-task, with a brief of what is already done.
+                  If {a.provider === 'mock' ? 'its provider' : 'this provider'} runs out of usage or its login stops working, this chat continues on the next one, mid-task, with a brief of what is already done.
                   {!a.fallback.length && ' With none set here, the default chain from Settings is used.'}
                 </div>
                 <FallbackChain value={a.fallback} onChange={(fallback) => patch({ fallback })} testId="agent-fallback" />
@@ -193,7 +152,7 @@ export function AgentEditor({ agent, isNew }: { agent: AgentSpec; isNew: boolean
 
             {!!settings?.mcpServers.length && (
               <div className="col-span-2">
-                <label className="label">MCP tools</label>
+                <label className="label">MCP servers <span className="normal-case text-indigo-300/60">(their tools are this chat's to use)</span></label>
                 <div className="flex flex-wrap gap-1.5">
                   {settings.mcpServers.map((s) => {
                     const on = a.mcp.includes(s.id)
@@ -207,25 +166,19 @@ export function AgentEditor({ agent, isNew }: { agent: AgentSpec; isNew: boolean
               </div>
             )}
 
-            <div className="col-span-2">
-              <label className="label">Purpose <span className="normal-case text-indigo-300/60">(saved as .multimine/agents/{a.id || '<name>'}.md - its system brief)</span></label>
-              <textarea className="field scroll-thin min-h-64 font-mono text-xs leading-relaxed" value={a.purpose} onChange={(e) => patch({ purpose: e.target.value })} spellCheck={false} />
-            </div>
           </div>
         </div>
       </div>
       <div className="flex items-center gap-2 border-t border-white/10 px-5 py-3">
-        {!isNew && !isMm && (
-          <button className="btn btn-danger" onClick={remove}>
-            <Trash2 size={14} /> Delete
-          </button>
-        )}
+        <button className="btn btn-danger" onClick={remove} data-testid="chat-delete">
+          <Trash2 size={14} /> Delete chat
+        </button>
         <div className="flex-1" />
         <button className="btn" onClick={close}>
           Cancel
         </button>
         <button className="btn btn-primary" onClick={save} disabled={saving} data-testid="agent-save">
-          <Save size={14} /> {isNew ? 'Create' : 'Save'}
+          <Save size={14} /> Save
         </button>
       </div>
     </Modal>

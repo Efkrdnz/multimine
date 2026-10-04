@@ -2,12 +2,11 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { roleTemplate } from '@shared/templates'
 import type { MainEvent } from '@shared/types'
 import { describeTool, shortCommand } from '@shared/activity'
 import { MultimineApp } from '../../src/main/app'
 import type { MockScript } from '../../src/main/providers/mock'
-import { DEFAULT_WATCHDOG, exactSignature, launchSignature, verdictFor, Watchdog } from '../../src/main/orchestrator/watchdog'
+import { DEFAULT_WATCHDOG, exactSignature, launchSignature, verdictFor, Watchdog } from '../../src/main/chat/watchdog'
 
 const bash = (command: string) => ['Bash', { command }] as const
 const T0 = 1_000_000
@@ -83,12 +82,13 @@ describe('watchdog in a turn', () => {
   let dir: string
   let app: MultimineApp
   let events: MainEvent[]
+  let looper: string
 
   // the looper launches the "game" four times; the reply comes after
   const script: MockScript = (req) => {
-    if (req.agent.id === 'looper') return [...[1, 2, 3, 4].map((n) => ({ tool: { name: 'run_command', args: { command: `echo ./gradlew runClient -PautoScreenshot=${n}` } } })), { text: 'done' }]
+    if (req.agent.name === 'Looper') return [...[1, 2, 3, 4].map((n) => ({ tool: { name: 'run_command', args: { command: `echo ./gradlew runClient -PautoScreenshot=${n}` } } })), { text: 'done' }]
     // a Claude-style sub-agent: its steps arrive tagged with the call that started it
-    if (req.agent.id === 'nester')
+    if (req.agent.name === 'Nester')
       return [
         { event: { type: 'tool-start', id: 'task1', name: 'Task', input: { description: 'Find the ability registry' } } },
         { event: { type: 'tool-start', id: 's1', name: 'Grep', input: { pattern: 'registerAbility' }, parent: 'task1' } },
@@ -105,10 +105,10 @@ describe('watchdog in a turn', () => {
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'mm-wd-'))
     events = []
-    app = new MultimineApp({ userDataDir: join(dir, 'user'), cipher: { encrypt: (s) => s, decrypt: (s) => s }, emit: (e) => events.push(e), mockScript: script, mockDelayMs: 0, forceMockMastermind: true })
+    app = new MultimineApp({ userDataDir: join(dir, 'user'), cipher: { encrypt: (s) => s, decrypt: (s) => s }, emit: (e) => events.push(e), mockScript: script, mockDelayMs: 0, skipDetect: true })
     await app.start()
     await app.openProject(join(dir, 'proj'))
-    await app.saveAgent({ ...roleTemplate('custom', ''), name: 'Looper', provider: 'mock', model: 'mock', permissions: 'write', autoApprove: true }, true)
+    looper = (await app.createChat({ name: 'Looper', autoApprove: true })).id
   })
 
   afterEach(async () => {
@@ -125,13 +125,13 @@ describe('watchdog in a turn', () => {
     throw new Error('the watchdog never asked')
   }
 
-  it('pauses a relaunch loop and hands the agent the user\'s instruction', async () => {
-    const turn = app.engine!.send('looper', 'test the ability')
+  it('pauses a relaunch loop and hands the chat the user\'s instruction', async () => {
+    const turn = app.engine!.send(looper, 'test the ability')
     await answer((id) => app.decide(id, false, 'The world "New World" does not exist. Stop launching and report.'))
     await answer((id) => app.decide(id, true))
     const res = await turn
     expect(res.error).toBeUndefined()
-    const tools = app.engine!.chats.looper.at(-1)!.tools!
+    const tools = app.engine!.chats[looper].at(-1)!.tools!
     expect(tools.map((t) => t.status)).toEqual(['done', 'done', 'error', 'done'])
     expect(tools[2].output).toContain('does not exist. Stop launching and report.')
     expect(tools[3].output).toContain('runClient -PautoScreenshot=4')
@@ -139,7 +139,7 @@ describe('watchdog in a turn', () => {
     const items = app.engine!.inbox.items.filter((x) => x.watchdog)
     expect(items).toHaveLength(2)
     // the live activity line: what it is doing, on what, since when; and waiting while paused
-    const st = events.filter((e): e is Extract<MainEvent, { type: 'status' }> => e.type === 'status' && e.agentId === 'looper')
+    const st = events.filter((e): e is Extract<MainEvent, { type: 'status' }> => e.type === 'status' && e.agentId === looper)
     expect(st.some((e) => e.activity === 'Running' && e.detail === 'echo ./gradlew runClient -PautoScreenshot=1' && typeof e.since === 'number')).toBe(true)
     expect(st.some((e) => e.status === 'waiting' && e.activity === 'Paused by the loop guard')).toBe(true)
     expect(st.at(-1)).toMatchObject({ status: 'idle', activity: undefined })
@@ -147,9 +147,9 @@ describe('watchdog in a turn', () => {
   })
 
   it('nests a sub-agent\'s steps under the call that started it, with timings', async () => {
-    await app.saveAgent({ ...roleTemplate('custom', ''), name: 'Nester', provider: 'mock', model: 'mock' }, true)
-    await app.engine!.send('nester', 'find it')
-    const tools = app.engine!.chats.nester.at(-1)!.tools!
+    const nester = (await app.createChat({ name: 'Nester' })).id
+    await app.engine!.send(nester, 'find it')
+    const tools = app.engine!.chats[nester].at(-1)!.tools!
     expect(tools.map((t) => t.name)).toEqual(['Task'])
     expect(tools[0]).toMatchObject({ status: 'done', childCount: 2, progress: 'Reading the registry' })
     expect(tools[0].children!.map((c) => [c.name, c.status])).toEqual([
@@ -159,12 +159,12 @@ describe('watchdog in a turn', () => {
     expect(tools[0].children!.every((c) => c.startedAt && c.endedAt)).toBe(true)
   })
 
-  it('stops the task when the user says stop, and says why', async () => {
-    const turn = app.engine!.send('looper', 'test the ability')
+  it('stops the turn when the user says stop, and says why', async () => {
+    const turn = app.engine!.send(looper, 'test the ability')
     await answer((id) => app.decide(id, false))
     const res = await turn
     // the stand-in launch is `echo ./gradlew runClient ...` (harmless on every OS)
     expect(res.error).toBe('Stopped by the user: Looper wants to launch `echo ./gradlew` for the third time with no new edits.')
-    expect(app.engine!.chats.looper.at(-1)!.tools!.length).toBe(3)
+    expect(app.engine!.chats[looper].at(-1)!.tools!.length).toBe(3)
   })
 })

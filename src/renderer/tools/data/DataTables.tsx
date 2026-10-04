@@ -24,6 +24,7 @@ import {
 } from '@shared/data/table'
 import { useStore } from '../../state/store'
 import { errText, usePluginApi, type PluginCall } from '../pluginApi'
+import { ChatTarget, chatLabel, useChats, type Sent } from '../ChatTarget'
 
 const MAX_DEPTH = 6
 const MAX_ENTRIES = 2000
@@ -272,7 +273,7 @@ export function DataTables({ plugin }: { plugin: PluginInfo }) {
                 <BarChart3 size={13} />
               </button>
               <button className={`btn !py-1 ${ask ? '!border-violet-400/60' : ''}`} onClick={() => setAsk(!ask)} data-testid="dt-ask-toggle">
-                <Bot size={13} /> Ask an agent
+                <Bot size={13} /> Ask a chat
               </button>
               <button className="btn btn-primary !py-1" disabled={!dirty} onClick={() => void save()} title="Save (Ctrl+S)" data-testid="dt-save">
                 <Save size={13} /> Save
@@ -548,25 +549,21 @@ function ChartPanel({ table, rows }: { table: Table; rows: Row[] }) {
 
 function AskPanel({ call, table, rows, onDone }: { call: PluginCall; table: Table; rows: Row[]; onDone: () => void }) {
   const toast = useStore((s) => s.toast)
-  const [team, setTeam] = useState<{ id: string; name: string; role: string }[]>([])
-  const [to, setTo] = useState('mastermind')
+  const chats = useChats(call)
+  // a question about the data: the chat on screen by default, which usually has the context
+  const [to, setTo] = useState('active')
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   useEffect(() => {
-    void call<{ id: string; name: string; role: string }[]>('team.list')
-      .then((t) => {
-        setTeam(t)
-        // the one who usually edits the project, if there is one
-        const pick = t.find((a) => a.role === 'implementer') ?? t.find((a) => a.id === 'mastermind')
-        if (pick) setTo(pick.id)
-      })
-      .catch(() => undefined)
-  }, [call])
+    const active = chats.find((c) => c.active)
+    if (to === 'active' && active) setTo(active.id)
+  }, [chats, to])
   const send = async () => {
     setBusy(true)
     try {
-      await call('send', to, askBrief(table, rows, text))
-      toast('info', `Asked ${team.find((a) => a.id === to)?.name ?? to} about ${table.path}`)
+      const dest = to === 'new' || chats.some((c) => c.id === to) ? to : 'active'
+      const sent = await call<Sent>('send', dest, askBrief(table, rows, text))
+      toast('info', `Asked ${chatLabel(chats, dest, sent)} about ${table.path}`)
       setText('')
       onDone()
     } catch (e) {
@@ -578,13 +575,7 @@ function AskPanel({ call, table, rows, onDone }: { call: PluginCall; table: Tabl
   return (
     <div className="flex items-start gap-2 border-b border-white/10 bg-black/20 p-2" data-testid="dt-ask">
       <div className="w-44 shrink-0 space-y-1">
-        <select className="field !py-1 !text-xs" value={to} onChange={(e) => setTo(e.target.value)} data-testid="dt-ask-to">
-          {team.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </select>
+        <ChatTarget chats={chats} value={to} onChange={setTo} testId="dt-ask-to" className="!w-full" />
         <div className="text-[10.5px] leading-snug text-indigo-300/70">{rows.length ? `About the ${rows.length} selected row${rows.length === 1 ? '' : 's'}` : 'About the whole table (select rows to narrow it)'}</div>
       </div>
       <textarea

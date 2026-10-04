@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle2, KeyRound, Plug, Plus, RefreshCw, Save, Trash2, XCircle } from 'lucide-react'
 import { DEFAULT_CATALOG, PROVIDER_LABEL, needsKey } from '@shared/catalog'
-import { slugify } from '@shared/agentFile'
-import { EFFORTS, PROVIDERS, type AppSettings, type CliStatus, type McpServerConfig, type ModelEntry, type ProviderKind } from '@shared/types'
+import { slugify } from '@shared/ids'
+import { SUPPORTED_EFFORTS, clampEffort } from '@shared/effort'
+import { PROVIDERS, type AppSettings, type CliStatus, type McpServerConfig, type ModelEntry, type ProviderKind } from '@shared/types'
 import { api, useStore } from '../state/store'
 import { Modal } from './Modal'
 import { FallbackChain } from './FallbackChain'
@@ -11,7 +12,6 @@ const TABS = [
   ['general', 'General'],
   ['providers', 'Providers & keys'],
   ['models', 'Models'],
-  ['council', 'Council'],
   ['mcp', 'MCP servers']
 ] as const
 type Tab = (typeof TABS)[number][0]
@@ -60,28 +60,96 @@ function ProviderHealthList() {
   )
 }
 
+/** What a new chat starts with. */
+function NewChats({ settings }: { settings: AppSettings }) {
+  const d = settings.chatDefaults
+  const set = (patch: Partial<AppSettings['chatDefaults']>) => void api().updateSettings({ chatDefaults: { ...d, ...patch } })
+  const models = settings.catalog[d.provider] ?? DEFAULT_CATALOG[d.provider]
+  return (
+    <section data-testid="chat-defaults">
+      <div className="label">New chats</div>
+      <div className="grid grid-cols-4 gap-2 rounded-xl border border-white/10 bg-black/20 p-3">
+        <div>
+          <label className="label">Provider</label>
+          <select
+            className="field !py-1 text-xs"
+            value={d.provider}
+            onChange={(e) => {
+              const provider = e.target.value as ProviderKind
+              const list = settings.catalog[provider] ?? DEFAULT_CATALOG[provider]
+              set({ provider, model: list[0]?.id ?? '', effort: clampEffort(provider, d.effort) })
+            }}
+            data-testid="defaults-provider"
+          >
+            {PROVIDERS.map((p) => (
+              <option key={p} value={p}>
+                {PROVIDER_LABEL[p]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label">Model</label>
+          <input className="field !py-1 font-mono text-xs" list="default-models" defaultValue={d.model} key={d.provider} onBlur={(e) => e.target.value.trim() && set({ model: e.target.value.trim() })} data-testid="defaults-model" />
+          <datalist id="default-models">
+            {models.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+          </datalist>
+        </div>
+        <div>
+          <label className="label">Effort</label>
+          <select className="field !py-1 text-xs" value={d.effort} onChange={(e) => set({ effort: e.target.value as typeof d.effort })}>
+            {SUPPORTED_EFFORTS[d.provider].map((x) => (
+              <option key={x}>{x}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label">Access</label>
+          <select
+            className="field !py-1 text-xs"
+            value={d.permissions !== 'write' ? 'read' : d.autoApprove ? 'full' : 'supervised'}
+            onChange={(e) => set(e.target.value === 'read' ? { permissions: 'read', autoApprove: false } : { permissions: 'write', autoApprove: e.target.value === 'full' })}
+            data-testid="defaults-access"
+          >
+            <option value="read">Read only</option>
+            <option value="supervised">Supervised</option>
+            <option value="full">Full access</option>
+          </select>
+        </div>
+        <div className="col-span-4 text-[11px] text-indigo-300/60">Each chat can change all of this for itself, in the composer or its settings.</div>
+      </div>
+    </section>
+  )
+}
+
 function General({ settings }: { settings: AppSettings }) {
   const eco = settings.economy
   const setEco = (patch: Partial<AppSettings['economy']>) => void api().updateSettings({ economy: { ...eco, ...patch } })
   const tierProviders = PROVIDERS.filter((p) => p !== 'mock')
   return (
     <div className="space-y-6">
+      <NewChats settings={settings} />
       <section className="space-y-2">
         <div className="label">Economy mode</div>
         <Toggle
           on={eco.enabled}
           onChange={(v) => setEco({ enabled: v })}
           title="Save tokens"
-          help="The master switch. Also on the top bar. What it does is chosen below."
+          help="The master switch, also in the header (the leaf). What it does is chosen below."
           testId="economy-enabled"
         />
         <div className={`space-y-2 pl-6 ${eco.enabled ? '' : 'pointer-events-none opacity-40'}`}>
-          <Toggle on={eco.concise} onChange={(v) => setEco({ concise: v })} title="Short answers" help="Every agent is told to answer and report briefly and to read only what it needs." />
+          <Toggle on={eco.concise} onChange={(v) => setEco({ concise: v })} title="Short answers" help="Every chat is told to answer briefly and to read only what it needs." />
           <Toggle
-            on={eco.downshift}
-            onChange={(v) => setEco({ downshift: v })}
-            title="Cheaper models for easy tasks"
-            help="Mastermind rates each handoff light, standard or heavy. Light and standard tasks run on the cheaper model below for that task only; the agent shows it in amber with a ⚡ and goes back to its own model afterwards. Heavy tasks are never downshifted."
+            on={eco.autoRate}
+            onChange={(v) => setEco({ autoRate: v })}
+            title="Rate each message and run easy ones cheaper"
+            help="Before a message runs, one tiny call on the light model below rates it light, standard or heavy. Light and standard messages run on the cheaper model for that message only (shown in amber with a ⚡); heavy ones never do. The rating itself costs a little, so this pays off on chats full of small requests."
+            testId="economy-autorate"
           />
           <div className="rounded-xl border border-white/10 bg-black/20 p-3">
             <div className="mb-2 grid grid-cols-[180px_1fr_1fr] gap-2 text-[10px] font-bold uppercase tracking-wider text-indigo-300">
@@ -97,7 +165,7 @@ function General({ settings }: { settings: AppSettings }) {
                 <div key={p} className="mb-1.5 grid grid-cols-[180px_1fr_1fr] items-center gap-2">
                   <span className="text-xs">{PROVIDER_LABEL[p].replace(' API key', '')}</span>
                   {(['light', 'standard'] as const).map((k) => (
-                    <input key={k} className="field !py-1 font-mono text-[11px]" list={`tier-${p}`} placeholder="keep agent's model" defaultValue={t[k] ?? ''} onBlur={(e) => put(k, e.target.value.trim())} />
+                    <input key={k} className="field !py-1 font-mono text-[11px]" list={`tier-${p}`} placeholder="keep chat's model" defaultValue={t[k] ?? ''} onBlur={(e) => put(k, e.target.value.trim())} />
                   ))}
                   <datalist id={`tier-${p}`}>
                     {list.map((m) => (
@@ -109,7 +177,7 @@ function General({ settings }: { settings: AppSettings }) {
                 </div>
               )
             })}
-            <div className="mt-1 text-[11px] text-indigo-300/60">Blank keeps the agent's model and only lowers its effort.</div>
+            <div className="mt-1 text-[11px] text-indigo-300/60">Blank keeps the chat's model and only lowers its effort. The ⚡ Quick button in the composer runs one message on the light model, whether economy mode is on or not.</div>
           </div>
         </div>
       </section>
@@ -117,76 +185,19 @@ function General({ settings }: { settings: AppSettings }) {
         <div className="label">Fallback (default chain)</div>
         <div className="space-y-3 rounded-xl border border-white/10 bg-black/20 p-3">
           <div className="text-xs text-indigo-200/70">
-            When an agent's provider runs out of usage or its login stops working, it carries on - mid-task, with a brief of what is already done - on the next provider in its own chain, or in this one if it has none. Ordinary errors never switch. Paid API keys ask first unless the agent allows them.
+            When a chat's provider runs out of usage or its login stops working, it carries on - mid-task, with a brief of what is already done - on the next provider in its own chain, or in this one if it has none. Ordinary errors never switch. Paid API keys ask first unless the chat allows them.
           </div>
           <FallbackChain value={settings.defaultFallback ?? []} onChange={(defaultFallback) => void api().updateSettings({ defaultFallback })} testId="default-fallback" />
           <ProviderHealthList />
         </div>
       </section>
-      <section>
-        <div className="label">Handoffs</div>
-        <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/20 p-3 text-sm">
-          <span className="flex-1">
-            Wait this many minutes for a delegated task before handing the caller its turn back
-            <span className="block text-xs text-indigo-200/70">After that the report arrives as a new message, so long jobs (builds, implementations) never time out.</span>
-          </span>
-          <input
-            className="field !w-20 text-center"
-            type="number"
-            min={1}
-            max={50}
-            defaultValue={settings.handoffWaitMinutes}
-            onBlur={(e) => void api().updateSettings({ handoffWaitMinutes: Math.max(1, Math.min(50, Number(e.target.value) || 10)) })}
-          />
-        </div>
-      </section>
-      <ContextSection settings={settings} />
       <NotificationsSection settings={settings} />
       <WatchdogSection settings={settings} />
     </div>
   )
 }
 
-/** Desktop notifications when an agent needs you. */
-/** When the Context Handler hears about changes: batched once the team is quiet, on Sync, or after every task. */
-function ContextSection({ settings }: { settings: AppSettings }) {
-  const modes: [AppSettings['contextUpdates'], string, string][] = [
-    ['idle', 'When the team is quiet', 'Changes wait and go in one update, in a fresh session, once no agent has worked for a few minutes.'],
-    ['manual', 'Only when I press Sync', 'Nothing runs on its own; press Sync context in the code window.'],
-    ['each', 'After every task', 'The most current map, and the most expensive: one Context Handler session per task.']
-  ]
-  return (
-    <section data-testid="context-settings">
-      <div className="label">Context updates</div>
-      <div className="space-y-1.5">
-        {modes.map(([id, title, help]) => (
-          <label key={id} className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-white/5">
-            <input type="radio" className="mt-1 accent-violet-500" checked={(settings.contextUpdates ?? 'idle') === id} onChange={() => void api().updateSettings({ contextUpdates: id })} data-testid={`context-mode-${id}`} />
-            <span>
-              <span className="block text-sm">{title}</span>
-              <span className="block text-xs text-indigo-200/70">{help}</span>
-            </span>
-          </label>
-        ))}
-        {(settings.contextUpdates ?? 'idle') === 'idle' && (
-          <div className="flex items-center gap-3 pl-7 text-sm">
-            <span className="flex-1 text-xs text-indigo-200/70">Minutes of quiet before the update</span>
-            <input
-              className="field !w-20 text-center"
-              type="number"
-              min={1}
-              max={60}
-              defaultValue={settings.contextIdleMinutes ?? 3}
-              onBlur={(e) => void api().updateSettings({ contextIdleMinutes: Math.max(1, Math.min(60, Number(e.target.value) || 3)) })}
-              data-testid="context-idle"
-            />
-          </div>
-        )}
-      </div>
-    </section>
-  )
-}
-
+/** Desktop notifications when a chat needs you. */
 function NotificationsSection({ settings }: { settings: AppSettings }) {
   const n = settings.notifications
   const set = (patch: Partial<AppSettings['notifications']>) => void api().updateSettings({ notifications: { ...n, ...patch } })
@@ -198,14 +209,14 @@ function NotificationsSection({ settings }: { settings: AppSettings }) {
         <Toggle
           on={n.enabled}
           onChange={(enabled) => set({ enabled })}
-          title="Notify me when an agent needs me"
+          title="Notify me when a chat needs me"
           help="A desktop notification (and a flashing taskbar button) for a question, a plan to approve, a permission, a paid fallback or a loop-guard pause. Click it to jump straight there."
           testId="notify-enabled"
         />
         {n.enabled && (
           <>
-            <Toggle on={n.whenFocused} onChange={(whenFocused) => set({ whenFocused })} title="Even while Multimine is in front" help="Off: only when you are in another window, since the balloon over the agent already shows it." testId="notify-focused" />
-            <Toggle on={n.onFinish} onChange={(onFinish) => set({ onFinish })} title="Also when Mastermind finishes" help="So you can leave it working and come back when it is done." testId="notify-finish" />
+            <Toggle on={n.whenFocused} onChange={(whenFocused) => set({ whenFocused })} title="Even while Multimine is in front" help="Off: only when you are in another window, since the chat already shows it." testId="notify-focused" />
+            <Toggle on={n.onFinish} onChange={(onFinish) => set({ onFinish })} title="Also when a chat finishes" help="So you can leave it working and come back when it is done." testId="notify-finish" />
             <div className="flex items-center gap-3">
               <button
                 className="btn"
@@ -227,11 +238,11 @@ function NotificationsSection({ settings }: { settings: AppSettings }) {
   )
 }
 
-/** The loop guard: when an agent is paused and you are asked what to do. */
+/** The loop guard: when a chat is paused and you are asked what to do. */
 function WatchdogSection({ settings }: { settings: AppSettings }) {
   const w = settings.watchdog
   const set = (patch: Partial<AppSettings['watchdog']>) => void api().updateSettings({ watchdog: { ...w, ...patch } })
-  const num = (key: 'launchRepeats' | 'exactRepeats' | 'cycleRepeats' | 'budgetMinutes' | 'planBudgetMinutes' | 'usageBudget' | 'quietMinutes', label: string, help: string, min: number, max: number) => (
+  const num = (key: 'launchRepeats' | 'exactRepeats' | 'cycleRepeats' | 'budgetMinutes' | 'usageBudget' | 'quietMinutes', label: string, help: string, min: number, max: number) => (
     <div className="flex items-center gap-3 text-sm">
       <span className="flex-1">
         {label}
@@ -255,7 +266,7 @@ function WatchdogSection({ settings }: { settings: AppSettings }) {
         <Toggle
           on={w.enabled}
           onChange={(enabled) => set({ enabled })}
-          title="Pause an agent that is going round in circles"
+          title="Pause a chat that is going round in circles"
           help="When it relaunches the same app with nothing changed, repeats a step, cycles through the same few steps, or runs past its time or usage budget, it waits for you: tell it what to do, let it continue, or stop it."
           testId="watchdog-enabled"
         />
@@ -264,10 +275,9 @@ function WatchdogSection({ settings }: { settings: AppSettings }) {
             {num('launchRepeats', 'Launches of the same app with no edit in between', 'Running the game or a dev server is costly; three with nothing changed is a loop.', 2, 20)}
             {num('exactRepeats', 'Identical steps in a row', 'The same command or call, with no file changed in between.', 2, 50)}
             {num('cycleRepeats', 'Repeats of a short cycle of steps', 'The same two to eight steps over and over.', 2, 20)}
-            {num('budgetMinutes', 'Minutes a task may run', 'Then it asks whether to keep going (each Continue adds 15 minutes).', 5, 480)}
-            {num('planBudgetMinutes', 'Minutes for a task on an approved plan', 'Gated agents (like the Implementer) work through whole plans.', 5, 480)}
-            {num('usageBudget', 'Usage a task may spend (millions of tokens)', 'Weighed as they are priced: cached context a tenth, output five times. 3 is a long, real task; past it the agent asks before its next step. 0 turns it off.', 0, 100)}
-            {num('quietMinutes', 'Minutes of silence before an agent is marked quiet', 'Only a warning on its orb and in its chat; nothing is stopped.', 1, 120)}
+            {num('budgetMinutes', 'Minutes a turn may run', 'Then it asks whether to keep going (each Continue adds 15 minutes).', 5, 480)}
+            {num('usageBudget', 'Usage a turn may spend (millions of tokens)', 'Weighed as they are priced: cached context a tenth, output five times. 3 is a long, real task; past it the chat asks before its next step. 0 turns it off.', 0, 100)}
+            {num('quietMinutes', 'Minutes of silence before a chat is marked quiet', 'Only a warning in the sidebar and the chat; nothing is stopped.', 1, 120)}
             <div>
               <div className="text-sm">Commands that launch an app</div>
               <div className="mb-1 text-xs text-indigo-200/70">Regular expressions, one per line.</div>
@@ -378,7 +388,7 @@ function Models({ settings }: { settings: AppSettings }) {
       </div>
       <div>
         <div className="mb-3 flex items-center gap-2">
-          <div className="flex-1 text-xs text-indigo-200/70">The quick picks in the agent editor. Any id can still be typed there.</div>
+          <div className="flex-1 text-xs text-indigo-200/70">The quick picks in the composer and chat settings. Any id can still be typed in chat settings.</div>
           {!['claude-cli', 'codex-cli', 'mock'].includes(p) && (
             <button className="btn" onClick={refresh} disabled={busy}>
               <RefreshCw size={13} className={busy ? 'animate-spin' : ''} /> Refresh from vendor
@@ -415,80 +425,6 @@ function Models({ settings }: { settings: AppSettings }) {
   )
 }
 
-function Council({ settings }: { settings: AppSettings }) {
-  const [c, setC] = useState(settings.council)
-  const models = settings.catalog[c.provider] ?? DEFAULT_CATALOG[c.provider]
-  return (
-    <div className="space-y-4">
-      <p className="text-xs text-indigo-200/70">
-        When Mastermind runs a council, this many critics review a plan on a cheap model. Round one is blind; in round two each sees the others and must rebut or escalate. An approval only counts with three or more objections and none of them high, so agreeing is never free.
-      </p>
-      <div className="grid grid-cols-4 gap-3">
-        <div>
-          <label className="label">Critics</label>
-          <input className="field" type="number" min={1} max={7} value={c.size} onChange={(e) => setC({ ...c, size: Math.max(1, Math.min(7, Number(e.target.value))) })} />
-        </div>
-        <div>
-          <label className="label">Rounds</label>
-          <select className="field" value={c.rounds} onChange={(e) => setC({ ...c, rounds: Number(e.target.value) as 1 | 2 })}>
-            <option value={1}>1 (blind only)</option>
-            <option value={2}>2 (cross-examine)</option>
-          </select>
-        </div>
-        <div>
-          <label className="label">Provider</label>
-          <select className="field" value={c.provider} onChange={(e) => {
-            const provider = e.target.value as ProviderKind
-            setC({ ...c, provider, model: (settings.catalog[provider] ?? DEFAULT_CATALOG[provider])[0]?.id ?? '' })
-          }}>
-            {PROVIDERS.map((p) => (
-              <option key={p} value={p}>
-                {PROVIDER_LABEL[p]}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="label">Effort</label>
-          <select className="field" value={c.effort} onChange={(e) => setC({ ...c, effort: e.target.value as typeof c.effort })}>
-            {EFFORTS.map((x) => (
-              <option key={x}>{x}</option>
-            ))}
-          </select>
-        </div>
-        <div className="col-span-4">
-          <label className="label">Model</label>
-          <input className="field font-mono" list="council-models" value={c.model} onChange={(e) => setC({ ...c, model: e.target.value })} />
-          <datalist id="council-models">
-            {models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-          </datalist>
-        </div>
-      </div>
-      <div>
-        <label className="label">Perspectives (one critic each, cycled)</label>
-        {c.lenses.map((l, i) => (
-          <div key={i} className="mb-1.5 flex gap-2">
-            <input className="field text-xs" value={l} onChange={(e) => setC({ ...c, lenses: c.lenses.map((x, j) => (j === i ? e.target.value : x)) })} />
-            <button className="btn btn-danger !px-2" onClick={() => setC({ ...c, lenses: c.lenses.filter((_, j) => j !== i) })} disabled={c.lenses.length <= 1}>
-              <Trash2 size={13} />
-            </button>
-          </div>
-        ))}
-        <button className="btn mt-1" onClick={() => setC({ ...c, lenses: [...c.lenses, 'New perspective: what it looks for'] })}>
-          <Plus size={13} /> Add perspective
-        </button>
-      </div>
-      <button className="btn btn-primary" onClick={() => void api().updateSettings({ council: c }).then(() => useStore.getState().toast('info', 'Council saved'))}>
-        <Save size={14} /> Save council
-      </button>
-    </div>
-  )
-}
-
 const BLANK: McpServerConfig = { id: '', name: '', transport: 'http', url: '', headers: {}, command: '', args: [], env: {} }
 
 /**
@@ -519,8 +455,8 @@ function kv(text: string): Record<string, string> {
 }
 const unkv = (r?: Record<string, string>) => Object.entries(r ?? {}).map(([k, v]) => `${k}=${v}`).join('\n')
 
-/** Which agents may use a server, toggled straight from its card. */
-function AgentChips({ server }: { server: string }) {
+/** Which chats may use a server, toggled straight from its card. */
+function ChatChips({ server }: { server: string }) {
   const agents = useStore((s) => s.project?.agents)
   if (!agents) return null
   return (
@@ -532,7 +468,7 @@ function AgentChips({ server }: { server: string }) {
             key={a.id}
             className={`rounded-full border px-2 py-0.5 text-[10px] ${on ? 'border-cyan-400 bg-cyan-500/20 text-cyan-50' : 'border-white/10 text-indigo-300/70 hover:border-white/25'}`}
             title={on ? `${a.name} can use this server` : `Let ${a.name} use this server`}
-            onClick={() => void api().saveAgent({ ...a, mcp: on ? a.mcp.filter((x) => x !== server) : [...a.mcp, server] }, false)}
+            onClick={() => void api().saveChat({ ...a, mcp: on ? a.mcp.filter((x) => x !== server) : [...a.mcp, server] })}
           >
             {a.name}
           </button>
@@ -627,7 +563,7 @@ function Mcp({ settings }: { settings: AppSettings }) {
   return (
     <div className="space-y-4">
       <p className="text-xs text-indigo-200/70">
-        Connect any MCP server - image, video and 3D generators like Higgsfield, Meshy or WaveSpeed, or anything else - then tick it on an agent in the agent editor. Claude and Codex agents get the server directly; API agents get its tools through Multimine. Generated media is saved and previewed in the gallery.
+        Connect any MCP server - image, video and 3D generators like Higgsfield, Meshy or WaveSpeed, or anything else - then switch it on for the chats that should use it (below, or in chat settings). Claude and Codex chats get the server directly; API models get its tools through Multimine. Generated media is saved and previewed in the gallery.
       </p>
       <div className="space-y-2">
         {settings.mcpServers.map((s) => (
@@ -637,7 +573,7 @@ function Mcp({ settings }: { settings: AppSettings }) {
               <div className="text-sm font-semibold">{s.name}</div>
               <div className="font-mono text-[11px] text-indigo-300/70">{s.transport === 'http' ? s.url : `${s.command} ${(s.args ?? []).join(' ')}`}</div>
             </div>
-            <AgentChips server={s.id} />
+            <ChatChips server={s.id} />
             <button className="btn !py-1" onClick={() => setEdit(s)}>
               Edit
             </button>
@@ -679,7 +615,6 @@ export function SettingsModal({ initialTab }: { initialTab?: string }) {
         {tab === 'general' && <General settings={settings} />}
         {tab === 'providers' && <Providers settings={settings} />}
         {tab === 'models' && <Models settings={settings} />}
-        {tab === 'council' && <Council settings={settings} />}
         {tab === 'mcp' && <Mcp settings={settings} />}
       </div>
     </Modal>

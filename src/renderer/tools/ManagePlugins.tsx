@@ -1,4 +1,4 @@
-import { FolderOpen, Trash2 } from 'lucide-react'
+import { FolderOpen, Plus, Trash2 } from 'lucide-react'
 import { PERMISSION_TEXT } from '@shared/pluginText'
 import { api, useStore } from '../state/store'
 import { Modal } from '../panels/Modal'
@@ -11,6 +11,21 @@ export function ManagePlugins() {
   return (
     <Modal title="Tools & plugins" onClose={close} width="w-[720px]">
       <div className="scroll-thin max-h-[72vh] space-y-3 overflow-y-auto p-5" data-testid="manage-plugins">
+        <div className="flex items-center gap-3 text-xs text-indigo-200/70">
+          <span className="flex-1">A plugin is a folder with a plugin.json: a page that runs walled off from the app, reaching it only through the permissions you grant. See docs/plugins.md.</span>
+          <button
+            className="btn btn-primary shrink-0"
+            onClick={() =>
+              void api()
+                .pluginPickAndInstall()
+                .then((m) => m && useStore.getState().set({ modal: null, consent: { pluginId: m.id, thenOpen: true } }))
+                .catch((e) => useStore.getState().toast('error', String(e.message ?? e)))
+            }
+            data-testid="tool-install"
+          >
+            <Plus size={14} /> Install a plugin
+          </button>
+        </div>
         {plugins.map((p) => (
           <div key={p.manifest.id} className="rounded-xl border border-white/10 bg-black/25 p-3">
             <div className="flex items-center gap-3">
@@ -57,7 +72,7 @@ export function ManagePlugins() {
                     </span>
                   )
                 })}
-                {p.manifest.mcp && <span className="rounded-full border border-cyan-400/40 px-2 py-0.5 text-[11px] text-cyan-100">adds agent tools (MCP)</span>}
+                {p.manifest.mcp && <span className="rounded-full border border-cyan-400/40 px-2 py-0.5 text-[11px] text-cyan-100">adds tools for chats (MCP)</span>}
               </div>
             )}
           </div>

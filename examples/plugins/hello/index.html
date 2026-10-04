@@ -8,32 +8,42 @@
       h1 { font-size: 18px; margin: 0 0 4px; }
       .muted { color: #a5b4fc; font-size: 12px; }
       li { margin: 4px 0; }
-      textarea { width: 100%; box-sizing: border-box; min-height: 80px; background: #0b0d22; color: #eef2ff; border: 1px solid #333a70; border-radius: 8px; padding: 8px; }
+      select, textarea { width: 100%; box-sizing: border-box; background: #0b0d22; color: #eef2ff; border: 1px solid #333a70; border-radius: 8px; padding: 8px; }
+      textarea { min-height: 80px; margin-top: 8px; }
       button { margin-top: 8px; background: linear-gradient(90deg, #7c3aed, #4f46e5); color: white; border: 0; border-radius: 8px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
       #out { margin-top: 10px; font-size: 12px; color: #86efac; }
     </style>
   </head>
   <body>
-    <h1>Hello, team</h1>
+    <h1>Hello</h1>
     <div class="muted" id="project"></div>
-    <ul id="team"></ul>
-    <textarea id="msg">Hello Mastermind, this is the Hello Team plugin.</textarea>
-    <button id="send">Send to Mastermind</button>
+    <ul id="chats"></ul>
+    <select id="to">
+      <option value="active">The chat on screen</option>
+      <option value="new">A new chat</option>
+    </select>
+    <textarea id="msg">Hello from the Hello plugin. What is this project about?</textarea>
+    <button id="send">Send</button>
     <div id="out"></div>
     <script>
       const out = document.getElementById('out')
+      const to = document.getElementById('to')
       multimine.info().then((i) => (document.getElementById('project').textContent = 'Project: ' + i.project))
-      multimine.team.list().then((team) => {
-        const ul = document.getElementById('team')
-        for (const a of team) {
+      multimine.chats.list().then((chats) => {
+        const ul = document.getElementById('chats')
+        for (const c of chats) {
           const li = document.createElement('li')
-          li.textContent = a.name + ' - ' + a.role + ' (' + a.model + ')'
+          li.textContent = c.name + ' (' + c.provider + ' ' + c.model + ')' + (c.active ? ' - on screen' : '') + (c.busy ? ' - working' : '')
           ul.appendChild(li)
+          const opt = document.createElement('option')
+          opt.value = c.id
+          opt.textContent = c.name
+          to.appendChild(opt)
         }
       }).catch((e) => (out.textContent = e.message))
       document.getElementById('send').onclick = () =>
-        multimine.send('mastermind', document.getElementById('msg').value)
-          .then(() => (out.textContent = 'Sent.'))
+        multimine.send(to.value, document.getElementById('msg').value)
+          .then((r) => (out.textContent = 'Sent to chat ' + r.chatId + '.'))
           .catch((e) => { out.style.color = '#fca5a5'; out.textContent = e.message })
     </script>
   </body>

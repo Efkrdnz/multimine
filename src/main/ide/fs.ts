@@ -1,7 +1,7 @@
 import { readdir, readFile, stat, writeFile, mkdir } from 'node:fs/promises'
 import { dirname, join, relative, sep } from 'node:path'
 import type { IdeEntry, IdeHit } from '@shared/types'
-import { SKIP, insideProject, walk } from '../orchestrator/workspace'
+import { SKIP, insideProject, walk } from '../chat/workspace'
 
 const MAX_OPEN = 3_000_000
 

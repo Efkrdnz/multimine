@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { addNode, connect, copyFragment, duplicate, newBoard, parseBoard, parseCodeMap, pasteFragment, removeNodes, setCases, updateNode, validate, valuesIn, type Board } from '@shared/logic/model'
 import { spec } from '@shared/logic/spec'
 import { boardDiff, changeCount, changeSpec, changedIds } from '@shared/logic/diff'
-import { buildTask, updateTask, viaMastermind } from '@shared/logic/brief'
+import { buildTask, updateTask } from '@shared/logic/brief'
 
 /** Adds boxes and links in one go; fails the test on a refused link. */
 function build(name: string, boxes: [kind: Parameters<typeof addNode>[1], title: string, text: string, y?: number][], links: [number, string, number][]): Board {
@@ -239,11 +239,6 @@ describe('changes since a build', () => {
 const moveAll = (b: Board): Board => ({ ...b, nodes: b.nodes.map((n) => ({ ...n, x: n.x + 40, y: n.y + 40 })) })
 
 describe('the messages a build sends', () => {
-  const team = [
-    { id: 'mastermind', name: 'Mastermind', role: 'mastermind' },
-    { id: 'implementer', name: 'Implementer', role: 'implementer' }
-  ]
-
   it('asks for the board exactly, the assumptions by id, and the code map', () => {
     const task = buildTask(sneakShot(), 'make it purple')
     expect(task).toContain('Build the mechanic on the Logic Board "Sneak Shot". A Minecraft mod')
@@ -254,11 +249,11 @@ describe('the messages a build sends', () => {
     expect(task).not.toMatch(/\n\n\n/)
   })
 
-  it('tells Mastermind the design is approved and who builds it', () => {
-    const msg = viaMastermind(buildTask(sneakShot()), sneakShot(), team)
-    expect(msg).toContain('Do not plan or redesign the mechanic, and do not run the Planner or the council.')
-    expect(msg).toContain('Delegate the task below to Implementer (`implementer`) as it is, with the approval_id at the end of this message')
-    expect(viaMastermind('t', sneakShot(), team.slice(0, 1))).toContain('There is no Implementer yet')
+  it('tells the chat the design is approved, so it builds instead of planning', () => {
+    const task = buildTask(sneakShot())
+    expect(task).toContain("The board is the user's approved design")
+    expect(task).toContain('Do not plan or redesign the mechanic')
+    expect(task).not.toMatch(/Mastermind|delegate|approval_id|Implementer/)
   })
 
   it('sends only the changes for an update', () => {

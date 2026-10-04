@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { AlertTriangle, Brain, CheckCircle2, ChevronRight, Hammer, ListChecks, Loader2, RotateCcw, Wrench, XCircle } from 'lucide-react'
 import type { ChatMessage, ToolCallView } from '@shared/types'
-import { EMPTY_LIST, api, useStore } from '../state/store'
+import { api, useStore } from '../state/store'
 import { MediaView } from './MediaView'
 import { useNow } from '../state/useNow'
 import { describeTool, duration, elapsed, workSummary } from '@shared/activity'
@@ -215,17 +215,17 @@ function FreshLine({ m }: { m: ChatMessage }) {
 
 /** One message. Memoised: a streaming reply re-renders itself, not the whole conversation above it. */
 export const MessageView = memo(function MessageView({ m, last = false }: { m: ChatMessage; last?: boolean }) {
-  const agents = useStore((s) => s.project?.agents ?? EMPTY_LIST)
   const media = useStore((s) => s.media)
   const [thinkOpen, setThinkOpen] = useState(false)
   if (m.fresh) return <FreshLine m={m} />
   if (m.role === 'system') return <div className="my-2 text-center text-[11px] italic text-indigo-300/70">{m.text}</div>
   if (m.role === 'user') {
-    const sender = m.from === 'user' ? null : agents.find((a) => a.id === m.from)
+    // a message a tool sent in (the UI Sketcher, a plugin) says where it came from
+    const sender = m.from.startsWith('tool:') ? m.from.slice(5) : m.from === 'user' ? null : m.from
     return (
       <div className={`my-3 flex ${sender ? 'justify-start' : 'justify-end'}`}>
         <div className={`max-w-[88%] rounded-2xl px-3.5 py-2 ${sender ? 'border border-dashed border-violet-300/30 bg-violet-950/40' : 'bg-gradient-to-br from-indigo-600/70 to-violet-700/70'}`}>
-          {sender && <div className="mb-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: sender.color }}>from {sender.name}</div>}
+          {sender && <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-violet-200">from {sender}</div>}
           {sender ? <Markdown text={m.text} /> : <div className="whitespace-pre-wrap text-sm">{m.text}</div>}
         </div>
       </div>

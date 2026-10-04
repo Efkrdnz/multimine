@@ -22,48 +22,37 @@ export type ProviderKind = (typeof PROVIDERS)[number]
 export const PERMISSIONS = ['chat', 'read', 'write'] as const
 export type Permission = (typeof PERMISSIONS)[number]
 
-export type Role =
-  | 'mastermind'
-  | 'planner'
-  | 'implementer'
-  | 'designer'
-  | 'brainstormer'
-  | 'context-handler'
-  | 'asset-creator'
-  | 'ui-creator'
-  | 'critic'
-  | 'custom'
-
+/**
+ * One chat: a conversation with one agent, and the settings its turns run on. A project has any
+ * number of them, each with its own provider and model; several can run at once.
+ */
 export interface AgentSpec {
-  /** File slug: `.multimine/agents/<id>.md`. Stable once created. */
+  /** Stable once created: the chat's folder under `.multimine/chats/`. */
   id: string
   name: string
-  role: Role
   provider: ProviderKind
   model: string
   effort: Effort
-  color: string
   permissions: Permission
-  /** External MCP server ids this agent may use. */
+  /** External MCP server ids this chat may use. */
   mcp: string[]
-  /** Work handed to a gated agent needs an approved plan first. */
-  gated: boolean
   /** Claude CLI only: start every turn in plan mode. */
   planMode: boolean
-  /** A live CLI session in the IDE's terminal: never saved, driven by the user, not delegated to. */
-  terminal?: boolean
-  /** Where this agent continues when its provider is out of usage, in order. Empty: the default chain. */
+  /** Where this chat continues when its provider is out of usage, in order. Empty: the default chain. */
   fallback: FallbackHop[]
   /** Switch onto a pay-per-use API key without asking first. */
   fallbackPaidOk: boolean
   /**
-   * Say yes to every permission prompt this agent raises. Pushing, publishing and destroying
-   * history still ask (as a balloon over the agent). Off: every prompt asks.
+   * Say yes to every permission prompt this chat raises. Pushing, publishing and destroying
+   * history still ask. Off: every edit and command asks.
    */
   autoApprove: boolean
-  /** The purpose prompt: the markdown body of the agent file. */
-  purpose: string
+  created: number
+  updated: number
 }
+
+/** What a new chat starts with (Settings -> General). */
+export type ChatDefaults = Pick<AgentSpec, 'provider' | 'model' | 'effort' | 'permissions' | 'autoApprove'>
 
 export interface FallbackHop {
   provider: ProviderKind
@@ -145,7 +134,7 @@ export interface ChatMessage {
   id: string
   agentId: string
   role: 'user' | 'assistant' | 'system'
-  /** 'user', or the id of the agent that sent this message in. */
+  /** 'user', the chat itself (a reply), 'multimine' (a note), or the tool that sent it in: `tool:<name>`. */
   from: string
   text: string
   thinking?: string
@@ -160,33 +149,6 @@ export interface ChatMessage {
   streaming?: boolean
   error?: string
   usage?: Usage
-}
-
-export type BusKind =
-  | 'message'
-  | 'delegate'
-  | 'report'
-  | 'question'
-  | 'answer'
-  | 'approval'
-  | 'critique'
-  | 'context'
-  | 'create'
-
-export interface BusEvent {
-  id: string
-  ts: number
-  kind: BusKind
-  from: string
-  to: string
-  summary: string
-}
-
-/** A conversation in progress: `to` is working on something `from` handed it, or `from` waits on `to`. */
-export interface Channel {
-  from: string
-  to: string
-  kind: BusKind
 }
 
 export interface QuestionOption {
@@ -214,11 +176,9 @@ export interface InboxItem {
   answers?: Record<string, string>
   approved?: boolean
   note?: string
-  /** Why Mastermind answered on the user's behalf. */
-  autoReason?: string
   /** A quick allow/deny for one action (a command, a push), shown as a balloon over the agent. */
   permission?: boolean
-  /** Offers a third answer, "always", remembered for the asking agent (e.g. paid fallbacks). */
+  /** Offers a third answer, "always", remembered for the asking chat (e.g. paid fallbacks). */
   alwaysLabel?: string
   always?: boolean
   /**
@@ -226,15 +186,6 @@ export interface InboxItem {
    * continue, deny with a note tells it what to do instead, deny without one stops the task.
    */
   watchdog?: boolean
-}
-
-export interface SessionMeta {
-  id: string
-  name: string
-  created: number
-  updated: number
-  /** agent id -> provider session id (Claude session_id, Codex thread id). */
-  resume: Record<string, string>
 }
 
 export interface McpServerConfig {
@@ -250,15 +201,6 @@ export interface McpServerConfig {
   headers?: Record<string, string>
 }
 
-export interface CouncilConfig {
-  size: number
-  provider: ProviderKind
-  model: string
-  effort: Effort
-  lenses: string[]
-  rounds: 1 | 2
-}
-
 export interface ModelEntry {
   id: string
   label: string
@@ -269,8 +211,8 @@ export interface EconomySettings {
   enabled: boolean
   /** Tell every agent to keep answers and reports short. */
   concise: boolean
-  /** Let Mastermind run light and standard tasks on a cheaper model, for that task only. */
-  downshift: boolean
+  /** Rate each message with one small call and run easy ones on the light tier (off: only on Quick). */
+  autoRate: boolean
   /** Per provider: the model a light and a standard task run on. */
   tiers: Partial<Record<ProviderKind, { light?: string; standard?: string }>>
 }
@@ -278,7 +220,7 @@ export interface EconomySettings {
 export const PLUGIN_PERMISSIONS = ['team:read', 'agents:message', 'project:read', 'project:write', 'media:read', 'media:write', 'network'] as const
 export type PluginPermission = (typeof PLUGIN_PERMISSIONS)[number]
 
-export const PLUGIN_API_VERSION = 1
+export const PLUGIN_API_VERSION = 2
 
 export interface PluginManifest {
   id: string
@@ -322,9 +264,8 @@ export interface WatchdogSettings {
   exactRepeats: number
   /** Times a short cycle of calls may repeat. */
   cycleRepeats: number
-  /** Minutes a turn may run before it asks; tasks on an approved plan get planBudgetMinutes. */
+  /** Minutes a turn may run before it asks. */
   budgetMinutes: number
-  planBudgetMinutes: number
   /** Millions of weighted tokens (cache reads a tenth, output five times) a turn may spend before it asks; 0: no limit. */
   usageBudget: number
   /** Minutes of silence before an agent is marked quiet. */
@@ -338,29 +279,21 @@ export interface NotificationSettings {
   enabled: boolean
   /** Also while the Multimine window is in front (off: only when you are elsewhere). */
   whenFocused: boolean
-  /** Also when Mastermind finishes a task. */
+  /** Also when a chat finishes its turn. */
   onFinish: boolean
 }
 
 export interface AppSettings {
-  automation: boolean
+  /** What a new chat starts with. */
+  chatDefaults: ChatDefaults
+  /** Set once the user picks the defaults themselves: start-up detection then leaves them alone. */
+  chatDefaultsChosen?: boolean
   notifications: NotificationSettings
   watchdog: WatchdogSettings
   plugins: Record<string, PluginSettings>
-  /** The order of tiles in the Tools grid (plugin ids). */
-  toolOrder: string[]
   /** The fallback chain for agents that have none of their own. */
   defaultFallback: FallbackHop[]
   economy: EconomySettings
-  /** How long a handoff blocks its caller before the report is delivered later instead. */
-  handoffWaitMinutes: number
-  /** Focus: a sidebar of agents and tools, one chat in the middle. Map: the space view. */
-  layout: 'focus' | 'map'
-  /** When the Context Handler is told about changes: once the team is quiet, only on Sync, or after every task. */
-  contextUpdates: 'idle' | 'manual' | 'each'
-  /** Minutes of quiet before a batched context update. */
-  contextIdleMinutes: number
-  council: CouncilConfig
   /** Provider -> base URL override (compatible, openrouter, ollama...). */
   baseUrls: Partial<Record<ProviderKind, string>>
   catalog: Partial<Record<ProviderKind, ModelEntry[]>>
@@ -370,18 +303,12 @@ export interface AppSettings {
   codexPath?: string
 }
 
-export interface CouncilCritic {
-  id: string
-  lens: string
-  status: 'thinking' | 'done' | 'error'
-}
-
 export interface ProjectInfo {
   dir: string
   name: string
   multimineMd: string
+  /** The project's chats, most recently used first. */
   agents: AgentSpec[]
-  layout: Record<string, { x: number; y: number }>
 }
 
 export interface GitFile {
@@ -444,8 +371,6 @@ export interface TerminalInfo {
   id: string
   kind: TerminalKind
   title: string
-  /** The agent this terminal speaks for on the team (CLI terminals only). */
-  agentId?: string
 }
 
 export interface CliStatus {
@@ -458,7 +383,6 @@ export interface CliStatus {
 /** Pushed from main to the renderer. */
 export type MainEvent =
   | { type: 'project'; project: ProjectInfo | null }
-  | { type: 'sessions'; sessions: SessionMeta[]; active: string | null }
   | { type: 'chat-reset'; chats: Record<string, ChatMessage[]> }
   | { type: 'chat-upsert'; message: ChatMessage }
   | {
@@ -472,33 +396,23 @@ export type MainEvent =
       since?: number
       /** Set when the agent has been silent, or one step has run, for a long time: why. */
       quiet?: string
+      /** This turn runs on a cheaper model than the chat's own (Quick, or economy's rating). */
       temp?: { model: string; effort: Effort; difficulty: string }
       fallback?: { provider: ProviderKind; model: string; reason: string }
     }
   | { type: 'provider-health'; health: Record<string, { state: 'near' | 'exhausted'; until: number; reason: string }> }
-  | { type: 'talk'; agentId: string }
-  | { type: 'bus'; event: BusEvent }
-  | { type: 'channels'; channels: Channel[] }
   | { type: 'terminal-data'; id: string; data: string }
   | { type: 'terminal-exit'; id: string; code: number }
-  | { type: 'terminal-note'; agentId: string; from: string; text: string }
-  | { type: 'manual-changes'; count: number; files: string[] }
   | { type: 'file-changed'; path: string; kind: 'added' | 'changed' | 'deleted' }
   | { type: 'plugins'; plugins: PluginInfo[]; broken: { dir: string; errors: string[] }[] }
-  | { type: 'bus-reset'; events: BusEvent[] }
   | { type: 'inbox'; items: InboxItem[] }
   /** A notification was clicked: bring up what it was about. */
   | { type: 'reveal'; itemId?: string; agentId?: string }
   | { type: 'media'; items: MediaItem[] }
-  | { type: 'council'; critics: CouncilCritic[] }
   | { type: 'settings'; settings: AppSettings }
   | { type: 'usage'; total: Usage; byAgent?: Record<string, Usage> }
   /** The Claude plan's usage windows; a warning when one has just crossed 90%. */
   | { type: 'plan-limits'; windows: PlanWindow[]; warning?: string }
-  /** Changes waiting for the Context Handler's next update. */
-  | { type: 'context-pending'; count: number }
   /** Open a project file in the IDE window, at a line. */
   | { type: 'ide-open'; path: string; line?: number }
   | { type: 'toast'; level: 'info' | 'error'; text: string }
-
-export const MASTERMIND_ID = 'mastermind'

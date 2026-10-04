@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import type { AgentSpec, MainEvent, MediaItem, PluginInfo, PluginPermission } from '@shared/types'
-import { insideProject } from '../orchestrator/workspace'
+import { PLUGIN_API_VERSION, type AgentSpec, type MainEvent, type MediaItem, type PluginInfo, type PluginPermission } from '@shared/types'
+import { insideProject } from '../chat/workspace'
 import { list as listDir } from '../ide/fs'
 import { MediaStore } from '../media/capture'
 import { readJson, writeJson } from '../store/fsx'
@@ -12,6 +12,8 @@ export const METHOD_PERMISSION: Record<string, PluginPermission | null> = {
   'storage.get': null,
   'storage.set': null,
   'ui.toast': null,
+  'chats.list': 'team:read',
+  /** api 1's name for chats.list. */
   'team.list': 'team:read',
   send: 'agents:message',
   task: 'agents:message',
@@ -27,11 +29,15 @@ export const METHOD_PERMISSION: Record<string, PluginPermission | null> = {
 export interface PluginContext {
   projectDir(): string | null
   projectName(): string | null
-  team(): AgentSpec[]
-  /** Hands a message from a tool to an agent: logged on the bus, shown in that agent's chat. */
-  send(pluginId: string, pluginName: string, to: string, text: string): Promise<void>
-  /** Hands a task the user started from a tool to an agent; for Mastermind it carries the user's approval. */
-  task(pluginId: string, pluginName: string, to: string, title: string, text: string): Promise<string | undefined>
+  chats(): AgentSpec[]
+  /** The chat on screen, if any. */
+  activeChat(): string | null
+  busy(chatId: string): boolean
+  /**
+   * Hands a message from a tool to a chat (an id, 'active' or 'new'), shown as coming from the
+   * tool. A new chat may start with some of the user's MCP servers on. Returns the chat it went to.
+   */
+  send(pluginId: string, pluginName: string, to: string, text: string, opts?: { mcp?: string[]; planMode?: boolean }): Promise<string>
   addMedia(item: MediaItem): Promise<void>
   media(): MediaItem[]
   emit(e: MainEvent): void
@@ -39,6 +45,27 @@ export interface PluginContext {
 }
 
 export class PluginRefused extends Error {}
+
+/** A send's options, as far as they can be trusted: for a chat it starts, MCP server ids and plan mode. */
+function sendOptions(raw: unknown): { mcp?: string[]; planMode?: boolean } {
+  const o = raw && typeof raw === 'object' ? (raw as { mcp?: unknown; planMode?: unknown }) : {}
+  return {
+    ...(Array.isArray(o.mcp) ? { mcp: o.mcp.filter((m): m is string => typeof m === 'string').slice(0, 20) } : {}),
+    ...(o.planMode === true ? { planMode: true } : {})
+  }
+}
+
+/**
+ * Where a plugin's message goes: a chat id, 'active' (the chat on screen) or 'new'. Nothing, or
+ * api 1's 'mastermind', means the active chat.
+ */
+function target(ctx: PluginContext, raw: unknown): string {
+  const to = String(raw ?? '').trim()
+  if (!to || to === 'mastermind' || to === 'active') return 'active'
+  if (to === 'new') return 'new'
+  if (!ctx.chats().some((x) => x.id === to)) throw new PluginRefused(`No chat "${to}"`)
+  return to
+}
 
 /**
  * Every call a plugin makes comes through here: the method must exist, the plugin must be enabled
@@ -58,7 +85,7 @@ export async function callPlugin(ctx: PluginContext, plugin: PluginInfo, method:
   }
   switch (method) {
     case 'info':
-      return { pluginId: id, apiVersion: 1, project: ctx.projectName() }
+      return { pluginId: id, apiVersion: PLUGIN_API_VERSION, project: ctx.projectName() }
     case 'storage.get': {
       const store = await readJson<Record<string, unknown>>(join(ctx.storageDir, `${id}.json`), {})
       return store[String(a(0))] ?? null
@@ -74,19 +101,22 @@ export async function callPlugin(ctx: PluginContext, plugin: PluginInfo, method:
     case 'ui.toast':
       ctx.emit({ type: 'toast', level: 'info', text: `${plugin.manifest.name}: ${String(a(0)).slice(0, 300)}` })
       return true
+    case 'chats.list': {
+      const active = ctx.activeChat()
+      return ctx.chats().map((x) => ({ id: x.id, name: x.name, provider: x.provider, model: x.model, mcp: [...x.mcp], busy: ctx.busy(x.id), active: x.id === active }))
+    }
     case 'team.list':
-      return ctx.team().map((x) => ({ id: x.id, name: x.name, role: x.role, provider: x.provider, model: x.model }))
+      // api 1 listed a team with roles; every chat now reads as a custom agent
+      return ctx.chats().map((x) => ({ id: x.id, name: x.name, role: 'custom', provider: x.provider, model: x.model }))
     case 'send': {
-      const to = String(a(0) || 'mastermind')
-      if (!ctx.team().some((x) => x.id === to)) throw new PluginRefused(`No agent "${to}"`)
-      await ctx.send(id, plugin.manifest.name, to, String(a(1) ?? '').slice(0, 100_000))
-      return true
+      const chatId = await ctx.send(id, plugin.manifest.name, target(ctx, a(0)), String(a(1) ?? '').slice(0, 100_000), sendOptions(a(2)))
+      return { chatId }
     }
     case 'task': {
-      const to = String(a(0) || 'mastermind')
-      if (!ctx.team().some((x) => x.id === to)) throw new PluginRefused(`No agent "${to}"`)
-      const approvalId = await ctx.task(id, plugin.manifest.name, to, String(a(1) ?? 'Task').slice(0, 120), String(a(2) ?? '').slice(0, 100_000))
-      return { approvalId: approvalId ?? null }
+      // a titled message: the title heads it (and names a new chat)
+      const title = String(a(1) ?? 'Task').slice(0, 120)
+      const chatId = await ctx.send(id, plugin.manifest.name, target(ctx, a(0)), `# ${title}\n\n${String(a(2) ?? '').slice(0, 100_000)}`, sendOptions(a(3)))
+      return { chatId, approvalId: null }
     }
     case 'ide.open': {
       const path = String(a(0) ?? '')

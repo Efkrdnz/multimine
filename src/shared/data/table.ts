@@ -528,18 +528,24 @@ export function stats(t: Table, col: string): { min: number; max: number; mean: 
   return { min: Math.min(...nums), max: Math.max(...nums), mean: sum / nums.length, n: nums.length }
 }
 
-/** The message an agent gets: the file, its columns, the rows in question and what to do. */
+/** The message a chat gets: the file, its columns, the rows in question and what to do. */
+const clipLine = (s: string, n: number) => {
+  const line = s.split('\n').find((l) => l.trim())?.trim() ?? 'Data request'
+  return line.length > n ? `${line.slice(0, n - 1)}…` : line
+}
+
 export function askBrief(t: Table, rows: readonly Row[], request: string): string {
   const cols = t.columns.map((c) => `${c.name}:${c.type}${c.values ? `(${c.values.join('|')})` : ''}`).join(', ')
   const sample = rows.slice(0, 40).map((r) => (r.key !== undefined ? { [KEY_COLUMN]: r.key, ...r.value } : r.value))
   let json = JSON.stringify(sample)
   if (json.length > 8000) json = `${json.slice(0, 8000)}... (truncated; read the file)`
   return [
-    `Data request from Game Data Tables about \`${t.path}\` (${t.rows.length} rows; columns ${cols}).`,
+    `# ${clipLine(request, 60)}`,
+    `About \`${t.path}\` (${t.rows.length} rows; columns ${cols}).`,
     rows.length ? `The rows in question (${rows.length}${rows.length > 40 ? ', first 40 shown' : ''}): ${json}` : 'It is about the whole table.',
     '',
     `Request: ${request.trim()}`,
     '',
-    `Edit \`${t.path}\` directly, keeping its format, key order and indentation, and only the values that need to change. Then report what you changed and why.`
+    `Edit \`${t.path}\` directly, keeping its format, key order and indentation, and only the values that need to change. Then say what you changed and why.`
   ].join('\n')
 }

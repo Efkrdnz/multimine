@@ -28,7 +28,8 @@ describe('manifest', () => {
     expect(bad({ id: 'Bad Id' })[0]).toContain('id')
     expect(bad({ permissions: ['keys:read'] })[0]).toContain('unknown permission')
     expect(bad({ entry: '../../evil.html' })[0]).toContain('inside the plugin folder')
-    expect(bad({ api: 2 })[0]).toContain('Update Multimine')
+    expect(bad({ api: 3 })[0]).toContain('Update Multimine')
+    expect(bad({ api: 1 })).toEqual([])
     expect(validateManifest(null).ok).toBe(false)
   })
 })
@@ -41,7 +42,7 @@ describe('plugin system', () => {
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'mm-plug-'))
     events = []
-    app = new MultimineApp({ userDataDir: join(dir, 'u'), cipher: { encrypt: (s) => s, decrypt: (s) => s }, emit: (e) => events.push(e), mockDelayMs: 0, forceMockMastermind: true })
+    app = new MultimineApp({ userDataDir: join(dir, 'u'), cipher: { encrypt: (s) => s, decrypt: (s) => s }, emit: (e) => events.push(e), mockDelayMs: 0, skipDetect: true })
     await app.start()
     await app.openProject(join(dir, 'p'))
   })
@@ -68,14 +69,14 @@ describe('plugin system', () => {
     await app.pluginSetEnabled('hello', true, ['team:read', 'agents:message', 'project:write' as any])
     const hello = (await app.pluginList()).plugins.find((p) => p.manifest.id === 'hello')!
     expect(hello.granted).toEqual(['team:read', 'agents:message']) // never more than it asked for
-    expect(((await app.pluginCall('hello', 'team.list', [])) as any[]).map((a) => a.id)).toContain('mastermind')
+    const first = app.project!.list()[0].id
+    expect(((await app.pluginCall('hello', 'chats.list', [])) as any[]).map((a) => a.id)).toEqual([first])
     await expect(app.pluginCall('hello', 'files.read', ['README.md'])).rejects.toThrow('project:read')
-    await app.pluginCall('hello', 'send', ['mastermind', 'hi from a plugin'])
-    expect(app.engine!.bus.some((b) => b.from === 'plugin:hello' && b.to === 'mastermind')).toBe(true)
-    for (let i = 0; i < 50 && !app.engine!.chats.mastermind?.some((m) => m.text.includes('Message from Hello Team')); i++) await new Promise((r) => setTimeout(r, 10))
-    expect(app.engine!.chats.mastermind.some((m) => m.text.includes('Message from Hello Team'))).toBe(true)
+    await app.setActiveChat(first)
+    expect(await app.pluginCall('hello', 'send', ['active', 'hi from a plugin'])).toEqual({ chatId: first })
+    expect(app.engine!.chats[first].some((m) => m.from === 'tool:Hello' && m.text.includes('## From Hello'))).toBe(true)
     await app.pluginRevoke('hello', 'agents:message')
-    await expect(app.pluginCall('hello', 'send', ['mastermind', 'again'])).rejects.toThrow('agents:message')
+    await expect(app.pluginCall('hello', 'send', ['active', 'again'])).rejects.toThrow('agents:message')
   })
 
   it('keeps file access inside the project and gives each plugin its own storage', async () => {

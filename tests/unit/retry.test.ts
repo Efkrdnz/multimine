@@ -12,17 +12,18 @@ it('retry runs the last incoming message again after a failed turn', async () =>
     cipher: { encrypt: (s) => s, decrypt: (s) => s },
     emit: () => undefined,
     mockDelayMs: 0,
-    forceMockMastermind: true,
+    skipDetect: true,
     // first turn fails like an expired login, the second succeeds
     mockScript: () => (++calls === 1 ? [{ tool: { name: 'nope', args: {} } }] : [{ text: 'all good' }])
   })
   await app.start()
   await app.openProject(join(dir, 'p'))
   const engine = app.engine!
-  await engine.send('mastermind', 'build the context set')
-  const result = await engine.retry('mastermind')!
+  const id = app.project!.list()[0].id
+  await engine.send(id, 'build the context set')
+  const result = await engine.retry(id)!
   expect(result.text).toBe('all good')
-  const msgs = engine.chats.mastermind
+  const msgs = engine.chats[id]
   expect(msgs.filter((m) => m.role === 'user').map((m) => m.text)).toEqual(['build the context set', 'build the context set'])
   expect(msgs.at(-1)!.text).toBe('all good')
   await app.shutdown()

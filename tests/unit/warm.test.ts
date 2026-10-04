@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { roleTemplate } from '@shared/templates'
+import { MOCK_DEFAULTS, newChat } from '@shared/chat'
 import type { AgentSpec } from '@shared/types'
 import { Channel, ClaudeCliProvider } from '../../src/main/providers/claudeCli'
 import type { AgentEvent, TurnRequest } from '../../src/main/providers/types'
@@ -44,7 +44,7 @@ function fakeQuery() {
   return { q, made }
 }
 
-const agent = (patch: Partial<AgentSpec> = {}): AgentSpec => ({ ...roleTemplate('implementer', 'impl'), provider: 'claude-cli', model: 'claude-opus-5-5', ...patch })
+const agent = (patch: Partial<AgentSpec> = {}): AgentSpec => ({ ...newChat('impl', MOCK_DEFAULTS, { created: 1, updated: 1 }), provider: 'claude-cli', model: 'claude-opus-5-5', autoApprove: true, ...patch })
 
 function request(prompt: string, patch: Partial<TurnRequest> = {}): TurnRequest {
   return {

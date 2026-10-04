@@ -5,8 +5,8 @@ import {
   addAsset,
   approve,
   ASSET_KINDS,
-  assetCreator,
   BOARD_PATH,
+  GENERATORS,
   boardJson,
   emptyBoard,
   IMAGE_KINDS,
@@ -30,12 +30,11 @@ import {
 import { detectTarget, TARGETS, type TargetId } from '@shared/sketch/targets'
 import { useStore } from '../../state/store'
 import { errText, usePluginApi, type PluginCall } from '../pluginApi'
-
-type Member = { id: string; name: string; role: string }
+import { ChatTarget, chatLabel, useChats, type Sent } from '../ChatTarget'
 
 const COLUMNS: { title: string; statuses: AssetStatus[]; hint: string }[] = [
   { title: 'Wanted', statuses: ['wanted'], hint: 'What the project needs' },
-  { title: 'In progress', statuses: ['requested', 'rejected'], hint: 'With the Asset Creator' },
+  { title: 'In progress', statuses: ['requested', 'rejected'], hint: 'With a chat' },
   { title: 'Review', statuses: ['review'], hint: 'Pick one, or send it back' },
   { title: 'Done', statuses: ['approved'], hint: 'In the project' }
 ]
@@ -43,12 +42,25 @@ const COLUMNS: { title: string; statuses: AssetStatus[]; hint: string }[] = [
 const POLL_MS = 3000
 
 /**
- * The Asset Board: what art and sound the project needs, sent to the Asset Creator, reviewed when it
+ * The Asset Board: what art and sound the project needs, sent to a chat to make, reviewed when it
  * comes back, and copied into the project only when approved. Everything goes through the plugin API.
  */
 export function AssetBoard({ plugin }: { plugin: PluginInfo }) {
   const call = usePluginApi(plugin.manifest.id)
   const toast = useStore((s) => s.toast)
+  const chats = useChats(call)
+  // requests go to one chat: a new one the first time, then the same one, so it keeps the style in mind
+  const [to, setToState] = useState('new')
+  const setTo = useCallback(
+    (t: string) => {
+      setToState(t)
+      void call('storage.set', 'sendTo', t).catch(() => undefined)
+    },
+    [call]
+  )
+  useEffect(() => {
+    void call<string | null>('storage.get', 'sendTo').then((t) => t && setToState(t)).catch(() => undefined)
+  }, [call])
   const [board, setBoard] = useState<Board | null>(null)
   const [engine, setEngine] = useState<TargetId | null>(null)
   const [modId, setModId] = useState<string | undefined>()
@@ -96,7 +108,7 @@ export function AssetBoard({ plugin }: { plugin: PluginInfo }) {
     [call, toast]
   )
 
-  // the Asset Creator's results arrive in the gallery titled asset:<id>
+  // a chat's results arrive in the gallery titled asset:<id>
   useEffect(() => {
     if (!board) return
     const tick = async () => {
@@ -123,6 +135,9 @@ export function AssetBoard({ plugin }: { plugin: PluginInfo }) {
   if (!board) return <div className="p-6 text-sm text-indigo-300/70">Opening the asset board...</div>
   const open = openId ? board.assets.find((a) => a.id === openId) : undefined
   const engineName = engine ? TARGETS[engine].engine : null
+  const target = chats.find((c) => c.id === to)
+  // a chat picked for the work that has no generator switched on cannot make anything
+  const noGenerator = !!target && !target.mcp.some((m) => GENERATORS.includes(m))
 
   return (
     <div className="flex h-full min-h-0" data-testid="asset-board">
@@ -132,6 +147,9 @@ export function AssetBoard({ plugin }: { plugin: PluginInfo }) {
             {board.assets.length} assets{engineName ? ` · ${engineName} project` : ''} · <span className="font-mono text-[11px]">{BOARD_PATH}</span>
           </div>
           <div className="flex-1" />
+          {noGenerator && <span className="text-[11px] text-amber-300" title="Switch Meshy, WaveSpeed or Higgsfield on for it in its chat settings, or in Settings -> MCP servers">That chat has no image or 3D generator on</span>}
+          <span className="text-[11px] text-indigo-300/70">Requests go to</span>
+          <ChatTarget chats={chats} value={to} onChange={setTo} testId="ab-send-to" />
           <button className={`btn !py-1 ${styleOpen ? '!border-violet-400/60' : ''}`} onClick={() => setStyleOpen(!styleOpen)} data-testid="ab-style">
             <Palette size={13} /> Style guide
           </button>
@@ -178,16 +196,16 @@ export function AssetBoard({ plugin }: { plugin: PluginInfo }) {
           onClose={() => setOpenId(null)}
           request={async (a, revision) => {
             try {
-              const team = await call<Member[]>('team.list')
-              const creator = assetCreator(team)
               const brief = revision !== undefined ? revisionBrief(a, revision) : requestBrief(a, boardRef.current!, engineName)
-              const text = creator ? brief : `There is no Asset Creator on the team yet: create one with \`create_agent\` (role \`asset-creator\`, MCP servers meshy and wavespeed), then send it this request.\n\n${brief}`
-              await call('send', creator?.id ?? 'mastermind', text)
+              const dest = to === 'new' || chats.some((c) => c.id === to) ? to : 'new'
+              // a new chat starts with the generators the user has set up switched on
+              const sent = await call<Sent>('send', dest, brief, { mcp: GENERATORS })
+              if (dest !== sent.chatId) setTo(sent.chatId)
               let next = boardRef.current!
               if (revision !== undefined) next = setStatus(next, a.id, 'rejected', revision)
               else next = setStatus(next, a.id, 'requested')
               commit(next)
-              toast('info', `${revision !== undefined ? 'Sent back' : 'Requested'} "${a.name}" ${creator ? `from ${creator.name}` : 'through Mastermind'}`)
+              toast('info', `${revision !== undefined ? 'Sent back' : 'Requested'} "${a.name}" - ${chatLabel(chats, dest, sent)} is on it`)
             } catch (e) {
               toast('error', `Could not send the request: ${errText(e)}`)
             }
@@ -277,7 +295,7 @@ function AssetCard({ asset: a, call, active, onClick }: { asset: Asset; call: Pl
         </div>
       </div>
       {a.status === 'rejected' && <span className="rounded bg-amber-500/20 px-1 text-[9.5px] font-bold uppercase text-amber-200">revision</span>}
-      {a.status === 'requested' && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-400" title="waiting for the Asset Creator" />}
+      {a.status === 'requested' && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-400" title="waiting for the chat making it" />}
       {a.status === 'review' && <span className="rounded bg-violet-500/30 px-1 text-[10px] font-bold text-violet-100">{a.candidates.length}</span>}
     </button>
   )
@@ -426,7 +444,7 @@ function Detail({
 
       {a.status !== 'review' && (
         <button className="btn btn-primary justify-center !py-1.5" onClick={() => void request(a)} data-testid="ab-request">
-          <Send size={13} /> {a.status === 'wanted' ? 'Request from the Asset Creator' : 'Request again'}
+          <Send size={13} /> {a.status === 'wanted' ? 'Request it' : 'Request again'}
         </button>
       )}
       {a.status === 'requested' && <div className="text-[11px] leading-snug text-indigo-300/70">Waiting for results in the gallery titled <span className="font-mono">asset:{a.id}</span>. They appear here as they arrive.</div>}

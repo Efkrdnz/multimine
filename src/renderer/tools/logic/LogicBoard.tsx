@@ -27,13 +27,13 @@ import {
 } from '@shared/logic/model'
 import { spec } from '@shared/logic/spec'
 import { boardDiff, changeCount, changedIds, changeSpec } from '@shared/logic/diff'
-import { BOARD_ROOT, boardDir, buildTask, updateTask, viaMastermind } from '@shared/logic/brief'
+import { BOARD_ROOT, boardDir, buildTask, updateTask } from '@shared/logic/brief'
 import { TARGET_IDS, TARGETS, type PaletteItem, type TargetId } from '@shared/logic/targets'
 import { useStore } from '../../state/store'
 import { errText, usePluginApi, type PluginCall } from '../pluginApi'
+import { ChatTarget, chatLabel, useChats, type Sent } from '../ChatTarget'
 import { Canvas, KIND_COLOR, paletteFor, type View } from './Canvas'
 
-type Member = { id: string; name: string; role: string }
 type Entry = { name: string; path: string; dir: boolean }
 
 const MAP_POLL_MS = 5000
@@ -74,7 +74,7 @@ export function exampleBoard(): Board {
 
 /**
  * The Logic Board: a mechanic drawn as boxes in plain words, linked in the order things happen.
- * Build sends the outline to Mastermind (or any agent) as an approved design; the builder writes
+ * Build sends the outline to a chat (a new one, or any other) as an approved design; the builder writes
  * a code map back, and each box then links to the code that implements it. After an edit, Update
  * sends only what changed.
  */
@@ -85,8 +85,10 @@ export function LogicBoard({ plugin }: { plugin: PluginInfo }) {
   const [board, setBoard] = useState<Board | null>(null)
   const [built, setBuilt] = useState<Board | null>(null)
   const [codeMap, setCodeMap] = useState<CodeMap>({})
-  const [team, setTeam] = useState<Member[]>([])
-  const [to, setTo] = useState('mastermind')
+  const chats = useChats(call)
+  // a board's first build starts a new chat; updates go back to the chat that built it
+  const [to, setTo] = useState('new')
+  const [planFirst, setPlanFirst] = useState(false)
   const [note, setNote] = useState('')
   const [tab, setTab] = useState<'palette' | 'issues' | 'spec'>('palette')
   const [selection, setSelection] = useState<Set<string>>(new Set())
@@ -102,7 +104,6 @@ export function LogicBoard({ plugin }: { plugin: PluginInfo }) {
   boardRef.current = board
 
   useEffect(() => {
-    void call<Member[]>('team.list').then(setTeam).catch(() => undefined)
     void listBoards(call).then(setBoards)
   }, [call])
 
@@ -127,6 +128,8 @@ export function LogicBoard({ plugin }: { plugin: PluginInfo }) {
       setBoard(withFolder)
       const builtText = await call<string>('files.read', `${BOARD_ROOT}/${folder}/built.json`).catch(() => null)
       setBuilt(builtText ? parseBoard(builtText) : null)
+      // the chat that built it (if any) takes its updates
+      setTo((await call<string | null>('storage.get', `chat:${folder}`).catch(() => null)) || 'new')
       mapText.current = ''
       setCodeMap({})
       void loadMap(withFolder)
@@ -281,19 +284,20 @@ export function LogicBoard({ plugin }: { plugin: PluginInfo }) {
     setSending(true)
     try {
       const task = built && diff ? updateTask(board, changeSpec(diff, built, board), note) : buildTask(board, note)
-      const target = team.find((m) => m.id === to)
-      const message = to === 'mastermind' ? viaMastermind(task, board, team) : task
+      const dest = to === 'new' || chats.some((c) => c.id === to) ? to : 'new'
       const title = `${built ? 'Update' : 'Build'} "${board.name}"`
       const dir = boardDir(board)
       await call('files.write', `${dir}/board.json`, JSON.stringify(board, null, 2))
       await call('files.write', `${dir}/spec.md`, `${spec(board)}\n`)
-      await call('task', to, title, message)
+      const sent = await call<Sent>('task', dest, title, task, { planMode: planFirst })
+      await call('storage.set', `chat:${boardFolder(board)}`, sent.chatId)
+      setTo(sent.chatId)
       await call('files.write', `${dir}/built.json`, JSON.stringify(board, null, 2))
       setBuilt(board)
       setNote('')
       mapText.current = (await call<string>('files.read', `${dir}/map.json`).catch(() => '')) || ''
       setWaitingSince(Date.now())
-      toast('info', `${title} sent to ${target?.name ?? to}.`)
+      toast('info', `${title} sent to ${chatLabel(chats, dest, sent)}.`)
     } catch (e) {
       toast('error', `Could not send: ${errText(e)}`)
     } finally {
@@ -330,8 +334,6 @@ export function LogicBoard({ plugin }: { plugin: PluginInfo }) {
     else return
     e.preventDefault()
   }
-
-  const recipients = team.filter((m) => !/terminal/i.test(m.role))
 
   return (
     <div className="flex h-full min-h-0 flex-col outline-none" tabIndex={0} onKeyDown={onKey} data-testid="logic-board">
@@ -384,15 +386,14 @@ export function LogicBoard({ plugin }: { plugin: PluginInfo }) {
             <input className="field !w-40 min-w-0 !py-1 !text-xs" placeholder="A note with it (optional)" value={note} onChange={(e) => setNote(e.target.value)} data-testid="lb-note" />
             <label className="flex shrink-0 items-center gap-1 text-[11px] text-indigo-200/80">
               Send to
-              <select className="field !w-32 !py-1 !text-xs" value={to} onChange={(e) => setTo(e.target.value)} data-testid="lb-to">
-                {(recipients.length ? recipients : [{ id: 'mastermind', name: 'Mastermind', role: 'mastermind' }]).map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
+              <ChatTarget chats={chats} value={to} onChange={setTo} testId="lb-to" className="!w-36" />
             </label>
-            <button className="btn btn-primary shrink-0 !py-1" disabled={sending || !board.nodes.length || (!!built && !changes)} onClick={() => void send()} title={to === 'mastermind' ? 'Mastermind hands it to the Implementer as an approved design - no planning round' : 'Sent straight to this agent as its task'} data-testid="lb-build">
+            {to === 'new' && (
+              <label className="flex shrink-0 items-center gap-1 text-[11px] text-indigo-200/80" title="The new chat starts in plan mode (Claude): it plans first and asks you to approve before it changes anything">
+                <input type="checkbox" checked={planFirst} onChange={(e) => setPlanFirst(e.target.checked)} data-testid="lb-plan-first" /> Plan first
+              </label>
+            )}
+            <button className="btn btn-primary shrink-0 !py-1" disabled={sending || !board.nodes.length || (!!built && !changes)} onClick={() => void send()} title="Sent as the user's approved design: the chat builds it rather than planning it again" data-testid="lb-build">
               <Hammer size={13} /> {built ? `Update${changes ? ` (${changes})` : ''}` : 'Build'}
             </button>
           </>
@@ -402,7 +403,7 @@ export function LogicBoard({ plugin }: { plugin: PluginInfo }) {
       {!board ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center text-sm text-indigo-200/80">
           <div className="max-w-lg leading-relaxed">
-            Design a mechanic as boxes in plain words - <b className="text-red-300">when</b> it starts, <b className="text-amber-300">if</b> something is true, what to <b className="text-sky-300">do</b> - and link them in the order they happen. Build hands it to the team as an approved design, so the agent spends its effort on the code, not on inventing the mechanic.
+            Design a mechanic as boxes in plain words - <b className="text-red-300">when</b> it starts, <b className="text-amber-300">if</b> something is true, what to <b className="text-sky-300">do</b> - and link them in the order they happen. Build hands it to a chat as your approved design, so it spends its effort on the code, not on inventing the mechanic.
           </div>
           <div className="flex gap-2">
             <button className="btn btn-primary" onClick={() => void create()} data-testid="lb-first">

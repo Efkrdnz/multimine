@@ -45,10 +45,10 @@ export class Terminals {
   }
 
   /**
-   * Opens a shell in `cwd`. `startup` is typed into it once it is up, so a CLI agent starts inside a
+   * Opens a shell in `cwd`. `startup` is typed into it once it is up, so a CLI starts inside a
    * normal shell and the user lands back at the prompt when it exits.
    */
-  async open(cwd: string, kind: TerminalKind, cols: number, rows: number, title: string, startup?: string, agentId?: string, onExit?: () => void): Promise<TerminalInfo> {
+  async open(cwd: string, kind: TerminalKind, cols: number, rows: number, title: string, startup?: string): Promise<TerminalInfo> {
     const pty = await loadPty()
     if (!pty) throw new Error(loadError ?? 'The terminal is unavailable.')
     const sh = defaultShell()
@@ -59,13 +59,12 @@ export class Terminals {
       cwd,
       env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' } as Record<string, string>
     })
-    const info: TerminalInfo = { id: newId('t'), kind, title, agentId }
+    const info: TerminalInfo = { id: newId('t'), kind, title }
     this.sessions.set(info.id, { info, pty: p })
     p.onData((data) => this.emit({ type: 'terminal-data', id: info.id, data }))
     p.onExit(({ exitCode }) => {
       this.sessions.delete(info.id)
       this.emit({ type: 'terminal-exit', id: info.id, code: exitCode })
-      onExit?.()
     })
     if (startup) setTimeout(() => p.write(`${startup}\r`), 350)
     return info

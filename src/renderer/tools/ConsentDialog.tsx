@@ -5,7 +5,7 @@ import type { PluginInfo, PluginPermission } from '@shared/types'
 import { api, useStore } from '../state/store'
 import { Modal } from '../panels/Modal'
 import { PluginIcon } from './PluginIcon'
-import { openTool } from './ToolsGrid'
+import { openTool } from './openTool'
 
 /** Before a plugin runs (or gains a new permission): what it asks for, in plain words. */
 export function ConsentDialog() {

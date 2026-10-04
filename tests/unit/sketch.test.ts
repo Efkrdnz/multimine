@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { add, anchorPoint, byId, ELEMENT_TYPES, guessAnchor, layoutAt, copy, descendants, drawOrder, duplicate, exportJson, History, move, newSketch, parseSketch, paste, remove, reorder, settle, slug, snapRect, summary, tree, update } from '@shared/sketch/model'
 import { cells, drawSketch } from '@shared/sketch/draw'
 import { detectTarget, logicalSize, MC_SLOT, TARGETS } from '@shared/sketch/targets'
-import { revisionBrief, sketchBrief, uiCreator } from '@shared/sketch/brief'
+import { revisionBrief, sketchBrief } from '@shared/sketch/brief'
 
 describe('sketch model', () => {
   it('starts a Minecraft sketch as vanilla lays out a container', () => {
@@ -129,16 +129,16 @@ describe('sketch drawing and briefs', () => {
     expect(TARGETS.minecraft.canvas.w * TARGETS.minecraft.scale).toBeGreaterThanOrEqual(1280)
   })
 
-  it('briefs Mastermind with the paths, the outline and the UI Creator', () => {
+  it('briefs a chat with the paths, the outline and everything it needs to build it', () => {
     const sk = newSketch('Furnace', 'minecraft')
-    const none = sketchBrief(sk, [{ id: 'mastermind', name: 'Mastermind', role: 'mastermind' }], 'make it look vanilla')
-    expect(none).toContain('.multimine/sketches/furnace/sketch.json')
-    expect(none).toContain('From the user: make it look vanilla')
-    expect(none).toContain('slotgrid "Player inventory" 162x54 at 8,84 9x3')
-    expect(none).toContain('role `ui-creator`')
-    const team = [{ id: 'ui', name: 'Pixel', role: 'ui-creator' }]
-    expect(uiCreator(team)!.id).toBe('ui')
-    expect(sketchBrief(sk, team, '')).toContain('delegate this to Pixel (`ui`)')
+    const brief = sketchBrief(sk, 'make it look vanilla')
+    expect(brief.split('\n')[0]).toBe('# Build the UI sketch "Furnace"')
+    expect(brief).toContain('.multimine/sketches/furnace/sketch.json')
+    expect(brief).toContain('From the user: make it look vanilla')
+    expect(brief).toContain('slotgrid "Player inventory" 162x54 at 8,84 9x3')
+    expect(brief).toContain('`anchor`')
+    expect(brief).toContain('`show_media`')
+    expect(brief).not.toMatch(/Mastermind|delegate|create_agent|UI Creator/)
     expect(summary(sk).split('\n')[0]).toMatch(/^- window "Container" 176x166/)
     expect(revisionBrief(sk, '.multimine/sketches/furnace/revision-1.png', 'move the arrow')).toContain('move the arrow')
   })
@@ -203,12 +203,12 @@ describe('sketch targets', () => {
   })
 
   it('briefs the builder for its engine', () => {
-    const godot = sketchBrief(newSketch('Hud', 'godot'), [], '')
+    const godot = sketchBrief(newSketch('Hud', 'godot'), '')
     expect(godot).toContain('Build it for Godot')
     expect(godot).toContain('Control scene')
     expect(godot).toContain('2560x1440')
-    expect(sketchBrief(newSketch('Hud', 'unity'), [], '')).toContain('UI Toolkit')
-    expect(sketchBrief(newSketch('Hud', 'unreal'), [], '')).toContain('UUserWidget')
+    expect(sketchBrief(newSketch('Hud', 'unity'), '')).toContain('UI Toolkit')
+    expect(sketchBrief(newSketch('Hud', 'unreal'), '')).toContain('UUserWidget')
     expect(godot).toContain('multimine.md')
   })
 })

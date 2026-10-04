@@ -1,22 +1,16 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { applyEvent, api, useStore } from './state/store'
-import { SpaceView } from './space/SpaceView'
-import { TopBar } from './panels/TopBar'
-import { LeftRail } from './panels/LeftRail'
-import { ChatDock } from './panels/ChatDock'
-import { InboxPanel } from './panels/InboxPanel'
 import { MediaPanel } from './panels/MediaPanel'
-import { ContextPanel } from './panels/ContextPanel'
+import { InstructionsPanel } from './panels/InstructionsPanel'
 import { GitPanel } from './panels/GitPanel'
-import { AgentEditor } from './panels/AgentEditor'
+import { ChatSettings } from './panels/ChatSettings'
 import { SettingsModal } from './panels/SettingsModal'
 import { Welcome } from './panels/Welcome'
 import { Toasts } from './panels/Toasts'
-import { TeamWizard } from './panels/TeamWizard'
 import { ToolWindows } from './tools/ToolWindow'
 import { ConsentDialog } from './tools/ConsentDialog'
 import { ManagePlugins } from './tools/ManagePlugins'
-import { FocusShell } from './focus/FocusShell'
+import { Shell } from './shell/Shell'
 
 // the code window carries Monaco and xterm: loaded the first time it is opened, not at start-up
 const IdeWindow = lazy(() => import('./ide/IdeWindow').then((m) => ({ default: m.IdeWindow })))
@@ -27,15 +21,6 @@ export function App() {
   const panel = useStore((s) => s.panel)
   const modal = useStore((s) => s.modal)
   const ide = useStore((s) => s.ide)
-  // offered once per opened project, when it has nobody but Mastermind; stays up until finished
-  const [wizard, setWizard] = useState(false)
-  const projectDir = project?.dir
-  const lonely = !!project && project.agents.length === 1
-  useEffect(() => {
-    if (projectDir && lonely) setWizard(true)
-    // only re-decide when another project is opened
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectDir])
 
   useEffect(() => {
     const off = window.mm.onEvent(applyEvent)
@@ -48,26 +33,17 @@ export function App() {
     return off
   }, [])
 
-  const focus = useStore((s) => (s.settings?.layout ?? 'focus') === 'focus')
   return (
-    <div className="relative h-full w-full select-none">
-      {/* the space scene is the Map, and the backdrop before a project is open */}
-      {(!focus || !project) && <SpaceView />}
+    <div
+      className="relative h-full w-full select-none"
+      style={project ? undefined : { background: 'radial-gradient(ellipse at 50% -20%, rgb(124 58 237 / 0.28), transparent 60%), radial-gradient(ellipse at 100% 120%, rgb(8 145 178 / 0.16), transparent 50%), #05060f' }}
+    >
       {ready && !project && <Welcome />}
       {project && (
         <>
-          {focus ? (
-            <FocusShell />
-          ) : (
-            <>
-              <TopBar />
-              <LeftRail />
-              <ChatDock />
-            </>
-          )}
-          {panel === 'inbox' && <InboxPanel />}
+          <Shell />
           {panel === 'media' && <MediaPanel />}
-          {panel === 'context' && <ContextPanel />}
+          {panel === 'instructions' && <InstructionsPanel />}
           {panel === 'git' && <GitPanel />}
           <ToolWindows />
           {ide !== 'closed' && (
@@ -75,10 +51,9 @@ export function App() {
               <IdeWindow />
             </Suspense>
           )}
-          {wizard && !modal && <TeamWizard onDone={() => setWizard(false)} />}
         </>
       )}
-      {modal?.kind === 'agent' && <AgentEditor key={modal.agent.id || 'new'} agent={modal.agent} isNew={modal.isNew} />}
+      {modal?.kind === 'chat' && <ChatSettings key={modal.agent.id} agent={modal.agent} />}
       {modal?.kind === 'settings' && <SettingsModal initialTab={modal.tab} />}
       {modal?.kind === 'plugins' && <ManagePlugins />}
       <ConsentDialog />

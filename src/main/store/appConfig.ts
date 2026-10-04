@@ -1,35 +1,19 @@
 import { join } from 'node:path'
 import { DEFAULT_CATALOG } from '@shared/catalog'
+import { MOCK_DEFAULTS } from '@shared/chat'
 import { DEFAULT_TIERS } from '@shared/economy'
 import type { AppSettings, ProviderKind } from '@shared/types'
-import { DEFAULT_WATCHDOG } from '../orchestrator/watchdog'
+import { DEFAULT_WATCHDOG } from '../chat/watchdog'
 import { DEFAULT_NOTIFICATIONS } from '../notify'
 import { readJson, writeJson } from './fsx'
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  automation: false,
+  chatDefaults: MOCK_DEFAULTS,
   watchdog: DEFAULT_WATCHDOG,
   notifications: DEFAULT_NOTIFICATIONS,
   plugins: {},
-  toolOrder: [],
   defaultFallback: [],
-  economy: { enabled: false, concise: true, downshift: true, tiers: DEFAULT_TIERS },
-  handoffWaitMinutes: 10,
-  contextUpdates: 'idle',
-  layout: 'focus',
-  contextIdleMinutes: 3,
-  council: {
-    size: 3,
-    provider: 'mock',
-    model: 'mock',
-    effort: 'low',
-    lenses: [
-      'Skeptic: failure modes, edge cases, what breaks in production',
-      'Scope & cost: what is over-built, what is missing, what it costs to maintain',
-      'Player/user & design fit: does it fit the existing systems and feel right to use'
-    ],
-    rounds: 2
-  },
+  economy: { enabled: false, concise: true, autoRate: false, tiers: DEFAULT_TIERS },
   baseUrls: { compatible: 'http://localhost:11434/v1', openrouter: 'https://openrouter.ai/api/v1' },
   catalog: { ...DEFAULT_CATALOG },
   mcpServers: [],
@@ -50,19 +34,21 @@ export class AppConfig {
   constructor(private readonly dir: string, private readonly cipher: Cipher) {}
 
   async load(): Promise<void> {
-    const saved = await readJson<Partial<AppSettings>>(join(this.dir, 'settings.json'), {})
+    const saved = await readJson<Partial<AppSettings> & Record<string, unknown>>(join(this.dir, 'settings.json'), {})
+    // settings of the multi-agent version that nothing reads any more
+    for (const key of ['automation', 'council', 'handoffWaitMinutes', 'layout', 'contextUpdates', 'contextIdleMinutes', 'toolOrder']) delete saved[key]
+    if (saved.watchdog) delete (saved.watchdog as unknown as Record<string, unknown>).planBudgetMinutes
+    if (saved.economy) delete (saved.economy as unknown as Record<string, unknown>).downshift
     this.settings = {
       ...structuredClone(DEFAULT_SETTINGS),
       ...saved,
-      council: { ...DEFAULT_SETTINGS.council, ...(saved.council ?? {}) },
+      chatDefaults: { ...DEFAULT_SETTINGS.chatDefaults, ...(saved.chatDefaults ?? {}) },
       watchdog: { ...DEFAULT_WATCHDOG, ...(saved.watchdog ?? {}) },
       notifications: { ...DEFAULT_NOTIFICATIONS, ...(saved.notifications ?? {}) },
       economy: { ...DEFAULT_SETTINGS.economy, ...(saved.economy ?? {}), tiers: { ...DEFAULT_TIERS, ...(saved.economy?.tiers ?? {}) } },
       catalog: { ...DEFAULT_CATALOG, ...(saved.catalog ?? {}) },
       baseUrls: { ...DEFAULT_SETTINGS.baseUrls, ...(saved.baseUrls ?? {}) }
     }
-    // 45 was the old default for plan tasks; the usage budget now does most of that job
-    if (this.settings.watchdog.planBudgetMinutes === 45) this.settings.watchdog.planBudgetMinutes = DEFAULT_WATCHDOG.planBudgetMinutes
     this.keys = await readJson(join(this.dir, 'keys.json'), {})
   }
 

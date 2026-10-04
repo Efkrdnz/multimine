@@ -2,12 +2,11 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { roleTemplate } from '@shared/templates'
 import type { MainEvent } from '@shared/types'
 import { MultimineApp } from '../../src/main/app'
 import { ProviderHealth, failureOf } from '../../src/main/providers/limits'
 import { friendlyClaudeError } from '../../src/main/providers/claudeCli'
-import { buildBrief } from '../../src/main/orchestrator/continuation'
+import { buildBrief } from '../../src/main/chat/continuation'
 import type { AgentEvent, ProviderAdapter, TurnRequest } from '../../src/main/providers/types'
 
 describe('what counts as out of usage', () => {
@@ -70,7 +69,7 @@ function fake(events: (req: TurnRequest) => AgentEvent[]): ProviderAdapter & { s
 async function setup(overrides: ConstructorParameters<typeof MultimineApp>[0]['providerOverrides']) {
   const dir = await mkdtemp(join(tmpdir(), 'mm-fb-'))
   const events: MainEvent[] = []
-  const app = new MultimineApp({ userDataDir: join(dir, 'u'), cipher: { encrypt: (s) => s, decrypt: (s) => s }, emit: (e) => events.push(e), mockDelayMs: 0, forceMockMastermind: true, providerOverrides: overrides })
+  const app = new MultimineApp({ userDataDir: join(dir, 'u'), cipher: { encrypt: (s) => s, decrypt: (s) => s }, emit: (e) => events.push(e), mockDelayMs: 0, skipDetect: true, providerOverrides: overrides })
   await app.start()
   await app.openProject(join(dir, 'p'))
   return { app, dir, events }
@@ -85,11 +84,11 @@ it('a turn cut by a usage limit carries on, in the same reply, on the next subsc
   ])
   const codex = fake(() => [{ type: 'text', delta: 'Finished the rest.' }])
   const { app, dir, events } = await setup({ 'claude-cli': claude, 'codex-cli': codex })
-  await app.saveAgent({ ...roleTemplate('implementer', ''), name: 'Impl', provider: 'claude-cli', model: 'claude-opus-5-5', gated: false, fallback: [{ provider: 'codex-cli', model: 'gpt-6-astra', effort: 'high' }] }, true)
+  const impl = (await app.createChat({ name: 'Impl', provider: 'claude-cli', model: 'claude-opus-5-5', fallback: [{ provider: 'codex-cli', model: 'gpt-6-astra', effort: 'high' }] })).id
 
-  const res = await app.engine!.send('impl', 'Do the whole job', 'mastermind')
+  const res = await app.engine!.send(impl, 'Do the whole job')
   expect(res.error).toBeUndefined()
-  const reply = app.engine!.chats.impl.at(-1)!
+  const reply = app.engine!.chats[impl].at(-1)!
   expect(reply.text).toContain('Half done.')
   expect(reply.text).toContain('↪ *Switched to Codex sub GPT 6 Astra')
   expect(reply.text).toContain('Finished the rest.')
@@ -98,10 +97,10 @@ it('a turn cut by a usage limit carries on, in the same reply, on the next subsc
   expect(codex.seen[0].prompt).toContain('Do not start over')
   expect(codex.seen[0].prompt).toContain('Edit({"file_path":"A.java"}) -> edited')
   expect(codex.seen[0].resumeId).toBeUndefined()
-  expect(events.some((e) => e.type === 'status' && e.agentId === 'impl' && e.fallback?.provider === 'codex-cli')).toBe(true)
+  expect(events.some((e) => e.type === 'status' && e.agentId === impl && e.fallback?.provider === 'codex-cli')).toBe(true)
 
   // the next task starts straight on the fallback while Claude is out of usage
-  await app.engine!.send('impl', 'Next job', 'mastermind')
+  await app.engine!.send(impl, 'Next job')
   expect(claude.seen).toHaveLength(1)
   expect(codex.seen).toHaveLength(2)
   await app.shutdown()
@@ -112,8 +111,8 @@ it('an ordinary error never falls back', async () => {
   const claude = fake(() => [{ type: 'error', message: 'compilation failed' }])
   const codex = fake(() => [{ type: 'text', delta: 'should not run' }])
   const { app, dir } = await setup({ 'claude-cli': claude, 'codex-cli': codex })
-  await app.saveAgent({ ...roleTemplate('custom', ''), name: 'A', provider: 'claude-cli', fallback: [{ provider: 'codex-cli', model: 'x', effort: 'high' }] }, true)
-  const res = await app.engine!.send('a', 'go')
+  const a = (await app.createChat({ name: 'A', provider: 'claude-cli', fallback: [{ provider: 'codex-cli', model: 'x', effort: 'high' }] })).id
+  const res = await app.engine!.send(a, 'go')
   expect(res.error).toBe('compilation failed')
   expect(codex.seen).toHaveLength(0)
   await app.shutdown()
@@ -125,34 +124,34 @@ it('a paid fallback asks first, and "always" stops it asking', async () => {
   const claude = fake(() => [{ type: 'error', message: 'usage limit reached' }])
   const openai = fake(() => [{ type: 'text', delta: `paid run ${++n}` }])
   const { app, dir } = await setup({ 'claude-cli': claude, openai })
-  await app.saveAgent({ ...roleTemplate('custom', ''), name: 'B', provider: 'claude-cli', fallback: [{ provider: 'openai', model: 'gpt-6-astra', effort: 'high' }] }, true)
-  const run = app.engine!.send('b', 'go')
+  const b = (await app.createChat({ name: 'B', provider: 'claude-cli', fallback: [{ provider: 'openai', model: 'gpt-6-astra', effort: 'high' }] })).id
+  const run = app.engine!.send(b, 'go')
   for (let i = 0; i < 100 && !app.engine!.inbox.pending().length; i++) await new Promise((r) => setTimeout(r, 10))
   const [item] = app.engine!.inbox.pending()
   expect(item.permission).toBe(true)
   expect(item.alwaysLabel).toBe('Always')
   await app.decide(item.id, true, undefined, true)
   expect((await run).text).toContain('paid run 1')
-  expect(app.project!.get('b')!.fallbackPaidOk).toBe(true)
+  expect(app.project!.get(b)!.fallbackPaidOk).toBe(true)
 
   // Claude is still out: the next task goes straight to the paid key, without asking
-  const second = await app.engine!.send('b', 'again')
+  const second = await app.engine!.send(b, 'again')
   expect(second.text).toContain('paid run 2')
   expect(app.engine!.inbox.pending()).toHaveLength(0)
   await app.shutdown()
   await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
 })
 
-it("a Claude warning moves the agent's next task to its fallback before anything is cut", async () => {
+it("a Claude warning moves the chat's next turn to its fallback before anything is cut", async () => {
   const claude = fake(() => [
     { type: 'limit', state: 'near', detail: 'five hour limit (92% used)' },
     { type: 'text', delta: 'done on claude' }
   ])
   const codex = fake(() => [{ type: 'text', delta: 'done on codex' }])
   const { app, dir } = await setup({ 'claude-cli': claude, 'codex-cli': codex })
-  await app.saveAgent({ ...roleTemplate('custom', ''), name: 'C', provider: 'claude-cli', fallback: [{ provider: 'codex-cli', model: 'x', effort: 'high' }] }, true)
-  expect((await app.engine!.send('c', 'one')).text).toBe('done on claude')
-  expect((await app.engine!.send('c', 'two')).text).toBe('done on codex')
+  const c = (await app.createChat({ name: 'C', provider: 'claude-cli', fallback: [{ provider: 'codex-cli', model: 'x', effort: 'high' }] })).id
+  expect((await app.engine!.send(c, 'one')).text).toBe('done on claude')
+  expect((await app.engine!.send(c, 'two')).text).toBe('done on codex')
   await app.shutdown()
   await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
 })

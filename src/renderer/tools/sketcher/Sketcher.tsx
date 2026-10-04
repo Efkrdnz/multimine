@@ -26,15 +26,15 @@ import {
 } from '@shared/sketch/model'
 import { detectTarget, inventoryStamp, TARGET_IDS, TARGETS, type TargetId } from '@shared/sketch/targets'
 import { useStore } from '../../state/store'
-import { errText, usePluginApi } from '../pluginApi'
+import { errText, usePluginApi, type PluginCall } from '../pluginApi'
 import { fitView, SketchCanvas, type View } from './Canvas'
 import { Mockup } from './Mockup'
 import { toPng } from './paint'
 import { Layers, Palette, Properties } from './Panels'
 import { Revisions } from './Revisions'
+import { ChatTarget, chatLabel, useChats, type ChatChoice, type Sent } from '../ChatTarget'
 
 type Tab = 'design' | 'mockup' | 'revisions'
-type Member = { id: string; name: string; role: string }
 
 
 /**
@@ -45,6 +45,7 @@ type Member = { id: string; name: string; role: string }
 export function Sketcher({ plugin }: { plugin: PluginInfo }) {
   const call = usePluginApi(plugin.manifest.id)
   const toast = useStore((s) => s.toast)
+  const chats = useChats(call)
   const [sketch, setSketch] = useState<Sketch | null>(null)
   const [savedJson, setSavedJson] = useState('')
   const [selection, setSelection] = useState<string[]>([])
@@ -145,15 +146,17 @@ export function Sketcher({ plugin }: { plugin: PluginInfo }) {
     [call, toast]
   )
 
-  const sendToMastermind = async (note: string) => {
+  const send = async (note: string, to: string) => {
     if (!sketch) return
     const dir = await save(sketch, true)
     if (!dir) return
     try {
-      const team = await call<Member[]>('team.list')
-      await call('send', 'mastermind', sketchBrief(sketch, team, note))
+      const sent = await call<Sent>('send', to, sketchBrief(sketch, note))
+      // its revisions go back to the chat that built it
+      await call('storage.set', `chat:${slug(sketch.name)}`, sent.chatId)
+      await call('storage.set', 'sendTo', to)
       await call('media.show', `${dir}/mockup.png`, `Sketch: ${sketch.name} (mockup)`).catch(() => undefined)
-      toast('info', `Sent "${sketch.name}" to Mastermind`)
+      toast('info', `Sent "${sketch.name}" to ${chatLabel(chats, to, sent)}`)
       setMenu(null)
     } catch (e) {
       toast('error', `Could not send: ${errText(e)}`)
@@ -327,10 +330,10 @@ export function Sketcher({ plugin }: { plugin: PluginInfo }) {
           {dirty ? <Save size={13} /> : <Check size={13} />} {dirty ? 'Save' : 'Saved'}
         </button>
         <div className="relative">
-          <button className="btn btn-primary !py-1" title="Send to Mastermind to have it built" onClick={() => setMenu(menu === 'send' ? null : 'send')} data-testid="sk-send">
+          <button className="btn btn-primary !py-1" title="Send it to a chat to have it built" onClick={() => setMenu(menu === 'send' ? null : 'send')} data-testid="sk-send">
             <Send size={13} /> Send
           </button>
-          {menu === 'send' && <SendMenu sketch={sketch} onSend={sendToMastermind} onClose={() => setMenu(null)} />}
+          {menu === 'send' && <SendMenu sketch={sketch} chats={chats} call={call} onSend={send} onClose={() => setMenu(null)} />}
         </div>
       </div>
 
@@ -467,18 +470,23 @@ function OpenMenu({ call, onPick, onClose }: { call: <T>(m: string, ...a: unknow
   )
 }
 
-function SendMenu({ sketch, onSend, onClose }: { sketch: Sketch; onSend: (note: string) => Promise<void>; onClose: () => void }) {
+function SendMenu({ sketch, chats, call, onSend, onClose }: { sketch: Sketch; chats: ChatChoice[]; call: PluginCall; onSend: (note: string, to: string) => Promise<void>; onClose: () => void }) {
   const [note, setNote] = useState('')
+  const [to, setTo] = useState('new')
   const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    void call<string | null>('storage.get', 'sendTo').then((t) => t && setTo(t)).catch(() => undefined)
+  }, [call])
   return (
     <Popover onClose={onClose} align="right">
       <div className="w-80 space-y-2" data-testid="sk-send-menu">
         <div className="text-xs leading-relaxed text-indigo-200/90">
-          Saves <span className="font-mono text-[11px]">{sketchDir(sketch.name)}/</span> and asks Mastermind to have a UI Creator build it, capture the real screen and show it in the gallery.
+          Saves <span className="font-mono text-[11px]">{sketchDir(sketch.name)}/</span> and asks a chat to build it the way {TARGETS[sketch.target].engine} does, capture the real screen and show it in the gallery.
         </div>
         <textarea autoFocus className="field min-h-[70px] !text-xs" placeholder="Anything to add? Where it opens from, what it is for..." value={note} onChange={(e) => setNote(e.target.value)} data-testid="sk-send-note" />
-        <div className="flex justify-end">
-          <button className="btn btn-primary !py-1" disabled={busy} onClick={() => (setBusy(true), void onSend(note).finally(() => setBusy(false)))} data-testid="sk-send-go">
+        <div className="flex items-center justify-end gap-2">
+          <ChatTarget chats={chats} value={to} onChange={setTo} testId="sk-send-to" className="min-w-0 flex-1" />
+          <button className="btn btn-primary !py-1" disabled={busy} onClick={() => (setBusy(true), void onSend(note, to).finally(() => setBusy(false)))} data-testid="sk-send-go">
             <Send size={13} /> {busy ? 'Sending...' : 'Send'}
           </button>
         </div>

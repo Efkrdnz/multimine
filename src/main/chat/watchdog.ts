@@ -15,7 +15,6 @@ export const DEFAULT_WATCHDOG: WatchdogSettings = {
   exactRepeats: 5,
   cycleRepeats: 3,
   budgetMinutes: 20,
-  planBudgetMinutes: 30,
   usageBudget: 3,
   quietMinutes: 5,
   launchPatterns: [

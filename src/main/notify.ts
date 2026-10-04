@@ -1,7 +1,7 @@
 import type { InboxItem, MainEvent, NotificationSettings } from '@shared/types'
 
 /**
- * Desktop notifications for the moments an agent is waiting on the user: a question, a plan to
+ * Desktop notifications for the moments a chat is waiting on the user: a question, a plan to
  * approve, a permission, a paid fallback, the loop guard. Everything that needs the user already
  * becomes a pending inbox item, so this watches the inbox events main forwards to the window and
  * notifies once per new item. It knows nothing about Electron: main hands it `show` and `isFocused`.
@@ -53,7 +53,7 @@ export class Notifier {
   handle(e: MainEvent): void {
     if (e.type === 'inbox') this.inbox(e.items)
     else if (e.type === 'status') this.status(e.agentId, e.status)
-    // a usage window crossing 90%: worth hearing about before the team stops mid-task
+    // a usage window crossing 90%: worth hearing about before a chat stops mid-task
     else if (e.type === 'plan-limits' && e.warning && this.allowed()) this.d.show({ title: 'Claude usage', body: e.warning })
   }
 
@@ -63,7 +63,7 @@ export class Notifier {
   }
 
   private inbox(items: InboxItem[]): void {
-    // only items still waiting count: a reload expires what was pending, automation settles at once
+    // only items still waiting count
     for (const it of items) {
       if (this.seen.has(it.id)) continue
       this.seen.add(it.id)
@@ -90,12 +90,12 @@ export class Notifier {
     })
   }
 
-  /** Mastermind going from busy to idle: the task it was given is done (only when asked for). */
+  /** A chat going from busy to idle: its turn is done (only when asked for). */
   private status(agentId: string, status: string): void {
     const wasBusy = this.busy.get(agentId) ?? false
     const isBusy = status === 'thinking' || status === 'working' || status === 'waiting'
     this.busy.set(agentId, isBusy)
-    if (agentId !== 'mastermind' || !wasBusy || isBusy) return
+    if (!wasBusy || isBusy) return
     if (!this.d.settings().onFinish || !this.allowed()) return
     this.d.show({ title: `${this.d.agentName(agentId)} ${status === 'error' ? 'stopped with an error' : 'finished'}`, body: 'Open Multimine to see the reply.', agentId })
   }

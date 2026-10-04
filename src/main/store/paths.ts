@@ -7,13 +7,10 @@ export function projectPaths(dir: string) {
     dir,
     root,
     multimineMd: join(dir, 'multimine.md'),
-    agents: join(root, 'agents'),
-    agent: (id: string) => join(root, 'agents', `${id}.md`),
-    context: join(root, 'context'),
+    chats: join(root, 'chats'),
+    chat: (id: string) => join(root, 'chats', id),
     media: join(root, 'media'),
-    sessions: join(root, 'sessions'),
-    session: (id: string) => join(root, 'sessions', id),
-    layout: join(root, 'layout.json')
+    mediaIndex: join(root, 'media', 'index.json')
   }
 }
 export type ProjectPaths = ReturnType<typeof projectPaths>

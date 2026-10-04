@@ -2,19 +2,15 @@ import { newId } from '@shared/ids'
 import type { InboxItem, Question } from '@shared/types'
 
 /**
- * Questions and approvals waiting on the user. Each pending item holds a resolver: the agent that
- * asked is blocked on it until the user (or automation) answers.
+ * Questions and approvals waiting on the user. Each pending item holds a resolver: the chat that
+ * asked is blocked on it until the user answers.
  */
 export class Inbox {
   private waiters = new Map<string, (item: InboxItem) => void>()
 
-  constructor(
-    public items: InboxItem[],
-    private readonly changed: (items: InboxItem[]) => void
-  ) {
-    // anything still pending from a previous run has nobody waiting on it any more
-    for (const it of this.items) if (it.status === 'pending') Object.assign(it, { status: 'auto', note: 'Expired: the app restarted before it was answered.' })
-  }
+  items: InboxItem[] = []
+
+  constructor(private readonly changed: (items: InboxItem[]) => void) {}
 
   pending(): InboxItem[] {
     return this.items.filter((i) => i.status === 'pending')
@@ -25,7 +21,9 @@ export class Inbox {
   }
 
   private add(item: InboxItem): Promise<InboxItem> {
-    this.items = [...this.items, item]
+    // what was answered long ago is of no use to anyone: keep everything pending and the latest answers
+    const settled = this.items.filter((i) => i.status !== 'pending')
+    this.items = [...this.items.filter((i) => i.status === 'pending' || settled.slice(-100).includes(i)), item]
     this.changed(this.items)
     return new Promise((resolve) => this.waiters.set(item.id, resolve))
   }
@@ -41,14 +39,6 @@ export class Inbox {
   /** The loop guard pausing an agent: shown as a balloon with continue, tell it and stop. */
   watchdog(askedBy: string, title: string, detailMd: string): Promise<InboxItem> {
     return this.add({ id: newId('w'), ts: Date.now(), kind: 'approval', askedBy, title, planMd: detailMd, status: 'pending', permission: true, watchdog: true })
-  }
-
-  /** Records an item that was settled on the spot (automation), for the log. */
-  record(item: Omit<InboxItem, 'id' | 'ts'>): InboxItem {
-    const full: InboxItem = { ...item, id: newId(item.kind === 'question' ? 'q' : 'a'), ts: Date.now() }
-    this.items = [...this.items, full]
-    this.changed(this.items)
-    return full
   }
 
   private settle(id: string, patch: Partial<InboxItem>): InboxItem | null {
@@ -71,7 +61,7 @@ export class Inbox {
     return this.settle(id, { status: 'answered', approved, note, always: approved && always })
   }
 
-  /** Settles every pending item (session switch, shutdown): questions empty, approvals refused. */
+  /** Settles every pending item (closing the project, shutdown): questions empty, approvals refused. */
   cancelAll(reason: string): void {
     for (const it of this.pending()) this.settle(it.id, { status: 'auto', approved: false, answers: {}, note: reason })
   }
@@ -80,13 +70,5 @@ export class Inbox {
 /** Answers as the model reads them. */
 export function formatAnswers(item: InboxItem): string {
   const lines = Object.entries(item.answers ?? {}).map(([q, a]) => `- ${q}\n  -> ${a || '(no answer)'}`)
-  const who = item.status === 'auto' ? 'Mastermind (automation mode) answered' : 'The user answered'
-  return `${who}:\n${lines.join('\n') || '(nothing)'}${item.note ? `\nNote: ${item.note}` : ''}`
-}
-
-/** Automation's fallback: the first (recommended) option of each question. */
-export function recommendedAnswers(questions: Question[]): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const q of questions) out[q.question] = q.options[0]?.label ?? ''
-  return out
+  return `The user answered:\n${lines.join('\n') || '(nothing)'}${item.note ? `\nNote: ${item.note}` : ''}`
 }

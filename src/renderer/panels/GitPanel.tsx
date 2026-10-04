@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ArrowDownToLine, ArrowUpFromLine, ExternalLink, GitBranch, GitCommitHorizontal, GitPullRequest, KeyRound, Minus, Plus, RefreshCw, CircleDot } from 'lucide-react'
 import type { GhItem, GitCommit, GitFile, GitStatus } from '@shared/types'
-import { api, useStore } from '../state/store'
+import { api, onMainEvent, useStore } from '../state/store'
 import { Drawer } from './Drawer'
 
 type Tab = 'changes' | 'history' | 'github'
@@ -42,7 +42,6 @@ function Diff({ text }: { text: string }) {
 
 export function GitPanel() {
   const toast = useStore((s) => s.toast)
-  const busCount = useStore((s) => s.bus.length)
   const keyed = useStore((s) => s.keyed)
   const [tab, setTab] = useState<Tab>('changes')
   const [st, setSt] = useState<GitStatus | null>(null)
@@ -70,15 +69,18 @@ export function GitPanel() {
     }
   }, [toast])
 
-  // refresh on open, every few seconds, and whenever agents talk (they may have changed files)
+  // refresh on open, every few seconds, and soon after a file in the project changes
   useEffect(() => {
     void refresh()
     const t = setInterval(() => void refresh(), 5000)
-    return () => clearInterval(t)
+    let soon: ReturnType<typeof setTimeout> | undefined
+    const off = onMainEvent((e) => {
+      if (e.type !== 'file-changed') return
+      clearTimeout(soon)
+      soon = setTimeout(() => void refresh(), 400)
+    })
+    return () => (clearInterval(t), clearTimeout(soon), off())
   }, [refresh])
-  useEffect(() => {
-    void refresh()
-  }, [busCount, refresh])
 
   useEffect(() => {
     if (!sel) return setDiff('')

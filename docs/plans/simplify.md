@@ -36,7 +36,7 @@ templates), and `engine.ts` should drop from 1,335 lines to about 600.
 ## The new core model
 
 - A **project** is a folder. A project has **chats**. A chat is one agent session: provider, model,
-  effort, access (**Supervised / Auto-accept / Full access**), optional plan mode, MCP servers and an
+  effort, access (**Read only / Supervised / Full access**), optional plan mode, MCP servers and an
   optional fallback chain. Several chats can run at once, each with its own status in the sidebar.
 - What `AgentSpec` keeps: `id, name, provider, model, effort, permissions, mcp, planMode,
   autoApprove, fallback, fallbackPaidOk`. It loses `role, gated, color` and the purpose-file brief.
@@ -50,7 +50,8 @@ templates), and `engine.ts` should drop from 1,335 lines to about 600.
 ## Phases
 
 Each phase ends with `npm run typecheck`, `npm test` and `xvfb-run -a npm run test:e2e` green, then
-a commit and push. No phase leaves the app unusable.
+a commit and push. No phase leaves the app unusable. Phases 2 to 4 landed as one change: removing
+the team from the engine breaks the team UI, so they could not be green apart.
 
 ### Phase 0 - Archive (done)
 
@@ -69,7 +70,7 @@ a commit and push. No phase leaves the app unusable.
   cannot prove asks. `hardStop` also catches `git -C dir push`, `rm -r -f`, `rm --recursive` and
   `find -delete`. Tests in `tests/unit/core.test.ts`.
 
-### Phase 2 - Slim the engine (main process)
+### Phase 2 - Slim the engine (main process) (done)
 
 - `src/main/orchestrator/engine.ts` keeps: turn queues per chat, `send`, `runTurn`, `runHop`,
   fallback hops, warm sessions, `freshStart`, `retry`, `stop`, the watchdog hooks, usage totals,
@@ -82,24 +83,24 @@ a commit and push. No phase leaves the app unusable.
 - Delete `orchestrator/council.ts`, the Mastermind parts of `orchestrator/prompts.ts` and
   `orchestrator/inbox.ts`. Keep `orchestrator/continuation.ts` (the brief a fallback provider gets),
   `orchestrator/workspace.ts` (API models' file tools) and `orchestrator/watchdog.ts`.
-- Rename `src/main/orchestrator/` to `src/main/chat/` once it is small enough to deserve it.
+- `src/main/orchestrator/` is now `src/main/chat/`.
 - `src/main/mcp/busServer.ts` stays (CLI agents still need `show_media`), per chat instead of per agent.
 - `src/main/ide/watcher.ts` keeps only "file changed on disk" for open editor tabs; the manual-change
   batch for the Context Handler goes.
-- `store/project.ts`: chats instead of agent files; migration as above. `store/sessions.ts` folds
-  into chats (a "session" was a set of conversations - a chat already is one).
+- `store/project.ts`: chats instead of agent files; migration as above. `store/sessions.ts` became
+  `store/chats.ts` (a "session" was a set of conversations - a chat already is one). The engine
+  stops its turns and waits for them when a project closes, so nothing writes into it afterwards.
 
 Tests: delete `council`, `handoff`, `contextBatch`; rewrite `pipeline` as one chat on the Mock
 provider doing a task end to end; adapt `core`, `permissions`, `retry`, `fallback`, `warm`,
 `freshContext`, `economy`, `usage`, `watchdog`.
 
-### Phase 3 - The window (renderer)
+### Phase 3 - The window (renderer) (done)
 
 - `FocusShell` becomes the only layout. Sidebar, top to bottom: project switcher, **chats** (status
   dot, live activity line, "waiting for you" badge), **Tools** (the grid's tiles), then Code, Git,
   Media and Settings.
-- Composer (already there): provider, model, effort, access, plan mode, and a **⚡ Quick** toggle
-  (Phase 5). Chat settings that do not fit the composer (MCP servers, fallback chain) open from the
+- Composer: model, effort, access, plan mode (Claude), and a **⚡ Quick** toggle (Phase 5). Chat settings that do not fit the composer (MCP servers, fallback chain) open from the
   chat's header menu, replacing `AgentEditor`.
 - Questions, plan approvals and permission prompts render inline in the chat (they mostly already
   do) and raise a desktop notification in the background.
@@ -110,10 +111,13 @@ provider doing a task end to end; adapt `core`, `permissions`, `retry`, `fallbac
 - `Welcome.tsx`: open a folder → a first chat with the defaults. No team offer.
 - Drop `pixi.js` from `package.json` if the map goes.
 
-### Phase 4 - Tools talk to a chat
+### Phase 4 - Tools talk to a chat (done)
 
-Every tool's send button becomes **Send to: [this chat ▾ | new chat]**, defaulting to a new chat so
-a long build does not clutter the conversation you are in.
+Every tool's send button gets a chat picker (`src/renderer/tools/ChatTarget.tsx`): **A new chat** or
+any existing one, the one on screen marked. Builds default to a new chat so a long job does not
+clutter the conversation you are in; follow-ups go back to the chat that did the first one (a
+sketch's revisions, a board's updates, the Asset Board's next request). A chat a tool starts is
+named after its message ("UI Sketcher: Build the UI sketch \"Mana Furnace\"").
 
 - **Briefs carry the role.** What `templates/agents/ui-creator.md` and `asset-creator.md` told an
   agent moves into the brief the tool sends (`src/shared/sketch/brief.ts`, the Asset Board's brief in
@@ -121,12 +125,14 @@ a long build does not clutter the conversation you are in.
   `create_agent`" branches.
 - **UI Sketcher** (`tools/sketcher/Sketcher.tsx`, `Revisions.tsx`): Send and revisions go to the
   chosen chat; the brief asks it to build, capture with `show_media`, and stop.
-- **Asset Board** (`tools/assets/AssetBoard.tsx`): Request goes to a chat that has the meshy /
-  wavespeed MCP servers on. If the chosen chat lacks them, offer to switch them on for it.
+- **Asset Board** (`tools/assets/AssetBoard.tsx`): requests go to one chat. A chat it starts begins
+  with the generator MCP servers (meshy, wavespeed, higgsfield) on - only those the user has set up
+  in Settings. An existing chat without one gets a warning on the board.
 - **Logic Board** (`tools/logic/LogicBoard.tsx`, `src/shared/logic/brief.ts`): drop
   `viaMastermind` and the approval id. Build sends the outline as the task; a "plan first" checkbox
   starts the chat in plan mode.
-- **Data Tables** (`tools/data/DataTables.tsx`): "Ask an agent" lists chats instead of the team.
+- **Data Tables** (`tools/data/DataTables.tsx`): "Ask a chat" defaults to the chat on screen: a
+  question about the data usually belongs in the conversation that has the context.
 
 ### Phase 5 - Usage savers without a Mastermind
 

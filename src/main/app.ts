@@ -120,6 +120,7 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
   }
 
   async shutdown(): Promise<void> {
+    this.providers.release()
     this.terminals.closeAll()
     await this.watcher?.stop()
     this.tracker?.dispose()
@@ -148,6 +149,7 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
       if (claude.installed) defaults = { provider: 'claude-cli', model: 'claude-opus-5-5', effort: 'high' }
     }
     const project = await ProjectStore.open(dir, defaults)
+    this.providers.release()
     if (project.migrated.length)
       this.o.emit({ type: 'toast', level: 'info', text: `${project.migrated.join(', ')}: effort lowered from xhigh to high to save usage. Change it back in the agent editor if you want.` })
     const sessions = new SessionStore(project.paths)
@@ -202,6 +204,7 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
   async deleteAgent(id: string): Promise<void> {
     if (this.project?.get(id)?.terminal) throw new Error('Close its terminal to remove a terminal session.')
     await this.need().project.deleteAgent(id)
+    this.providers.release(`${id}|`)
     this.emitProject()
   }
 
@@ -234,15 +237,20 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     for (const k of Object.keys(engine.session.resume)) if (k === agentId || k.startsWith(`${agentId}|`)) delete engine.session.resume[k]
     await sessions.save(engine.session)
     engine.chats[agentId] = []
+    // a cleared chat is a new conversation: its warm process goes too
+    this.providers.release(`${agentId}|`)
     this.o.emit({ type: 'chat-reset', chats: engine.chats })
   }
 
   async newSession(name?: string): Promise<void> {
     await this.need().engine.newSession(name)
+    this.providers.release()
   }
 
   async switchSession(id: string): Promise<void> {
     await this.need().engine.switchSession(id)
+    // the old session's warm processes are not coming back soon: let them go
+    this.providers.release()
   }
 
   async renameSession(id: string, name: string): Promise<void> {

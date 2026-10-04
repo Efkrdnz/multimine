@@ -506,7 +506,7 @@ export class Engine {
           this.fallbacks.set(agentId, { provider: hop.provider, model: hop.model, reason: why })
           this.setStatus(agentId, this.status.get(agentId) ?? 'thinking')
         }
-        error = await this.runHop(hopAgent, promptNow, historyNow, !continuing && !fresh, reply, ctl, sessionId, wd)
+        error = await this.runHop(hopAgent, promptNow, historyNow, !continuing && !fresh, reply, ctl, sessionId, wd, !continuing)
         fresh = false
         // the watchdog paused a provider it cannot hold mid-call: resume the same thread with the user's word
         const redirect = this.redirects.get(agentId)
@@ -585,7 +585,7 @@ export class Engine {
   }
 
   /** One provider's run of a turn, streaming into `reply`. Returns the error it ended on, if any. */
-  private async runHop(agent: AgentSpec, prompt: string, history: HistoryItem[], mayResume: boolean, reply: ChatMessage, ctl: AbortController, sessionId: string, wd?: Watchdog): Promise<string | undefined> {
+  private async runHop(agent: AgentSpec, prompt: string, history: HistoryItem[], mayResume: boolean, reply: ChatMessage, ctl: AbortController, sessionId: string, wd?: Watchdog, warm = false): Promise<string | undefined> {
     const agentId = agent.id
     const isCli = ProviderRegistry.isCli(agent.provider)
     const resumeId = mayResume ? this.resumeKey(agentId, agent.provider) : undefined
@@ -601,6 +601,8 @@ export class Engine {
       prompt: finalPrompt,
       cwd: this.d.project.dir,
       resumeId,
+      // the agent's own turns keep its process warm; a hop carrying a brief to another provider does not
+      poolKey: warm ? `${agentId}|${sessionId}` : undefined,
       tools: guardTools(await this.toolsFor(agent, isCli), wd && !isCli ? (n, i) => this.watchCall(agentId, wd, ctl, n, i) : undefined),
       busUrl: isCli ? this.d.busUrl?.(agentId) : undefined,
       externalMcp: this.d.config.settings.mcpServers.filter((s) => agent.mcp.includes(s.id)),

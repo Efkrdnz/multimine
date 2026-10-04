@@ -123,6 +123,11 @@ packets fly), ask you questions through Mastermind, and work on a real project f
   in Settings. Agents are also told to launch a game at most once per change and to report a missing
   world or binary instead of retrying; fill in the "How to verify" section of `multimine.md` with your
   project's exact commands.
+- **Warm sessions.** Each Claude agent keeps one Claude Code process running between turns (as T3
+  Code does): a follow-up is one more message to the live process instead of a new process resuming
+  the session from disk. It is replaced when the agent's model, effort or permissions change, closed
+  on Stop, and let go after 20 idle minutes; the next turn resumes it. Agents are asked for their
+  thinking as summaries, so a working agent's chat shows its reasoning as it goes.
 - **Usage.** Claude agents keep their context lean: a project CLAUDE.md over 12 KB is not sent with
   every call (it is the biggest fixed cost of a long task) - agents get its outline with line
   numbers and read the sections they need. Each delegated task starts its own Claude session, so

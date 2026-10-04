@@ -29,6 +29,11 @@ export class ProviderRegistry {
     return this.api
   }
 
+  /** Lets go of every warm process whose key starts with `prefix` (an agent, a session, or all). */
+  release(prefix = ''): void {
+    for (const p of new Set([this.claude, ...Object.values(this.overrides)])) p?.release?.(prefix)
+  }
+
   /** CLI kinds talk to the bus over MCP; the others get the tools in-process. */
   static isCli(kind: ProviderKind): boolean {
     return kind === 'claude-cli' || kind === 'codex-cli'

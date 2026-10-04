@@ -34,6 +34,11 @@ export interface TurnRequest {
   cwd: string
   /** Provider session to continue (Claude session_id / Codex thread id). */
   resumeId?: string
+  /**
+   * Set for an agent's own turns: the provider may keep one process per key warm between turns
+   * (Claude). Helpers and fallback hops leave it unset and get a process of their own.
+   */
+  poolKey?: string
   /** In-process tools (API and mock agents). */
   tools: ToolDef[]
   /** URL of this agent's endpoint on the local Multimine MCP bus (CLI agents). */
@@ -79,4 +84,6 @@ export type AgentEvent =
 
 export interface ProviderAdapter {
   run(req: TurnRequest): AsyncIterable<AgentEvent>
+  /** Lets go of processes kept warm for keys starting with `prefix` (all when empty). */
+  release?(prefix?: string): void
 }

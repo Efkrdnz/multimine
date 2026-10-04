@@ -16,6 +16,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   economy: { enabled: false, concise: true, downshift: true, tiers: DEFAULT_TIERS },
   handoffWaitMinutes: 10,
   contextUpdates: 'idle',
+  layout: 'focus',
   contextIdleMinutes: 3,
   council: {
     size: 3,

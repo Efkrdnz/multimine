@@ -189,42 +189,10 @@ function ApprovalCard({ item }: { item: InboxItem }) {
   );
 }
 
-export function InboxPanel() {
-  const inbox = useStore((s) => s.inbox);
-  const [tab, setTab] = useState<"pending" | "history">("pending");
-  const pending = inbox.filter((i) => i.status === "pending");
-  const history = inbox
-    .filter((i) => i.status !== "pending")
-    .slice()
-    .reverse();
-  const list = tab === "pending" ? pending : history;
+/** One inbox item: a question or an approval to answer, or the record of one. Also shown in the Focus chat. */
+export function InboxCard({ item }: { item: InboxItem }) {
   return (
-    <Drawer
-      title="Mastermind inbox"
-      icon={<Inbox size={17} className="text-amber-300" />}
-    >
-      <div className="mb-4 flex gap-1 rounded-lg bg-black/30 p-1 text-xs">
-        {(["pending", "history"] as const).map((t) => (
-          <button
-            key={t}
-            className={`flex-1 rounded-md py-1.5 font-semibold capitalize ${tab === t ? "bg-violet-500/30 text-white" : "text-indigo-300"}`}
-            onClick={() => setTab(t)}
-          >
-            {t} {t === "pending" && pending.length ? `(${pending.length})` : ""}
-          </button>
-        ))}
-      </div>
-      {list.length === 0 && (
-        <div className="mt-8 text-center text-sm text-indigo-300/60">
-          {tab === "pending"
-            ? "Nothing is waiting on you."
-            : "No answered items yet."}
-        </div>
-      )}
-      <div className="space-y-4">
-        {list.map((item) => (
-          <div
-            key={item.id}
+    <div
             className={`rounded-xl border p-4 ${item.status === "pending" ? "border-amber-400/30 bg-amber-500/5" : "border-white/10 bg-black/20"}`}
           >
             <div className="mb-2 flex items-center gap-2">
@@ -279,6 +247,44 @@ export function InboxPanel() {
               </div>
             )}
           </div>
+  );
+}
+
+export function InboxPanel() {
+  const inbox = useStore((s) => s.inbox);
+  const [tab, setTab] = useState<"pending" | "history">("pending");
+  const pending = inbox.filter((i) => i.status === "pending");
+  const history = inbox
+    .filter((i) => i.status !== "pending")
+    .slice()
+    .reverse();
+  const list = tab === "pending" ? pending : history;
+  return (
+    <Drawer
+      title="Mastermind inbox"
+      icon={<Inbox size={17} className="text-amber-300" />}
+    >
+      <div className="mb-4 flex gap-1 rounded-lg bg-black/30 p-1 text-xs">
+        {(["pending", "history"] as const).map((t) => (
+          <button
+            key={t}
+            className={`flex-1 rounded-md py-1.5 font-semibold capitalize ${tab === t ? "bg-violet-500/30 text-white" : "text-indigo-300"}`}
+            onClick={() => setTab(t)}
+          >
+            {t} {t === "pending" && pending.length ? `(${pending.length})` : ""}
+          </button>
+        ))}
+      </div>
+      {list.length === 0 && (
+        <div className="mt-8 text-center text-sm text-indigo-300/60">
+          {tab === "pending"
+            ? "Nothing is waiting on you."
+            : "No answered items yet."}
+        </div>
+      )}
+      <div className="space-y-4">
+        {list.map((item) => (
+          <InboxCard key={item.id} item={item} />
         ))}
       </div>
     </Drawer>

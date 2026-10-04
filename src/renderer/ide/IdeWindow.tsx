@@ -5,7 +5,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { ChevronDown, ChevronRight, Code2, ExternalLink, File, Folder, FolderOpen, Plus, RefreshCw, Save, Search, SquareTerminal, X, MessageSquareText } from 'lucide-react'
 import type { IdeEntry, IdeHit, TerminalInfo, TerminalKind } from '@shared/types'
-import { api, onSceneEvent, useStore } from '../state/store'
+import { SIDE_DOCK, api, onSceneEvent, useLayout, useStore } from '../state/store'
 import { languageOf } from './monaco'
 import { attachTerminal, forgetTerminal } from './terminalBus'
 
@@ -386,6 +386,7 @@ function TerminalPane() {
 
 export function IdeWindow() {
   const ide = useStore((s) => s.ide)
+  const layout = useLayout()
   const manual = useStore((s) => s.manual)
   const pendingContext = useStore((s) => s.contextPending)
   // the team's tasks waiting for the map, plus hand edits not yet collected
@@ -455,7 +456,7 @@ export function IdeWindow() {
   const dirty = useMemo(() => tabs.filter((t) => t.text !== t.saved).length, [tabs])
 
   return (
-    <div data-left-drawer={ide === 'open' ? '' : undefined} className={`glass rise absolute bottom-3 left-[68px] top-16 z-20 flex flex-col overflow-hidden rounded-2xl ${ide === 'open' ? '' : 'hidden'}`} style={{ width }} data-testid="ide">
+    <div data-left-drawer={ide === 'open' ? '' : undefined} className={`glass rise absolute bottom-3 ${SIDE_DOCK[layout]} top-16 z-20 flex max-w-[calc(100vw-300px)] flex-col overflow-hidden rounded-2xl ${ide === 'open' ? '' : 'hidden'}`} style={{ width }} data-testid="ide">
       <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
         <Code2 size={16} className="text-violet-300" />
         <div className="font-display text-sm font-bold">Code</div>

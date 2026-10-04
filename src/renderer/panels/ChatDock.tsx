@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { Columns2, Eraser, Pencil, Send, Square, X } from 'lucide-react'
 import { SHORT_PROVIDER, modelLabel } from '@shared/catalog'
 import { ROLE_LABEL } from '@shared/templates'
-import { MASTERMIND_ID } from '@shared/types'
+import { MASTERMIND_ID, type AgentSpec, type Effort } from '@shared/types'
+import { SUPPORTED_EFFORTS } from '@shared/effort'
+import { InboxCard } from './InboxPanel'
 import { EMPTY_LIST, EMPTY_MAP, api, useStore } from '../state/store'
 import { ActivityLine } from './ActivityLine'
 import { MessageView } from './MessageView'
@@ -10,7 +12,78 @@ import { OrbAvatar } from './OrbAvatar'
 
 const STATUS_TEXT = { idle: 'idle', thinking: 'thinking', working: 'working', waiting: 'waiting for you', error: 'error' }
 
-function ChatPanel({ agentId }: { agentId: string }) {
+/** How much an agent may do without asking, as the composer offers it. */
+type Access = 'supervised' | 'auto' | 'full'
+const accessOf = (a: AgentSpec): Access => (!a.autoApprove ? 'supervised' : a.gated ? 'auto' : 'full')
+const ACCESS: Record<Access, { label: string; help: string; patch: Partial<AgentSpec> }> = {
+  supervised: { label: 'Supervised', help: 'Asks before every edit and command', patch: { autoApprove: false } },
+  auto: { label: 'Auto-accept', help: 'Edits and runs without asking; still needs an approved plan for delegated work', patch: { autoApprove: true, gated: true } },
+  full: { label: 'Full access', help: 'Edits, runs and takes tasks without asking. Pushing and destructive commands always ask.', patch: { autoApprove: true, gated: false } }
+}
+
+/** Model, effort and access for the agent being talked to, saved to it as they change. */
+function ComposerBar({ agent }: { agent: AgentSpec }) {
+  const catalog = useStore((s) => s.settings?.catalog ?? EMPTY_MAP)
+  if (agent.terminal) return null
+  const models = catalog[agent.provider] ?? []
+  const list = models.some((m) => m.id === agent.model) ? models : [{ id: agent.model, label: modelLabel(catalog, agent.provider, agent.model) }, ...models]
+  const save = (patch: Partial<AgentSpec>) => void api().saveAgent({ ...agent, ...patch }, false)
+  const pick = 'cursor-pointer rounded-md bg-transparent px-1.5 py-0.5 text-[11px] text-indigo-200/80 outline-none hover:bg-white/5 hover:text-white'
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1 px-1" data-testid="composer-bar">
+      {agent.provider === 'mock' ? (
+        <span className="px-1.5 text-[11px] text-indigo-300/60" title="An offline stand-in: pick a real provider in the agent editor">
+          Mock (no AI)
+        </span>
+      ) : (
+        <select className={pick} value={agent.model} onChange={(e) => save({ model: e.target.value })} title="Model" data-testid="composer-model">
+          {list.map((m) => (
+            <option key={m.id} value={m.id} className="bg-[#0b0d1f]">
+              {SHORT_PROVIDER[agent.provider]} {m.label}
+            </option>
+          ))}
+        </select>
+      )}
+      <span className="text-indigo-300/30">·</span>
+      <select className={pick} value={agent.effort} onChange={(e) => save({ effort: e.target.value as Effort })} title="Effort: how hard it thinks (higher is slower and uses more)" data-testid="composer-effort">
+        {SUPPORTED_EFFORTS[agent.provider].map((e) => (
+          <option key={e} value={e} className="bg-[#0b0d1f]">
+            {e[0].toUpperCase() + e.slice(1)}
+          </option>
+        ))}
+      </select>
+      {agent.permissions === 'write' && (
+        <>
+          <span className="text-indigo-300/30">·</span>
+          <select className={pick} value={accessOf(agent)} onChange={(e) => save(ACCESS[e.target.value as Access].patch)} title={ACCESS[accessOf(agent)].help} data-testid="composer-access">
+            {(Object.keys(ACCESS) as Access[]).map((k) => (
+              <option key={k} value={k} className="bg-[#0b0d1f]" title={ACCESS[k].help}>
+                {ACCESS[k].label}
+              </option>
+            ))}
+          </select>
+        </>
+      )}
+    </div>
+  )
+}
+
+/** What this agent is waiting on the user for, answered right here in the chat. */
+function InlinePrompts({ agentId }: { agentId: string }) {
+  const inbox = useStore((s) => s.inbox)
+  // Mastermind's inbox is everyone's; any other agent shows what it asked itself
+  const pending = inbox.filter((i) => i.status === 'pending' && (agentId === MASTERMIND_ID || i.askedBy === agentId))
+  if (!pending.length) return null
+  return (
+    <div className="scroll-thin max-h-[45vh] space-y-2 overflow-y-auto px-3 pt-3" data-testid="inline-prompts">
+      {pending.map((item) => (
+        <InboxCard key={item.id} item={item} />
+      ))}
+    </div>
+  )
+}
+
+export function ChatPanel({ agentId, wide = false }: { agentId: string; wide?: boolean }) {
   const agent = useStore((s) => s.project?.agents.find((a) => a.id === agentId))
   const messages = useStore((s) => s.chats[agentId] ?? EMPTY_LIST)
   const st = useStore((s) => s.status[agentId])
@@ -33,7 +106,7 @@ function ChatPanel({ agentId }: { agentId: string }) {
   const isMm = agentId === MASTERMIND_ID
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col" data-testid={`chat-${agentId}`}>
-      <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
+      <div className={`flex items-center gap-3 border-b border-white/10 px-4 py-3 ${wide ? 'hidden' : ''}`}>
         <OrbAvatar color={agent.color} brain={isMm} status={st?.status} size={36} />
         <div className="min-w-0 flex-1">
           <div className="truncate font-display text-[15px] font-bold">{agent.name}</div>
@@ -61,6 +134,7 @@ function ChatPanel({ agentId }: { agentId: string }) {
         </button>
       </div>
       <div className="scroll-thin flex-1 overflow-y-auto px-4 select-text">
+        <div className={wide ? 'mx-auto max-w-[820px] pt-4' : ''}>
         {messages.length === 0 && (
           <div className="mt-10 text-center text-sm text-indigo-300/60">
             {isMm ? 'Tell Mastermind what you want to build. It will route the work to your team.' : `Chat with ${agent.name} directly.`}
@@ -71,8 +145,15 @@ function ChatPanel({ agentId }: { agentId: string }) {
         ))}
         <ActivityLine agentId={agentId} />
         <div ref={end} className="h-2" />
+        </div>
       </div>
-      <div className="border-t border-white/10 p-3">
+      {/* the Map has its balloons; Focus answers right in the chat */}
+      {wide && (
+        <div className="mx-auto w-full max-w-[860px]">
+          <InlinePrompts agentId={agentId} />
+        </div>
+      )}
+      <div className={`p-3 ${wide ? 'mx-auto w-full max-w-[860px]' : 'border-t border-white/10'}`}>
         <div className="flex items-end gap-2 rounded-xl border border-white/10 bg-black/40 p-2 focus-within:border-violet-400/60">
           <textarea
             className="scroll-thin max-h-48 min-h-[2.4rem] flex-1 resize-none bg-transparent px-1.5 py-1 text-sm outline-none"
@@ -97,6 +178,7 @@ function ChatPanel({ agentId }: { agentId: string }) {
             <Send size={15} />
           </button>
         </div>
+        <ComposerBar agent={agent} />
       </div>
     </div>
   )

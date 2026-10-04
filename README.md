@@ -6,6 +6,20 @@ packets fly), ask you questions through Mastermind, and work on a real project f
 
 ![team](docs/team.png)
 
+## Two layouts
+
+- **Focus** (the default): a sidebar with the project, its sessions, every agent (with what it is
+  doing and what it is waiting on you for) and every tool; one conversation in the middle; the
+  composer sets the agent's model, effort and access (**Supervised**, **Auto-accept**, **Full
+  access**) right where you type. Replies show their work in order - thinking as it streams, each
+  run of tool calls on one line, folded behind "Worked for 2m · 14 steps" once the answer is in -
+  and questions and approvals are answered inline. Tools open beside the sidebar; the inbox, code,
+  git, context and media sheets dock on the right.
+- **Map**: the team as orbs in space, with links that light up as agents talk. Switch with
+  Focus / Map at the top of the sidebar, or the button on the Map's rail.
+
+![focus](docs/focus.png)
+
 ## What it does
 
 - **Agents with their own brains.** Each agent picks a provider, model and effort:

@@ -26,6 +26,9 @@ test('the workstation runs end to end on mock agents', async () => {
   // the layout a formatter leaves: objects broken over lines, short arrays kept on one
   const itemsText = JSON.stringify(items, null, 2).replace(/\[\s+([^\[\]{}]*?)\s+\]/g, (_m, inner: string) => `[${inner.split(/,\s+/).join(', ')}]`) + '\n'
   writeFileSync(join(project, 'data', 'items.json'), itemsText)
+  // most of the run drives the Map (the space view); the Focus layout gets its own section at the end
+  mkdirSync(join(root, 'user'))
+  writeFileSync(join(root, 'user', 'settings.json'), JSON.stringify({ layout: 'map' }))
   const app = await electron.launch({
     // SwiftShader: CI machines have no GPU, and the space scene is WebGL
     args: [resolve('out/main/index.js'), '--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--project', project],
@@ -515,6 +518,48 @@ test('the workstation runs end to end on mock agents', async () => {
   await expect(page.getByTestId('plan-seven_day')).toContainText('41%')
   await page.waitForTimeout(300)
   await page.screenshot({ path: join(shots, '36-plan-gauge.png'), clip: { x: 480, y: 0, width: 1000, height: 56 } })
+
+  // the Focus layout: the team and the tools down the side, one conversation in the middle
+  await page.getByTestId('layout-focus').click()
+  await expect(page.getByTestId('focus-sidebar')).toBeVisible()
+  await expect(page.getByTestId('focus-agent-mastermind')).toBeVisible()
+  await expect(page.getByTestId('focus-tool-logic-board')).toBeVisible()
+  await page.getByTestId('focus-agent-tester').click()
+  await expect(page.getByTestId('focus-header')).toContainText('Tester')
+  const fchat = page.getByTestId('chat-tester')
+  await expect(fchat.getByTestId('worked-for').last()).toBeVisible()
+  await page.waitForTimeout(400)
+  await shot(page, '39-focus')
+  // the composer sets the agent's effort and access, saved to its file
+  await page.getByTestId('focus-agent-implementer').click()
+  const ichat = page.getByTestId('chat-implementer')
+  await ichat.getByTestId('composer-access').selectOption('supervised')
+  await expect.poll(() => readFileSync(join(project, '.multimine', 'agents', 'implementer.md'), 'utf8'), { timeout: 10_000 }).toContain('autoApprove: false')
+  await ichat.getByTestId('composer-access').selectOption('full')
+  await expect.poll(() => readFileSync(join(project, '.multimine', 'agents', 'implementer.md'), 'utf8'), { timeout: 10_000 }).toMatch(/gated: false[\s\S]*autoApprove: true|autoApprove: true[\s\S]*gated: false/)
+  // a question waiting on the user is answered right in the chat
+  await page.getByTestId('focus-agent-mastermind').click()
+  const mchat = page.getByTestId('chat-mastermind')
+  await mchat.getByTestId('chat-input').fill('/tool ask_user {"questions":[{"question":"Which element?","options":[{"label":"Fire"},{"label":"Frost"}]}]}')
+  await mchat.getByTestId('chat-input').press('Enter')
+  await expect(mchat.getByTestId('inline-prompts')).toContainText('Which element?', { timeout: 15_000 })
+  await page.waitForTimeout(400)
+  await shot(page, '40-focus-question')
+  await mchat.getByTestId('inline-prompts').getByRole('button', { name: /^Fire/ }).click()
+  await mchat.getByTestId('inline-prompts').getByRole('button', { name: /send|answer|submit/i }).first().click()
+  await expect(mchat.getByTestId('inline-prompts')).toHaveCount(0, { timeout: 15_000 })
+  // a tool opens beside the sidebar; the drawers dock on the right
+  await page.getByTestId('focus-tool-logic-board').click()
+  await expect(page.getByTestId('logic-board')).toBeVisible()
+  await page.waitForTimeout(400)
+  await shot(page, '41-focus-tool')
+  await page.getByTestId('focus-agent-mastermind').click()
+  await page.getByTestId('git').click()
+  await page.waitForTimeout(500)
+  await shot(page, '42-focus-git')
+  await page.getByTestId('git').click()
+  await page.getByTestId('layout-map').click()
+  await expect(page.getByTestId('session-menu')).toBeVisible()
 
   expect(existsSync(join(project, '.multimine', 'sessions'))).toBe(true)
   expect(existsSync(join(project, 'multimine.md'))).toBe(true)

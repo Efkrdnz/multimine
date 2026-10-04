@@ -17,7 +17,7 @@ const hhmm = (at: number) => {
 }
 
 /** How much of the Claude plan's usage windows is spent, as Claude Code last reported it. */
-function PlanGauge() {
+export function PlanGauge() {
   const all = useStore((s) => s.planLimits)
   const windows = all.filter((w) => !w.resetsAt || w.resetsAt > Date.now()).sort((a, b) => order(a.window) - order(b.window)).slice(0, 3)
   if (!windows.length) return null
@@ -52,7 +52,7 @@ function PlanGauge() {
 const order = (w: string) => ['five_hour', 'seven_day', 'seven_day_overage_included', 'seven_day_opus', 'seven_day_sonnet', 'overage'].indexOf(w) + 1 || 99
 
 /** This session's usage, and which agent spent what. */
-function UsagePill() {
+export function UsagePill() {
   const usage = useStore((s) => s.usage)
   const byAgent = useStore((s) => s.usageByAgent)
   const agents = useStore((s) => s.project?.agents ?? [])

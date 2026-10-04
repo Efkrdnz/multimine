@@ -349,6 +349,8 @@ export interface AppSettings {
   economy: EconomySettings
   /** How long a handoff blocks its caller before the report is delivered later instead. */
   handoffWaitMinutes: number
+  /** Focus: a sidebar of agents and tools, one chat in the middle. Map: the space view. */
+  layout: 'focus' | 'map'
   /** When the Context Handler is told about changes: once the team is quiet, only on Sync, or after every task. */
   contextUpdates: 'idle' | 'manual' | 'each'
   /** Minutes of quiet before a batched context update. */

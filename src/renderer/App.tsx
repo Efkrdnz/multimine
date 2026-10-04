@@ -16,6 +16,7 @@ import { TeamWizard } from './panels/TeamWizard'
 import { ToolWindows } from './tools/ToolWindow'
 import { ConsentDialog } from './tools/ConsentDialog'
 import { ManagePlugins } from './tools/ManagePlugins'
+import { FocusShell } from './focus/FocusShell'
 
 // the code window carries Monaco and xterm: loaded the first time it is opened, not at start-up
 const IdeWindow = lazy(() => import('./ide/IdeWindow').then((m) => ({ default: m.IdeWindow })))
@@ -47,15 +48,23 @@ export function App() {
     return off
   }, [])
 
+  const focus = useStore((s) => (s.settings?.layout ?? 'focus') === 'focus')
   return (
     <div className="relative h-full w-full select-none">
-      <SpaceView />
+      {/* the space scene is the Map, and the backdrop before a project is open */}
+      {(!focus || !project) && <SpaceView />}
       {ready && !project && <Welcome />}
       {project && (
         <>
-          <TopBar />
-          <LeftRail />
-          <ChatDock />
+          {focus ? (
+            <FocusShell />
+          ) : (
+            <>
+              <TopBar />
+              <LeftRail />
+              <ChatDock />
+            </>
+          )}
           {panel === 'inbox' && <InboxPanel />}
           {panel === 'media' && <MediaPanel />}
           {panel === 'context' && <ContextPanel />}

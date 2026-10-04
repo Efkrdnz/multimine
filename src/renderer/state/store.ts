@@ -233,3 +233,9 @@ export const api = () => window.mm.api
 /** Stable empties for selectors: a fresh [] or {} per call makes zustand re-render forever. */
 export const EMPTY_LIST: never[] = []
 export const EMPTY_MAP: Record<string, never> = {}
+
+/** Which layout is on: Focus (sidebar, one chat) or Map (the space view). */
+export const useLayout = (): 'focus' | 'map' => useStore((s) => s.settings?.layout ?? 'focus')
+
+/** Where the side sheets dock: beside the rail in Map, on the right of the chat in Focus. */
+export const SIDE_DOCK = { map: 'left-[68px]', focus: 'right-3' } as const

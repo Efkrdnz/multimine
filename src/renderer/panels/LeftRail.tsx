@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { BookOpen, Code2, GitBranch, Image, Inbox, LayoutGrid, Plus, Settings, Sparkles } from 'lucide-react'
+import { BookOpen, Code2, GitBranch, Image, Inbox, LayoutGrid, Plus, Settings, Sparkles, PanelLeft } from 'lucide-react'
 import { ToolsGrid } from '../tools/ToolsGrid'
 import { roleTemplate } from '@shared/templates'
-import { useStore } from '../state/store'
+import { api, useStore } from '../state/store'
 
 function RailButton({ icon, label, active, badge, onClick, testId }: { icon: React.ReactNode; label: string; active?: boolean; badge?: number; onClick: () => void; testId?: string }) {
   return (
@@ -43,6 +43,7 @@ export function LeftRail() {
         {tools && <ToolsGrid onClose={() => setTools(false)} />}
       </div>
       <RailButton testId="settings" icon={<Settings size={18} />} label="Settings" onClick={() => set({ modal: { kind: 'settings' } })} />
+      <RailButton testId="layout-focus" icon={<PanelLeft size={18} />} label="Focus layout: sidebar and one chat" onClick={() => void api().updateSettings({ layout: 'focus' })} />
     </div>
   )
 }

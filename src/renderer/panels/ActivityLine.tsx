@@ -1,6 +1,6 @@
 import { AlertTriangle, Square } from 'lucide-react'
 import { elapsed } from '@shared/activity'
-import { api, useStore } from '../state/store'
+import { api, useLayout, useStore } from '../state/store'
 import { useNow } from '../state/useNow'
 
 /**
@@ -9,6 +9,7 @@ import { useNow } from '../state/useNow'
  */
 export function ActivityLine({ agentId }: { agentId: string }) {
   const st = useStore((s) => s.status[agentId])
+  const layout = useLayout()
   const busy = st && st.status !== 'idle' && st.status !== 'error'
   const now = useNow(!!busy)
   if (!busy) return null
@@ -23,7 +24,7 @@ export function ActivityLine({ agentId }: { agentId: string }) {
         {st.since && <span className="shrink-0 font-mono text-indigo-300/80" data-testid="activity-clock">{elapsed(now - st.since)}</span>}
       </div>
       {st.status === 'waiting' && (
-        <div className="mt-1 text-[11px] text-amber-100/80">Waiting for you: answer in the balloon over its orb, or in the Inbox.</div>
+        <div className="mt-1 text-[11px] text-amber-100/80">{layout === 'focus' ? 'Waiting for you: answer below, or in the Inbox.' : 'Waiting for you: answer in the balloon over its orb, or in the Inbox.'}</div>
       )}
       {st.quiet && (
         <div className="mt-1 flex items-start gap-1.5 text-amber-100/90">

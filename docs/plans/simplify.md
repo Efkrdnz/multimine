@@ -57,13 +57,17 @@ a commit and push. No phase leaves the app unusable.
 - `archive/multi-agent` branch at `256774b`, pushed.
 - Last step of Phase 7: a line in the README pointing to it.
 
-### Phase 1 - Fix before anything moves
+### Phase 1 - Fix before anything moves (done)
 
-- `readOnlyCommand` (`src/main/providers/claudeCli.ts`) auto-approves anything that *starts* like a
-  read: `echo $(rm -rf ~)`, `find . -delete` and `find . -exec rm {} \;` all pass, and line ~194
-  runs them without asking even in Supervised mode. Replace the regex allowlist: in Supervised mode
-  every Bash call asks (Claude Code's own `default` permission mode), and a read-only chat uses the
-  SDK's tool allowlist with Bash removed. Add tests for the bypasses above.
+- `readOnlyCommand` (was in `src/main/providers/claudeCli.ts`) auto-approved anything that *started*
+  like a read: `echo $(rm -rf ~)`, `find . -delete` and `find . -exec rm {} \;` all passed, and ran
+  without asking even in Supervised mode. It now lives in `src/main/providers/guard.ts` and proves a
+  command is a read instead of guessing: the line is split into its commands (`|`, `&&`, `||`, `;`),
+  anything with substitution, redirection, backgrounding or a newline is refused, every command must
+  be a known reader, and the flags that make a reader write or run something (`find -exec/-delete`,
+  `rg --pre`, `git -c`, `git diff --output`, `tree -o`, `git branch <name>`...) are refused. What it
+  cannot prove asks. `hardStop` also catches `git -C dir push`, `rm -r -f`, `rm --recursive` and
+  `find -delete`. Tests in `tests/unit/core.test.ts`.
 
 ### Phase 2 - Slim the engine (main process)
 
@@ -157,17 +161,13 @@ a long build does not clutter the conversation you are in.
 - New screenshots in `docs/`; remove the ones of removed features (`team.png`, `inbox.png`,
   `balloon.png`, `economy-link.png`).
 
-## Decisions to make before Phase 3
+## Decisions (taken)
 
-1. **The space map.** (a) Delete it with the team. (b) Keep it as an optional view drawing the open
-   chats - and a Claude chat's own sub-agents - as orbs. It is the most shareable picture the project
-   has; (b) costs little once the engine is small. Recommendation: delete in Phase 3, bring back (b)
-   as a plugin-sized follow-up if wanted.
-2. **The Context Handler.** Drop it (recommended: `CLAUDE.md` / `AGENTS.md` do most of the job for
-   free), or turn "map this project into `.multimine/context/`" into a plugin later.
-3. **Terminal agents** (`+ Claude Code` / `+ Codex` joining the team from the code window's
-   terminal). Without a team to join they become plain terminals running the CLI. Recommendation:
-   keep the buttons, drop the bus wiring.
+1. **The space map** is deleted in Phase 3. An optional view drawing the open chats and a Claude
+   chat's own sub-agents as orbs can come back later, plugin-sized.
+2. **The Context Handler** is dropped: `CLAUDE.md` / `AGENTS.md` do most of its job for free.
+3. **Terminal agents**: the `+ Claude Code` / `+ Codex` buttons stay as plain terminals running the
+   CLI; the bus wiring that made them team members goes.
 
 ## Order and size
 

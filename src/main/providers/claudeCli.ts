@@ -2,7 +2,7 @@ import { query, type PermissionResult, type SDKUserMessage } from '@anthropic-ai
 import { clampEffort } from '@shared/effort'
 import type { Question } from '@shared/types'
 import type { AgentEvent, ProviderAdapter, TurnRequest } from './types'
-import { hardStop } from './guard'
+import { hardStop, readOnlyCommand } from './guard'
 import { projectInstructions } from './projectDoc'
 
 const WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']
@@ -16,12 +16,6 @@ export function friendlyClaudeError(raw: string): string {
   if (/authenticat|oauth|\b401\b|not logged in|invalid api key|please run \/login|credentials/i.test(raw)) return `${LOGIN_HELP}\n\n(${raw.trim()})`
   if (/rate.?limit|usage limit|\b429\b/i.test(raw)) return `Your Claude subscription hit its usage limit. Wait for it to reset, or switch this agent to another model or provider.\n\n(${raw.trim()})`
   return raw
-}
-
-/** A shell command that only looks at things. Anything else is refused to a read-only agent. */
-export function readOnlyCommand(cmd: string): boolean {
-  if (/[;&|]\s*(rm|mv|cp|chmod|chown|dd|mkfs|curl|wget)\b|>|\btee\b/.test(cmd)) return false
-  return /^\s*(ls|dir|cat|head|tail|wc|find|grep|rg|tree|pwd|echo|git\s+(status|log|diff|show|branch|ls-files|blame)|type|which|stat|file)\b/.test(cmd)
 }
 
 function textOf(content: unknown): string {

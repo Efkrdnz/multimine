@@ -4,8 +4,8 @@ import { clampEffort } from '@shared/effort'
 import { roleTemplate } from '@shared/templates'
 import { effortOptions } from '../../src/main/providers/aiSdk'
 import { codexArgs, codexEvents, codexPrompt, winQuote } from '../../src/main/providers/codexCli'
-import { friendlyClaudeError, readOnlyCommand } from '../../src/main/providers/claudeCli'
-import { hardStop } from '../../src/main/providers/guard'
+import { friendlyClaudeError } from '../../src/main/providers/claudeCli'
+import { hardStop, readOnlyCommand } from '../../src/main/providers/guard'
 import { findMediaUrls, kindOf } from '../../src/main/media/capture'
 import { buildSystemPrompt, CONTEXT_PROTOCOL } from '../../src/main/orchestrator/prompts'
 import { Inbox, formatAnswers, recommendedAnswers } from '../../src/main/orchestrator/inbox'
@@ -122,6 +122,12 @@ describe('guards', () => {
     expect(hardStop('rm -rf build')).toBe('recursive delete')
     expect(hardStop('git reset --hard HEAD~1')).toBeTruthy()
     expect(hardStop('./gradlew build')).toBeNull()
+    expect(hardStop('git -C ../other push --force')).toBe('git push')
+    expect(hardStop('rm -r -f build')).toBe('recursive delete')
+    expect(hardStop('rm --recursive build')).toBe('recursive delete')
+    expect(hardStop('find . -name "*.class" -delete')).toBe('recursive delete')
+    expect(hardStop('git branch --delete --force old')).toBeTruthy()
+    expect(hardStop('rm notes.txt')).toBeNull()
   })
 
   it('lets a read-only agent look but not touch', () => {
@@ -129,6 +135,37 @@ describe('guards', () => {
     expect(readOnlyCommand('ls src | head')).toBe(true)
     expect(readOnlyCommand('cat a > b')).toBe(false)
     expect(readOnlyCommand('npm install')).toBe(false)
+    expect(readOnlyCommand('grep -rn "a|b" src 2>/dev/null | head -20')).toBe(true)
+    expect(readOnlyCommand("find . -name '*.ts' -type f")).toBe(true)
+    expect(readOnlyCommand('git status && git diff --stat')).toBe(true)
+    expect(readOnlyCommand('git branch -a')).toBe(true)
+  })
+
+  it('does not take a command for a look because of how it starts', () => {
+    for (const cmd of [
+      'echo $(rm -rf ~)',
+      'echo `rm -rf ~`',
+      'ls; rm -rf src',
+      'ls && rm -rf src',
+      'ls & rm -rf src',
+      'cat a\nrm b',
+      'find . -delete',
+      'find . -exec rm {} \\;',
+      'find . -execdir sh -c x ;',
+      'rg --pre ./evil foo',
+      'git diff --output=src/main.ts',
+      'git -c core.pager=evil log',
+      'git branch new-branch',
+      'git checkout main',
+      'tree -o out.txt',
+      'echo hi > file',
+      'echo hi >> file',
+      'GIT_EXTERNAL_DIFF=evil git diff',
+      './ls',
+      'cat "unclosed',
+      'sort -o out in'
+    ])
+      expect(readOnlyCommand(cmd), cmd).toBe(false)
   })
 })
 

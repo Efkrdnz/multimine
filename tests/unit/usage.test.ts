@@ -166,3 +166,31 @@ describe('the old Implementer default', () => {
     }
   })
 })
+
+describe('the lean team migration', () => {
+  it('moves Mastermind and the Planner off the old instructions, and leaves edited ones alone', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'mm-lean-'))
+    try {
+      const proj = join(dir, 'proj')
+      await mkdir(join(proj, '.multimine', 'agents'), { recursive: true })
+      const legacy = (f: string) => readFile(join(__dirname, '..', 'fixtures', 'legacy', f), 'utf8')
+      await writeFile(join(proj, '.multimine', 'agents', 'mastermind.md'), await legacy('mastermind.md'))
+      await writeFile(join(proj, '.multimine', 'agents', 'planner.md'), await legacy('planner.md'))
+      const mine = (await legacy('planner.md')).replace('You are the **Planner**', 'You are my **Planner**').replace('name: Planner', 'name: Architect')
+      await writeFile(join(proj, '.multimine', 'agents', 'architect.md'), mine)
+      const events: MainEvent[] = []
+      const app = new MultimineApp({ userDataDir: join(dir, 'user'), cipher: { encrypt: (s) => s, decrypt: (s) => s }, emit: (e) => events.push(e), mockDelayMs: 0, forceMockMastermind: true })
+      await app.start()
+      await app.openProject(proj)
+      expect(app.project!.get('mastermind')!.purpose).toContain('Match the process to the size of the request')
+      expect(app.project!.get('planner')!.planMode).toBe(false)
+      expect(app.project!.get('planner')!.purpose).toContain('do not ask for approval yourself')
+      expect(app.project!.get('architect')!.planMode).toBe(true)
+      expect(app.project!.get('architect')!.purpose).toContain('You are my **Planner**')
+      expect(events.some((e) => e.type === 'toast' && e.text.includes('straight to the Implementer'))).toBe(true)
+      await app.shutdown()
+    } finally {
+      await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
+    }
+  })
+})

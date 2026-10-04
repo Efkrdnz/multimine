@@ -71,6 +71,8 @@ describe('pipeline', () => {
     app = new MultimineApp({ userDataDir: join(dir, 'user'), cipher, emit: (e) => events.push(e), mockScript: script, mockDelayMs: 0, forceMockMastermind: true })
     await app.start()
     await app.openProject(join(dir, 'proj'))
+    // context updates wait for a quiet spell; a short one here
+    await app.updateSettings({ contextIdleMinutes: 0.001 })
     for (const role of ['designer', 'implementer', 'context-handler'] as const) {
       const t = roleTemplate(role)
       // created by the user: context-handler creation kicks off a bootstrap turn

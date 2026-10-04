@@ -337,6 +337,10 @@ export interface AppSettings {
   economy: EconomySettings
   /** How long a handoff blocks its caller before the report is delivered later instead. */
   handoffWaitMinutes: number
+  /** When the Context Handler is told about changes: once the team is quiet, only on Sync, or after every task. */
+  contextUpdates: 'idle' | 'manual' | 'each'
+  /** Minutes of quiet before a batched context update. */
+  contextIdleMinutes: number
   council: CouncilConfig
   /** Provider -> base URL override (compatible, openrouter, ollama...). */
   baseUrls: Partial<Record<ProviderKind, string>>
@@ -472,6 +476,8 @@ export type MainEvent =
   | { type: 'usage'; total: Usage; byAgent?: Record<string, Usage> }
   /** The Claude plan's usage windows; a warning when one has just crossed 90%. */
   | { type: 'plan-limits'; windows: PlanWindow[]; warning?: string }
+  /** Changes waiting for the Context Handler's next update. */
+  | { type: 'context-pending'; count: number }
   /** Open a project file in the IDE window, at a line. */
   | { type: 'ide-open'; path: string; line?: number }
   | { type: 'toast'; level: 'info' | 'error'; text: string }

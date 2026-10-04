@@ -99,13 +99,14 @@ it('manual changes reach the Context Handler as one batch with the diff', async 
   })
   await app.start()
   await app.openProject(join(dir, 'p'))
+  await app.updateSettings({ contextIdleMinutes: 0.002 })
   await app.saveAgent({ ...roleTemplate('context-handler', ''), provider: 'mock' }, true)
   await new Promise((r) => setTimeout(r, 100)) // its bootstrap turn
   prompts.length = 0
   await app.ideWrite('src/Spell.java', 'class Spell {}')
   for (let i = 0; i < 100 && !prompts.length; i++) await new Promise((r) => setTimeout(r, 20))
   expect(prompts).toHaveLength(1)
-  expect(prompts[0]).toContain('edited the project by hand')
+  expect(prompts[0]).toContain('Edited by hand')
   expect(prompts[0]).toContain('src/Spell.java')
   await app.shutdown()
   await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })

@@ -321,18 +321,71 @@ export class Engine {
     return this.writing.size > 0 || Date.now() < this.writingUntil
   }
 
-  /** The user changed files by hand (any editor): the Context Handler gets one batch with the diff. */
+  /** The user changed files by hand (any editor): queued for the Context Handler with the team's changes. */
   async manualChanges(files: Map<string, 'added' | 'changed' | 'deleted'>): Promise<boolean> {
     const handler = this.d.project.contextHandler()
     if (!handler || !files.size) return false
-    const list = [...files.entries()].map(([f, k]) => `- ${k}: ${f}`).join('\n')
-    const changed = [...files.entries()].filter(([, k]) => k !== 'deleted').map(([f]) => f)
-    const diff = changed.length ? await this.gitDiff(changed) : ''
-    const body =
-      `The user edited the project by hand (outside the team). Bring the context files up to date with these changes and add a changelog entry marked "manual".\n\n## Files\n${list}\n\n` +
-      (diff ? `## Diff\n\`\`\`diff\n${diff}\n\`\`\`\n` : 'Read the files themselves; there is no git diff for them (new, or not a git repository).\n')
-    await this.logBus('context', 'user', handler.id, `${files.size} manual change${files.size === 1 ? '' : 's'}`)
-    void this.send(handler.id, body, 'user', 'context')
+    for (const [f, k] of files) this.pendingContext.manual.set(f, k)
+    this.queueContext()
+    return true
+  }
+
+  /**
+   * Changes the Context Handler has not been told about yet. It used to run a turn after every task
+   * that changed a file, in one session that grew forever; now the changes wait and go in one batch,
+   * in a fresh session, once the team has gone quiet (or when the user presses Sync).
+   */
+  private pendingContext: { team: { agentId: string; name: string; summary: string; files: string[] }[]; manual: Map<string, 'added' | 'changed' | 'deleted'> } = { team: [], manual: new Map() }
+  private contextTimer: ReturnType<typeof setTimeout> | null = null
+
+  /** How many changes are waiting for the Context Handler. */
+  contextPending(): number {
+    return this.pendingContext.team.length + (this.pendingContext.manual.size ? 1 : 0)
+  }
+
+  private queueContext(): void {
+    const mode = this.d.config.settings.contextUpdates ?? 'idle'
+    this.d.emit({ type: 'context-pending', count: this.contextPending() })
+    if (mode === 'each') return void this.flushContext()
+    if (mode === 'manual') return
+    this.armContextTimer()
+  }
+
+  private armContextTimer(): void {
+    if (this.contextTimer) clearTimeout(this.contextTimer)
+    const ms = Math.max(0, (this.d.config.settings.contextIdleMinutes ?? 3) * 60_000)
+    // the team is still at it: wait for a quiet spell rather than update the map mid-task
+    this.contextTimer = setTimeout(() => (this.contextTimer = null, [...this.turns.keys()].some((id) => id !== this.d.project.contextHandler()?.id) ? this.armContextTimer() : void this.flushContext()), ms)
+    this.contextTimer.unref?.()
+  }
+
+  /** Sends everything waiting to the Context Handler as one update. False when there was nothing to send. */
+  async flushContext(): Promise<boolean> {
+    if (this.contextTimer) clearTimeout(this.contextTimer)
+    this.contextTimer = null
+    const handler = this.d.project.contextHandler()
+    const { team, manual } = this.pendingContext
+    if (!handler || (!team.length && !manual.size)) return false
+    this.pendingContext = { team: [], manual: new Map() }
+    this.d.emit({ type: 'context-pending', count: 0 })
+    const parts: string[] = ['The project changed since you last updated the context. Update every affected context file and add one changelog entry per change.']
+    if (team.length) {
+      parts.push(`## What the team did\n${team.map((t) => `### ${t.name}\n${t.summary}${t.files.length ? `\nFiles: ${t.files.join(', ')}` : ''}`).join('\n\n')}`)
+    }
+    if (manual.size) {
+      const changed = [...manual.entries()].filter(([, k]) => k !== 'deleted').map(([f]) => f)
+      const diff = changed.length ? await this.gitDiff(changed) : ''
+      parts.push(
+        `## Edited by hand (outside the team) - mark these changelog entries "manual"\n${[...manual.entries()].map(([f, k]) => `- ${k}: ${f}`).join('\n')}` +
+          (diff ? `\n\n\`\`\`diff\n${diff}\n\`\`\`` : '\n\nRead the files themselves; there is no git diff for them (new, or not a git repository).')
+      )
+    }
+    const git = await this.gitState()
+    if (git) parts.push(`## git status\n\`\`\`\n${git}\n\`\`\``)
+    const from = team.length && new Set(team.map((t) => t.agentId)).size === 1 && !manual.size ? team[0].agentId : 'user'
+    const what = [team.length ? `${team.length} task${team.length === 1 ? '' : 's'}` : '', manual.size ? `${manual.size} hand edit${manual.size === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ')
+    await this.logBus('context', from, handler.id, `update the context: ${what}`)
+    void this.send(handler.id, parts.join('\n\n'), from, 'context')
     return true
   }
 
@@ -489,10 +542,10 @@ export class Engine {
     // task, with a brief of everything done so far, to the next - in the same reply bubble.
     const hops = this.hopsFor(own, agent)
     let i = this.startHop(hops)
-    // a delegated task is self-contained (the task and its approved plan), so it starts a session of
-    // its own: carrying every earlier task's transcript into each call is what made long sessions so
+    // a delegated task is self-contained (the task and its approved plan), and so is a context update,
+    // so each starts a session of its own: carrying every earlier task's transcript into each call is what made long sessions so
     // costly. Follow-ups (messages, reports, the user's own chat) resume the session it started.
-    let fresh = kind === 'delegate'
+    let fresh = kind === 'delegate' || kind === 'context'
     let promptNow = prompt
     let historyNow = fresh ? [] : history
     let continuing = false
@@ -576,7 +629,7 @@ export class Engine {
     if (watchChanges && sessionId === this.session.id) {
       const after = await this.gitState()
       const files = ctx.reports.flatMap((r) => r.files ?? [])
-      if (after !== gitBefore || files.length) void this.updateContext(agent, ctx.reports, after)
+      if (after !== gitBefore || files.length) this.updateContext(agent, ctx.reports)
     }
     const reportText = ctx.reports
       .map((r) => `${r.summary}${r.planPath ? `\n\nPlan saved at ${r.planPath}` : ''}${r.planMd ? `\n\n${r.planMd}` : ''}${r.files?.length ? `\n\nFiles: ${r.files.join(', ')}` : ''}`)
@@ -989,19 +1042,13 @@ export class Engine {
     await this.send(handler.id, BOOTSTRAP_TASK, from, 'context')
   }
 
-  /** After a write agent changed the project, the Context Handler (if there is one) brings the map up to date. */
-  private async updateContext(agent: AgentSpec, reports: Report[], git: string | null): Promise<void> {
+  /** After a write agent changed the project, the change waits for the Context Handler's next update. */
+  private updateContext(agent: AgentSpec, reports: Report[]): void {
     const handler = this.d.project.contextHandler()
     if (!handler || handler.id === agent.id) return
     const summary = reports.map((r) => r.summary).join('\n\n') || '(no report was filed)'
-    const files = reports.flatMap((r) => r.files ?? [])
-    const body =
-      `${agent.name} just changed the project.\n\n## Their report\n${summary}\n\n` +
-      (files.length ? `## Files they named\n${files.map((f) => `- ${f}`).join('\n')}\n\n` : '') +
-      (git ? `## git status\n\`\`\`\n${git}\n\`\`\`\n\n` : '') +
-      'Update every affected context file and add a changelog entry.'
-    await this.logBus('context', agent.id, handler.id, `update context after ${agent.name}`)
-    await this.send(handler.id, body, agent.id, 'context')
+    this.pendingContext.team.push({ agentId: agent.id, name: agent.name, summary, files: reports.flatMap((r) => r.files ?? []) })
+    this.queueContext()
   }
 
   private gitState(): Promise<string | null> {
@@ -1231,7 +1278,7 @@ export class Engine {
       },
       {
         name: 'request_approval',
-        description: 'Ask the user to approve a plan. Include your own critique and the council verdict in plan_md. Returns APPROVED with an approval_id, or REJECTED with feedback.',
+        description: 'Ask the user to approve a plan (with your critique, and the council verdict if you ran one) in plan_md. Returns APPROVED with an approval_id, or REJECTED with feedback.',
         shape: { title: z.string(), plan_md: z.string() },
         handler: async (a) => {
           const item = await this.requestApproval(me, String(a.title), String(a.plan_md))

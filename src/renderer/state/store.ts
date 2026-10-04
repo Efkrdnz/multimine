@@ -65,6 +65,8 @@ export interface State {
   consent: { pluginId: string; thenOpen: boolean } | null
   /** Files changed by hand that the Context Handler has not been told about yet. */
   manual: { count: number; files: string[] }
+  /** Changes (tasks and hand-edit batches) waiting for the Context Handler's next update. */
+  contextPending: number
   /** Messages teammates sent to a terminal session, shown as a banner over its tab. */
   terminalNotes: Record<string, { from: string; text: string; ts: number }[]>
   modal: Modal
@@ -107,6 +109,7 @@ export const useStore = create<State>((set, get) => ({
   activeTool: null,
   consent: null,
   manual: { count: 0, files: [] },
+  contextPending: 0,
   terminalNotes: {},
   modal: null,
   toasts: [],
@@ -188,6 +191,9 @@ export function applyEvent(e: MainEvent): void {
       break
     case 'plan-limits':
       s.set({ planLimits: e.windows })
+      break
+    case 'context-pending':
+      s.set({ contextPending: e.count })
       break
     case 'ide-open':
       // the code window takes the left side as the rail's own button does; the tool stays open behind it

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { mkdir, readdir, rm } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { parseAgentFile, serializeAgentFile, slugify } from '@shared/agentFile'
@@ -5,6 +6,11 @@ import { MULTIMINE_TEMPLATE, roleTemplate } from '@shared/templates'
 import { MASTERMIND_ID, type AgentSpec, type ProjectInfo } from '@shared/types'
 import { projectPaths, type ProjectPaths } from './paths'
 import { readJson, readText, writeAtomic, writeJson } from './fsx'
+
+/** Fingerprints of the role instructions an old version wrote, whitespace aside. */
+const OLD_PURPOSE = { mastermind: 'eebf71eaa27c3fe8101df0c40c968c161f4bb609', planner: '6e2af982c693b4a754d4df80d05b4f25a93a1002' }
+
+const purposeHash = (purpose: string) => createHash('sha1').update(purpose.replace(/\s+/g, ' ').trim()).digest('hex')
 
 /** Agents, multimine.md and the layout of one opened project folder. */
 export class ProjectStore {
@@ -41,7 +47,7 @@ export class ProjectStore {
     return store
   }
 
-  /** Agents whose settings a migration changed when this project was opened (for a notice). */
+  /** What the migrations changed when this project was opened, one notice each. */
   migrated: string[] = []
 
   /**
@@ -52,19 +58,38 @@ export class ProjectStore {
   private async migrate(): Promise<string[]> {
     const file = join(this.paths.sessions, 'migrations.json')
     const done = await readJson<string[]>(file, [])
-    const changed: string[] = []
+    const notes: string[] = []
     if (!done.includes('implementer-effort-high')) {
       // the Implementer used to default to Opus at xhigh: the slowest, costliest setting there is
+      const changed: string[] = []
       for (const a of this.agents.values()) {
         if (a.role === 'implementer' && a.model === 'claude-opus-5-5' && a.effort === 'xhigh') {
           await this.saveAgent({ ...a, effort: 'high' })
           changed.push(a.name)
         }
       }
+      if (changed.length) notes.push(`${changed.join(', ')}: effort lowered from xhigh to high to save usage. Change it back in the agent editor if you want.`)
       done.push('implementer-effort-high')
-      await writeJson(file, done)
     }
-    return changed
+    if (!done.includes('lean-team-v1')) {
+      // Mastermind used to send every request through the Planner, the council and two approvals;
+      // agents still on those exact instructions get the version with a fast path for small tasks
+      let lean = false
+      for (const a of this.agents.values()) {
+        if (a.role === 'mastermind' && purposeHash(a.purpose) === OLD_PURPOSE.mastermind) {
+          await this.saveAgent({ ...a, purpose: roleTemplate('mastermind', a.id).purpose })
+          lean = true
+        }
+        if (a.role === 'planner' && a.planMode && purposeHash(a.purpose) === OLD_PURPOSE.planner) {
+          await this.saveAgent({ ...a, planMode: false, purpose: roleTemplate('planner', a.id).purpose })
+          lean = true
+        }
+      }
+      if (lean) notes.push('Mastermind now sends small, clear tasks straight to the Implementer (one approval, no Planner or council), and the Planner no longer asks for an approval of its own.')
+      done.push('lean-team-v1')
+    }
+    await writeJson(file, done)
+    return notes
   }
 
   async reloadAgents(): Promise<void> {

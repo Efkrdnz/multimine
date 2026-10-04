@@ -140,6 +140,7 @@ function General({ settings }: { settings: AppSettings }) {
           />
         </div>
       </section>
+      <ContextSection settings={settings} />
       <NotificationsSection settings={settings} />
       <WatchdogSection settings={settings} />
     </div>
@@ -147,6 +148,45 @@ function General({ settings }: { settings: AppSettings }) {
 }
 
 /** Desktop notifications when an agent needs you. */
+/** When the Context Handler hears about changes: batched once the team is quiet, on Sync, or after every task. */
+function ContextSection({ settings }: { settings: AppSettings }) {
+  const modes: [AppSettings['contextUpdates'], string, string][] = [
+    ['idle', 'When the team is quiet', 'Changes wait and go in one update, in a fresh session, once no agent has worked for a few minutes.'],
+    ['manual', 'Only when I press Sync', 'Nothing runs on its own; press Sync context in the code window.'],
+    ['each', 'After every task', 'The most current map, and the most expensive: one Context Handler session per task.']
+  ]
+  return (
+    <section data-testid="context-settings">
+      <div className="label">Context updates</div>
+      <div className="space-y-1.5">
+        {modes.map(([id, title, help]) => (
+          <label key={id} className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-white/5">
+            <input type="radio" className="mt-1 accent-violet-500" checked={(settings.contextUpdates ?? 'idle') === id} onChange={() => void api().updateSettings({ contextUpdates: id })} data-testid={`context-mode-${id}`} />
+            <span>
+              <span className="block text-sm">{title}</span>
+              <span className="block text-xs text-indigo-200/70">{help}</span>
+            </span>
+          </label>
+        ))}
+        {(settings.contextUpdates ?? 'idle') === 'idle' && (
+          <div className="flex items-center gap-3 pl-7 text-sm">
+            <span className="flex-1 text-xs text-indigo-200/70">Minutes of quiet before the update</span>
+            <input
+              className="field !w-20 text-center"
+              type="number"
+              min={1}
+              max={60}
+              defaultValue={settings.contextIdleMinutes ?? 3}
+              onBlur={(e) => void api().updateSettings({ contextIdleMinutes: Math.max(1, Math.min(60, Number(e.target.value) || 3)) })}
+              data-testid="context-idle"
+            />
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
 function NotificationsSection({ settings }: { settings: AppSettings }) {
   const n = settings.notifications
   const set = (patch: Partial<AppSettings['notifications']>) => void api().updateSettings({ notifications: { ...n, ...patch } })

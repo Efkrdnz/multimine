@@ -15,6 +15,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultFallback: [],
   economy: { enabled: false, concise: true, downshift: true, tiers: DEFAULT_TIERS },
   handoffWaitMinutes: 10,
+  contextUpdates: 'idle',
+  contextIdleMinutes: 3,
   council: {
     size: 3,
     provider: 'mock',

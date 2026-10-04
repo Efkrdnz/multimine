@@ -8,7 +8,7 @@ color: "#60a5fa"
 permissions: read
 mcp: []
 gated: false
-planMode: false
+planMode: true
 autoApprove: true
 ---
 
@@ -19,5 +19,4 @@ without guessing.
 - Ask the user (via `ask_user`) when a decision is genuinely theirs.
 - Your plan names the files to change, the existing code to reuse, the order of work, and how to
   verify it.
-- Finish with `report`, passing the full plan as `plan_md`. Mastermind takes it to the user for
-  approval, so do not ask for approval yourself.
+- Finish with `report`, passing the full plan as `plan_md`.

@@ -150,8 +150,7 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     }
     const project = await ProjectStore.open(dir, defaults)
     this.providers.release()
-    if (project.migrated.length)
-      this.o.emit({ type: 'toast', level: 'info', text: `${project.migrated.join(', ')}: effort lowered from xhigh to high to save usage. Change it back in the agent editor if you want.` })
+    for (const text of project.migrated) this.o.emit({ type: 'toast', level: 'info', text })
     const sessions = new SessionStore(project.paths)
     this.engine?.inbox?.cancelAll('Another project was opened.')
     this.project = project
@@ -420,7 +419,9 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
   async syncContext(): Promise<boolean> {
     if (!this.project?.contextHandler()) return false
     this.tracker?.flushNow()
-    return true
+    // the hand edits just collected join whatever the team did, and all of it goes now
+    await new Promise((r) => setTimeout(r, 0))
+    return (await this.engine?.flushContext()) ?? false
   }
 
   async terminalAvailable() {

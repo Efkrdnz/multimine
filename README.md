@@ -20,9 +20,12 @@ packets fly), ask you questions through Mastermind, and work on a real project f
   Creator and Critic; Custom starts blank.
 - **`multimine.md`** at the project root is shared guidance injected into every agent, like
   `CLAUDE.md` / `AGENTS.md`.
-- **Mastermind orchestrates.** It can create and reconfigure agents, delegate tasks, run a council,
-  and ask for approval. The pipeline lives in its own purpose file (edit it to change the process);
-  the hard gates live in code.
+- **Mastermind orchestrates, leanly.** It can create and reconfigure agents, delegate tasks, run a
+  council, and ask for approval - and it scales the process to the request: a question it answers
+  itself, a small or clear change goes straight to the Implementer with one approval, and only a large
+  or unclear feature goes through the Planner first. The council runs when you ask for a review or the
+  plan is risky. The process lives in its own purpose file (edit it to change it); the hard gates
+  live in code.
 - **Questions come to you.** Any agent's `ask_user` call - and Claude's own plan-mode
   `AskUserQuestion` - lands in the **Mastermind inbox** as a structured card. The agent waits until
   you answer.
@@ -37,8 +40,9 @@ packets fly), ask you questions through Mastermind, and work on a real project f
   between them pulses and glows until the exchange ends.
 - **Context Handler.** Create one and it maps the project into `.multimine/context/` (index,
   registries, one file per system, changelog). Every other agent is then told to read the map first
-  and code second, and whenever an agent with write access changes the project, the Context Handler
-  is sent the report and `git status` to update the map.
+  and code second. Changes wait and go to the Context Handler in one batch, in a fresh session, once
+  the team has been quiet for a few minutes - or only on **Sync context**, or after every task
+  (Settings → General → Context updates).
 - **MCP tools.** Add any MCP server (stdio or HTTP) - Higgsfield, Meshy, WaveSpeed or anything
   else - and tick it on the agents that should have it. Images, video, audio and 3D models agents
   produce are saved to `.multimine/media/` and previewed in the chat and the **Media gallery**
@@ -64,8 +68,8 @@ packets fly), ask you questions through Mastermind, and work on a real project f
   terminals at the project root. **+ Claude Code** / **+ Codex** start the CLI there joined to the team:
   it appears as an orb and can message any agent or Mastermind; messages to it show as a banner.
 - **Your edits keep the context true.** Any change nobody on the team made - in the code window,
-  IntelliJ, VS Code, a terminal - is collected and sent with its diff to the Context Handler after 2
-  quiet minutes, or at once with **Sync context**. (On Windows the terminal uses node-pty's bundled
+  IntelliJ, VS Code, a terminal - is collected with its diff and joins the next context update, or
+  goes at once with **Sync context**. (On Windows the terminal uses node-pty's bundled
   binary; `npm install-scripts approve node-pty` is recommended but not required.)
 - **Fallback providers.** Each agent can have an ordered chain (agent editor), with a default chain in
   Settings. When its provider runs out of usage or its login stops working - never on an ordinary

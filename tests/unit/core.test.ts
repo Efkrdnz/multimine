@@ -35,7 +35,8 @@ describe('agent files', () => {
     for (const role of ['mastermind', 'planner', 'implementer', 'designer', 'brainstormer', 'context-handler', 'critic'] as const)
       expect(roleTemplate(role).role).toBe(role)
     expect(roleTemplate('implementer').gated).toBe(true)
-    expect(roleTemplate('planner').planMode).toBe(true)
+    // the Planner's plan goes to the user through Mastermind's single approval
+    expect(roleTemplate('planner').planMode).toBe(false)
   })
 })
 

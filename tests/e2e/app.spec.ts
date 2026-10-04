@@ -116,7 +116,7 @@ test('the workstation runs end to end on mock agents', async () => {
   await page.keyboard.type('Edited in the Multimine code window.')
   await page.keyboard.press('Control+s')
   await expect.poll(() => readFileSync(join(project, 'README.md'), 'utf8'), { timeout: 10_000 }).toContain('Edited in the Multimine code window.')
-  await expect(page.getByTestId('sync-context')).toContainText('(1)', { timeout: 10_000 })
+  await expect(page.getByTestId('sync-context')).toContainText(/\(\d+\)/, { timeout: 10_000 })
   await page.getByTestId('term-new').click()
   await expect(page.getByTestId('terminal-shell')).toBeVisible()
   await page.waitForTimeout(800)

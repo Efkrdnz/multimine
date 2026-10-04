@@ -387,6 +387,9 @@ function TerminalPane() {
 export function IdeWindow() {
   const ide = useStore((s) => s.ide)
   const manual = useStore((s) => s.manual)
+  const pendingContext = useStore((s) => s.contextPending)
+  // the team's tasks waiting for the map, plus hand edits not yet collected
+  const waiting = pendingContext + manual.count
   const hasHandler = useStore((s) => !!s.project?.agents.some((a) => a.role === 'context-handler'))
   const [tabs, setTabsState] = useState<Tab[]>([])
   const [active, setActive] = useState<string | null>(null)
@@ -460,13 +463,13 @@ export function IdeWindow() {
         <div className="flex-1" />
         {hasHandler && (
           <button
-            className={`btn !py-1 text-[11px] ${manual.count ? 'border-cyan-400/50 text-cyan-100' : ''}`}
-            disabled={!manual.count}
+            className={`btn !py-1 text-[11px] ${waiting ? 'border-cyan-400/50 text-cyan-100' : ''}`}
+            disabled={!waiting}
             onClick={() => void api().syncContext()}
-            title={manual.count ? `Tell the Context Handler now about: ${manual.files.slice(0, 12).join(', ')}` : 'Your manual edits are sent to the Context Handler after 2 quiet minutes'}
+            title={waiting ? `Update the context map now${manual.count ? `, including your edits to ${manual.files.slice(0, 12).join(', ')}` : ''}` : 'Changes go to the Context Handler in one batch once the team is quiet'}
             data-testid="sync-context"
           >
-            <RefreshCw size={11} /> Sync context{manual.count ? ` (${manual.count})` : ''}
+            <RefreshCw size={11} /> Sync context{waiting ? ` (${waiting})` : ''}
           </button>
         )}
         <button className="btn btn-ghost !p-1" onClick={() => useStore.getState().set({ ide: 'hidden' })} title="Hide (terminals keep running)">

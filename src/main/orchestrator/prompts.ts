@@ -42,7 +42,9 @@ This project keeps a map of itself in \`.multimine/context/\`, owned by the Cont
 - If the context was wrong or missing something you needed, say so in your report.`
 
 function roster(agents: AgentSpec[], self: string): string {
-  return agents
+  // a stable order keeps the prompt (and so its cache) the same from turn to turn
+  return [...agents]
+    .sort((a, b) => (a.id === MASTERMIND_ID ? -1 : b.id === MASTERMIND_ID ? 1 : a.id.localeCompare(b.id)))
     .map((a) => {
       const you = a.id === self ? ' - **you**' : ''
       const gate = a.gated ? ', gated (needs an approved plan)' : ''
@@ -66,28 +68,21 @@ export function buildSystemPrompt(p: PromptInput): string {
   if (p.multimineMd.trim()) parts.push(`## Project guidance (multimine.md)\n${p.multimineMd.trim()}`)
   parts.push(`## Your team\n${roster(p.agents, agent.id)}`)
 
+  // the tools describe themselves; this says only how to use them together
   const coordination = [
     '## Working with the team',
-    'You have Multimine tools (for CLI agents they are on the `multimine` MCP server):',
-    '- `message_agent` - talk to another agent by id or name; by default you wait for its reply.',
-    '- `report` - when another agent gave you a task, finish with `report` (a summary, `plan_md` for a plan or design, `files` you changed). The report is what they receive.',
-    '- `ask_user` - ask the user structured questions (2-4 options each, recommended first). Questions travel through Mastermind. Never end a turn on an unanswered question in plain text; ask with this tool.',
-    '- `list_agents`, `read_context` - see the team, read the context files.',
-    '- `request_permission` - ask before an action that leaves this machine or cannot be undone (git push, publishing, force operations, deleting work). Proceed only if it says ALLOWED.',
-    '- `show_media` - put an image, video, audio or 3D model (a URL or a project path) in the media gallery so the user can preview it. Call it for everything you generate.',
-    'Keep messages to other agents focused: what you need, by when, in what form.'
+    'You talk to the team through the Multimine tools (for CLI agents, the `multimine` MCP server): `message_agent`, `report`, `ask_user`, `request_permission`, `list_agents`, `read_context`, `show_media`.',
+    '- When another agent gave you a task, finish with `report`: it is what they receive.',
+    '- Ask the user with `ask_user`, never as plain text at the end of a turn.',
+    '- `request_permission` before anything that leaves this machine or cannot be undone (git push, publishing, deleting work).',
+    '- `show_media` for every image, video, sound or model you generate.'
   ]
   if (isMastermind) {
     coordination.push(
-      '',
-      'As Mastermind you also have:',
-      '- `create_agent` / `update_agent` - add or reconfigure team members (name, role, purpose, provider, model, effort, permissions).',
-      '- `delegate` - hand a task to an agent and wait for its report. A long task returns early instead; its report then arrives as a new message, so never poll or re-send. A gated agent needs `approval_id` from an approved `request_approval`.',
-      '- `request_approval` - show a plan (with your critique and the council verdict) to the user for a yes/no.',
-      '- `run_council` - independent critique of a plan by several critics.',
+      '- As Mastermind you also have `create_agent`, `update_agent`, `delegate`, `request_approval` and `run_council`. A long `delegate` returns early and its report arrives later as a new message: never poll or re-send.',
       p.automation
         ? 'Automation mode is ON: questions and approvals are answered on the user\'s behalf; keep going until the goal is met, but stop and report if something goes wrong.'
-        : 'Automation mode is OFF: questions and approvals wait for the user. Do not act on a council verdict on your own; bring it to the user.'
+        : 'Automation mode is OFF: questions and approvals wait for the user.'
     )
   }
   if (agent.role === 'context-handler') coordination.push('', 'You alone have `update_context` to write files under `.multimine/context/`.')

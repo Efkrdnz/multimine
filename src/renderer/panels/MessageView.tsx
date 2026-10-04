@@ -2,12 +2,13 @@ import { usageLine } from '@shared/usage'
 import { memo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { AlertTriangle, Brain, CheckCircle2, ChevronRight, Loader2, RotateCcw, Wrench, XCircle } from 'lucide-react'
+import { AlertTriangle, Brain, CheckCircle2, ChevronRight, Hammer, ListChecks, Loader2, RotateCcw, Wrench, XCircle } from 'lucide-react'
 import type { ChatMessage, ToolCallView } from '@shared/types'
 import { EMPTY_LIST, api, useStore } from '../state/store'
 import { MediaView } from './MediaView'
 import { useNow } from '../state/useNow'
-import { describeTool, duration, elapsed } from '@shared/activity'
+import { describeTool, duration, elapsed, workSummary } from '@shared/activity'
+import { blocks, type Block } from '@shared/segments'
 
 const PLUGINS = [remarkGfm]
 
@@ -99,6 +100,99 @@ function ToolCard({ t }: { t: ToolCallView }) {
   )
 }
 
+/** A stretch of thinking: shown as it streams, folded to "Thought for 12s" once something else begins. */
+function ThinkingBlock({ b }: { b: Extract<Block, { kind: 'thinking' }> }) {
+  const [open, setOpen] = useState(false)
+  const now = useNow(b.open)
+  if (b.open)
+    return (
+      <div className="my-1.5" data-testid="thinking-live">
+        <div className="flex items-center gap-1.5 text-[11px] text-violet-300/80">
+          <Brain size={12} className="animate-pulse" /> Thinking <span className="font-mono text-violet-300/50">{elapsed(now - b.at)}</span>
+        </div>
+        <div className="mt-1 whitespace-pre-wrap border-l-2 border-violet-400/30 pl-3 text-xs italic leading-relaxed text-violet-200/70">{b.text}</div>
+      </div>
+    )
+  return (
+    <div className="my-1">
+      <button className="flex items-center gap-1.5 text-[11px] text-violet-300/70 hover:text-violet-200" onClick={() => setOpen(!open)} data-testid="thinking-block">
+        <Brain size={12} /> Thought{b.ms >= 1000 ? ` for ${duration(b.ms)}` : ''} <ChevronRight size={11} className={`transition ${open ? 'rotate-90' : ''}`} />
+      </button>
+      {open && <div className="mt-1 whitespace-pre-wrap border-l-2 border-violet-400/30 pl-3 text-xs italic leading-relaxed text-violet-200/70">{b.text}</div>}
+    </div>
+  )
+}
+
+/** A to-do list the agent keeps (Claude's TodoWrite), drawn as one. */
+function Todos({ t }: { t: ToolCallView }) {
+  const items = ((t.input as { todos?: { content?: string; status?: string; activeForm?: string }[] })?.todos ?? []).slice(0, 30)
+  if (!items.length) return null
+  return (
+    <div className="my-1.5 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs" data-testid="todo-list">
+      <div className="mb-1 flex items-center gap-1.5 text-[11px] text-indigo-300/80">
+        <ListChecks size={12} /> Plan · {items.filter((i) => i.status === 'completed').length}/{items.length}
+      </div>
+      {items.map((i, k) => (
+        <div key={k} className={`flex items-start gap-2 ${i.status === 'completed' ? 'text-indigo-300/50 line-through' : i.status === 'in_progress' ? 'text-white' : 'text-indigo-100/80'}`}>
+          <span className="mt-0.5 shrink-0">{i.status === 'completed' ? '✓' : i.status === 'in_progress' ? '▸' : '○'}</span>
+          <span>{i.status === 'in_progress' ? (i.activeForm ?? i.content) : i.content}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** A run of tool calls as one line of work; the call still running shows itself, the rest on a click. */
+function WorkBlock({ tools }: { tools: ToolCallView[] }) {
+  const [open, setOpen] = useState(false)
+  const running = tools.filter((t) => t.status === 'running')
+  const todos = tools.filter((t) => t.name === 'TodoWrite')
+  const rest = tools.filter((t) => t.name !== 'TodoWrite')
+  const failed = rest.filter((t) => t.status === 'error').length
+  if (!rest.length) return <>{todos.slice(-1).map((t) => <Todos key={t.id} t={t} />)}</>
+  return (
+    <div className="my-1" data-testid="work-block">
+      <button className="flex w-full items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-[11.5px] text-indigo-200/80 hover:bg-white/5" onClick={() => setOpen(!open)}>
+        <ChevronRight size={11} className={`shrink-0 transition ${open ? 'rotate-90' : ''}`} />
+        {running.length ? <Loader2 size={12} className="shrink-0 animate-spin text-emerald-300" /> : <Wrench size={12} className="shrink-0 text-indigo-300/70" />}
+        <span className="min-w-0 truncate">{workSummary(rest)}</span>
+        {failed > 0 && <span className="shrink-0 text-red-300">· {failed} failed</span>}
+      </button>
+      {open ? rest.map((t) => <ToolCard key={t.id} t={t} />) : running.map((t) => <ToolCard key={t.id} t={t} />)}
+      {todos.slice(-1).map((t) => <Todos key={t.id} t={t} />)}
+    </div>
+  )
+}
+
+/** A reply in the order it happened; once it is done, the work before its answer folds away. */
+function Timeline({ m }: { m: ChatMessage }) {
+  const [unfold, setUnfold] = useState(false)
+  const all = blocks(m)
+  const tools = new Map((m.tools ?? []).map((t) => [t.id, t]))
+  const render = (b: Block, k: number) =>
+    b.kind === 'thinking' ? <ThinkingBlock key={k} b={b} /> : b.kind === 'text' ? <Markdown key={k} text={b.text} /> : <WorkBlock key={k} tools={b.toolIds.map((id) => tools.get(id)).filter((t): t is ToolCallView => !!t)} />
+  // the answer is the text at the end; what led to it folds behind one line once the reply is done
+  let answerFrom = all.length
+  while (answerFrom > 0 && all[answerFrom - 1].kind === 'text') answerFrom--
+  const work = all.slice(0, answerFrom)
+  const fold = !m.streaming && work.length > 0 && answerFrom < all.length
+  if (!fold) return <>{all.map(render)}</>
+  const segs = m.segments ?? []
+  const took = (segs.at(-1)?.end ?? segs.at(-1)?.at ?? 0) - (segs[0]?.at ?? 0)
+  const steps = m.tools?.length ?? 0
+  return (
+    <>
+      <button className="mb-1 flex items-center gap-1.5 text-[11px] text-indigo-300/70 hover:text-indigo-100" onClick={() => setUnfold(!unfold)} data-testid="worked-for">
+        <Hammer size={12} /> Worked{took >= 1000 ? ` for ${duration(took)}` : ''}
+        {steps ? ` · ${steps} step${steps === 1 ? '' : 's'}` : ''}
+        <ChevronRight size={11} className={`transition ${unfold ? 'rotate-90' : ''}`} />
+      </button>
+      {unfold && <div className="mb-2 border-l border-white/10 pl-3">{work.map(render)}</div>}
+      {all.slice(answerFrom).map((b, k) => render(b, answerFrom + k))}
+    </>
+  )
+}
+
 /** One message. Memoised: a streaming reply re-renders itself, not the whole conversation above it. */
 export const MessageView = memo(function MessageView({ m, last = false }: { m: ChatMessage; last?: boolean }) {
   const agents = useStore((s) => s.project?.agents ?? EMPTY_LIST)
@@ -118,6 +212,18 @@ export const MessageView = memo(function MessageView({ m, last = false }: { m: C
   }
   // media this message's tools produced: the saved path or the source URL shows up in a tool output
   const mine = media.filter((x) => x.agentId === m.agentId && x.ts >= m.ts && m.tools?.some((t) => t.output?.includes(x.path) || t.output?.includes(x.source)))
+  if (m.segments?.length)
+    return (
+      <div className="my-3">
+        <Timeline m={m} />
+        {mine.map((x) => (
+          <div key={x.id} className="my-2">
+            <MediaView item={x} compact />
+          </div>
+        ))}
+        <Tail m={m} last={last} />
+      </div>
+    )
   return (
     <div className="my-3">
       {m.thinking && (
@@ -136,6 +242,15 @@ export const MessageView = memo(function MessageView({ m, last = false }: { m: C
         </div>
       ))}
       {m.streaming && !m.text && !m.tools?.length && !m.thinking && <Loader2 size={16} className="animate-spin text-violet-300" />}
+      <Tail m={m} last={last} />
+    </div>
+  )
+})
+
+/** The end of a reply: its error with a Retry, and what it cost. */
+function Tail({ m, last }: { m: ChatMessage; last: boolean }) {
+  return (
+    <>
       {m.error && (
         <div className="mt-2 flex gap-2 rounded-lg border border-red-400/30 bg-red-950/40 px-3 py-2 text-xs text-red-100">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" /> <span className="flex-1 whitespace-pre-wrap">{m.error}</span>
@@ -146,11 +261,7 @@ export const MessageView = memo(function MessageView({ m, last = false }: { m: C
           )}
         </div>
       )}
-      {m.usage && !m.streaming && (
-        <div className="mt-1 font-mono text-[10px] text-indigo-300/40">
-          {usageLine(m.usage)}
-        </div>
-      )}
-    </div>
+      {m.usage && !m.streaming && <div className="mt-1 font-mono text-[10px] text-indigo-300/40">{usageLine(m.usage)}</div>}
+    </>
   )
-})
+}

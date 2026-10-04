@@ -20,6 +20,12 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 export const defaultMockScript: MockScript = (req) => {
   const steps: MockStep[] = []
   for (const line of req.prompt.split('\n')) {
+    // `/think ...` and `/say ...` stand in for a model's reasoning and its answer, in order
+    const said = /^\s*\/(think|say)\s+(.+)$/.exec(line)
+    if (said) {
+      steps.push(said[1] === 'think' ? { event: { type: 'thinking', delta: said[2] } } : { text: said[2] })
+      continue
+    }
     const m = /^\s*\/tool\s+(\S+)\s*(\{.*\})?\s*$/.exec(line)
     if (m) {
       let args: Record<string, unknown> = {}

@@ -129,6 +129,16 @@ export interface Usage {
   costUsd?: number
 }
 
+/** One stretch of a reply: thinking, text, or a tool call (by its id in `tools`). */
+export interface Segment {
+  kind: 'thinking' | 'text' | 'tool'
+  text?: string
+  toolId?: string
+  /** When it started and, once something else began, when it ended. */
+  at: number
+  end?: number
+}
+
 export interface ChatMessage {
   id: string
   agentId: string
@@ -138,6 +148,8 @@ export interface ChatMessage {
   text: string
   thinking?: string
   tools?: ToolCallView[]
+  /** The reply in the order it happened: thinking, text and tool calls (see shared/segments). */
+  segments?: Segment[]
   media?: MediaItem[]
   ts: number
   streaming?: boolean

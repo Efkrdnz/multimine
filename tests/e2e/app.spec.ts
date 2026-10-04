@@ -441,7 +441,29 @@ test('the workstation runs end to end on mock agents', async () => {
   await expect(balloon).toContainText('fourth time', { timeout: 15_000 })
   await page.getByTestId('balloon-continue').click()
   await expect(balloon).toHaveCount(0, { timeout: 10_000 })
+  // each run of calls is one line of work; opened, it shows every call
+  await expect(tchat.getByTestId('work-block')).toHaveCount(2, { timeout: 15_000 })
+  for (const b of await tchat.getByTestId('work-block').all()) await b.locator('button').first().click()
   await expect(tchat.getByTestId('tool-card')).toHaveCount(5, { timeout: 15_000 })
+  // a reply in order: thinking, work, more thinking, the answer; once done the work folds behind one line
+  await tin.fill(
+    [
+      '/think The ability registry should be next to the other skills. Let me look.',
+      '/tool run_command {"command":"echo src/skills/Registry.java"}',
+      '/tool run_command {"command":"echo registered 12 skills"}',
+      '/think Found it: Fireball is registered there, so the new one goes beside it.',
+      '/say Found the registry in `src/skills/Registry.java`. The new ability goes next to Fireball; here is the plan.'
+    ].join('\n')
+  )
+  await tin.press('Enter')
+  await expect(tchat.getByTestId('worked-for').last()).toBeVisible({ timeout: 15_000 })
+  await page.waitForTimeout(300)
+  await shot(page, '37-timeline-folded')
+  await tchat.getByTestId('worked-for').last().click()
+  await expect(tchat.getByTestId('thinking-block').last()).toBeVisible()
+  await tchat.getByTestId('thinking-block').last().click()
+  await page.waitForTimeout(300)
+  await shot(page, '38-timeline-open')
   await expect.poll(busText, { timeout: 10_000 }).toContain('Paused: Tester wants to launch')
   await page.locator('[data-chat-dock] button:has(svg.lucide-x)').first().click()
 

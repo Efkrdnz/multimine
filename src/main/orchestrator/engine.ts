@@ -1,4 +1,5 @@
 import { addUsage, NO_USAGE } from '@shared/usage'
+import { appendNote, appendStream, appendTool, closeSegments } from '@shared/segments'
 import type { PlanLimits } from '../providers/planLimits'
 import { exec } from 'node:child_process'
 import { readdir, readFile } from 'node:fs/promises'
@@ -568,7 +569,7 @@ export class Engine {
           ctl = new AbortController()
           this.controllers.set(agentId, ctl)
           for (const t of reply.tools ?? []) if (t.status === 'running') Object.assign(t, { status: 'error', endedAt: Date.now(), output: 'Interrupted by the watchdog.' })
-          reply.text += `${reply.text ? '\n\n' : ''}*Paused by the loop guard; resumed with your instruction.*\n\n`
+          appendNote(reply, '*Paused by the loop guard; resumed with your instruction.*')
           this.upsert(reply, true)
           promptNow = redirect
           historyNow = []
@@ -598,7 +599,7 @@ export class Engine {
         })
         historyNow = []
         continuing = true
-        reply.text += `${reply.text ? '\n\n' : ''}---\n↪ *Switched to ${this.label(hops[next])} - ${this.label(hop)} ${failure === 'auth' ? 'is not signed in' : 'ran out of usage'}.*\n\n`
+        appendNote(reply, `---\n↪ *Switched to ${this.label(hops[next])} - ${this.label(hop)} ${failure === 'auth' ? 'is not signed in' : 'ran out of usage'}.*`)
         for (const t of reply.tools ?? []) if (t.status === 'running') t.status = 'error'
         this.upsert(reply, true)
         error = undefined
@@ -618,6 +619,7 @@ export class Engine {
     if (ctl.signal.aborted && (!error || this.stopReasons.has(agentId))) error = this.stopReasons.get(agentId) ?? 'Stopped.'
     this.stopReasons.delete(agentId)
     reply.streaming = false
+    closeSegments(reply)
     if (error) reply.error = error
     for (const t of reply.tools ?? []) if (t.status === 'running') t.status = 'error'
     if (sessionId === this.session.id) {
@@ -678,12 +680,12 @@ export class Engine {
       this.lastBeat.set(agentId, Date.now())
       switch (ev.type) {
         case 'text':
-          reply.text += ev.delta
+          appendStream(reply, 'text', ev.delta)
           if (this.acts.get(agentId)?.activity !== 'Writing') this.setStatus(agentId, 'working', 'Writing')
           this.d.emit({ type: 'talk', agentId })
           break
         case 'thinking':
-          reply.thinking = (reply.thinking ?? '') + ev.delta
+          appendStream(reply, 'thinking', ev.delta)
           if (this.acts.get(agentId)?.activity !== 'Thinking') this.setStatus(agentId, 'thinking', 'Thinking')
           break
         case 'tool-start': {
@@ -701,6 +703,7 @@ export class Engine {
             this.setStatus(agentId, 'working', `Sub-agent · ${d.verb}`, d.brief)
           } else {
             reply.tools!.push(view)
+            appendTool(reply, ev.id, now)
             this.setStatus(agentId, 'working', d.verb, d.brief)
             // Codex runs a command before anyone can hold it: the watchdog can only pause the turn after
             if (wd && agent.provider === 'codex-cli')

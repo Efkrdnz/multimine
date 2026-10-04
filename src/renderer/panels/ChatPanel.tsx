@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Send, Square, Zap } from 'lucide-react'
-import { SHORT_PROVIDER, modelLabel } from '@shared/catalog'
+import { Boxes, PenTool, Send, Square, Table2, Workflow, Zap } from 'lucide-react'
+import { modelLabel } from '@shared/catalog'
+import { PROVIDER_NAME, providerLocked } from '@shared/chat'
 import { downshift } from '@shared/economy'
 import type { AgentSpec, Effort } from '@shared/types'
 import { SUPPORTED_EFFORTS } from '@shared/effort'
@@ -9,6 +10,7 @@ import { EMPTY_LIST, EMPTY_MAP, api, useStore } from '../state/store'
 import { ActivityLine } from './ActivityLine'
 import { MessageView } from './MessageView'
 import { PromptCard } from './PromptCard'
+import { ProviderPicker } from './ProviderPicker'
 
 /** How much a chat may do without asking, as the composer offers it. */
 type Access = 'read' | 'supervised' | 'full'
@@ -53,39 +55,43 @@ function ContextMeter({ agent }: { agent: AgentSpec }) {
   )
 }
 
-/** Model, effort and access for the chat, saved to it as they change. */
+const Dot = () => <span className="text-indigo-300/25">·</span>
+
+/**
+ * Who the chat talks to, its model, effort and access, saved to it as they change. The provider is
+ * picked here until the conversation starts; after that only the model and the rest can change.
+ */
 function ComposerBar({ agent }: { agent: AgentSpec }) {
   const catalog = useStore((s) => s.settings?.catalog ?? EMPTY_MAP)
+  const messages = useStore((s) => s.chats[agent.id] ?? EMPTY_LIST)
+  const locked = providerLocked(messages)
   const models = catalog[agent.provider] ?? []
   const list = models.some((m) => m.id === agent.model) ? models : [{ id: agent.model, label: modelLabel(catalog, agent.provider, agent.model) }, ...models]
   const save = (patch: Partial<AgentSpec>) => void api().saveChat({ ...agent, ...patch })
   const pick = 'cursor-pointer rounded-md bg-transparent px-1.5 py-0.5 text-[11px] text-indigo-200/80 outline-none hover:bg-white/5 hover:text-white'
   return (
-    <div className="mt-1 flex flex-wrap items-center gap-1 px-1" data-testid="composer-bar">
-      {agent.provider === 'mock' ? (
-        <button className="px-1.5 text-[11px] text-indigo-300/60 underline-offset-2 hover:underline" title="An offline stand-in: pick a real provider in the chat's settings" onClick={() => useStore.getState().set({ modal: { kind: 'chat', agent } })}>
-          Mock (no AI)
-        </button>
-      ) : (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1 px-1" data-testid="composer-bar">
+      <ProviderPicker agent={agent} locked={locked} />
+      {agent.provider !== 'mock' && (
         <select className={pick} value={agent.model} onChange={(e) => save({ model: e.target.value })} title="Model" data-testid="composer-model">
           {list.map((m) => (
             <option key={m.id} value={m.id} className="bg-[#0b0d1f]">
-              {SHORT_PROVIDER[agent.provider]} {m.label}
+              {m.label}
             </option>
           ))}
         </select>
       )}
-      <span className="text-indigo-300/30">·</span>
+      <Dot />
       <select className={pick} value={agent.effort} onChange={(e) => save({ effort: e.target.value as Effort })} title="Effort: how hard it thinks (higher is slower and uses more)" data-testid="composer-effort">
         {SUPPORTED_EFFORTS[agent.provider].map((e) => (
           <option key={e} value={e} className="bg-[#0b0d1f]">
-            {e[0].toUpperCase() + e.slice(1)}
+            {e[0].toUpperCase() + e.slice(1)} effort
           </option>
         ))}
       </select>
       {agent.permissions !== 'chat' && (
         <>
-          <span className="text-indigo-300/30">·</span>
+          <Dot />
           <select className={pick} value={accessOf(agent)} onChange={(e) => save(ACCESS[e.target.value as Access].patch)} title={ACCESS[accessOf(agent)].help} data-testid="composer-access">
             {(Object.keys(ACCESS) as Access[]).map((k) => (
               <option key={k} value={k} className="bg-[#0b0d1f]" title={ACCESS[k].help}>
@@ -97,13 +103,45 @@ function ComposerBar({ agent }: { agent: AgentSpec }) {
       )}
       {agent.provider === 'claude-cli' && (
         <>
-          <span className="text-indigo-300/30">·</span>
+          <Dot />
           <button className={`${pick} ${agent.planMode ? '!text-sky-200' : ''}`} onClick={() => save({ planMode: !agent.planMode })} title="Plan mode: it plans and asks you to approve before it changes anything" data-testid="composer-plan">
             {agent.planMode ? 'Plan mode on' : 'Plan mode off'}
           </button>
         </>
       )}
       <ContextMeter agent={agent} />
+    </div>
+  )
+}
+
+/** A chat with nothing in it yet: what it is, and where to pick who it talks to. */
+function EmptyChat({ agent }: { agent: AgentSpec }) {
+  const project = useStore((s) => s.project?.name)
+  const tools = [
+    { icon: <PenTool size={13} />, name: 'UI Sketcher', what: 'draw a screen, have it built' },
+    { icon: <Boxes size={13} />, name: 'Asset Board', what: 'art and sound, made and dropped in' },
+    { icon: <Workflow size={13} />, name: 'Logic Board', what: 'a mechanic in plain words' },
+    { icon: <Table2 size={13} />, name: 'Data Tables', what: 'game data as a spreadsheet' }
+  ]
+  return (
+    <div className="mx-auto mt-[12vh] max-w-[520px] text-center" data-testid="empty-chat">
+      <div className="font-display text-2xl font-bold text-white">What are we building{project ? ` in ${project}` : ''}?</div>
+      <p className="mt-2 text-sm leading-relaxed text-indigo-200/70">
+        Ask about the project or tell it what to do. This chat talks to <b className="text-indigo-50">{PROVIDER_NAME[agent.provider]}</b>
+        {agent.provider === 'mock' ? ', an offline stand-in' : ''} - pick Claude, ChatGPT or another provider below before your first message.
+      </p>
+      <div className="mt-8 grid grid-cols-2 gap-2 text-left">
+        {tools.map((t) => (
+          <div key={t.name} className="flex items-start gap-2 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2">
+            <span className="mt-0.5 text-violet-300/80">{t.icon}</span>
+            <span className="min-w-0">
+              <span className="block text-[12.5px] text-indigo-50">{t.name}</span>
+              <span className="block text-[11px] text-indigo-300/60">{t.what}</span>
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 text-[11px] text-indigo-300/45">Open them from the sidebar; each can send its work to a chat.</div>
     </div>
   )
 }
@@ -150,12 +188,7 @@ export function ChatPanel({ agentId }: { agentId: string }) {
     <div className="flex h-full min-w-0 flex-1 flex-col" data-chat-panel={agentId} data-testid={`chat-${agentId}`}>
       <div className="scroll-thin flex-1 overflow-y-auto px-4 select-text">
         <div className="mx-auto max-w-[820px] pt-4">
-          {messages.length === 0 && (
-            <div className="mt-16 text-center text-sm text-indigo-300/60">
-              Ask about the project, or tell it what to build.
-              <div className="mt-1 text-xs text-indigo-300/40">The tools in the sidebar - the UI Sketcher, the Asset Board, the Logic Board, Data Tables - can send their work to a chat too.</div>
-            </div>
-          )}
+          {messages.length === 0 && <EmptyChat agent={agent} />}
           {messages.map((m, i) => (
             <MessageView key={m.id} m={m} last={i === messages.length - 1 && !busy} />
           ))}

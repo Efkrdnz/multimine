@@ -23,6 +23,10 @@ tables as a spreadsheet. Any of them sends its work to a chat with one click.
   Code; your **ChatGPT** subscription through `codex exec`; **API keys** for Anthropic, OpenAI,
   Gemini, Groq, xAI, OpenRouter or any OpenAI-compatible server (Ollama, LM Studio), encrypted with
   the OS keychain; and **Mock**, an offline stand-in, so you can try everything with no AI at all.
+- **Pick the provider in the composer.** A new chat chooses Claude, ChatGPT, an API key or Mock from
+  the pill under the message box. Once the conversation starts the chat keeps its provider (its
+  conversation lives in that provider's session); the model can still change, and a new chat or a
+  fresh start can use another provider.
 - **Access, in the composer.** **Read only**, **Supervised** (asks before every edit and command)
   or **Full access**. Pushing, publishing and destroying history always ask, whatever the setting.
   Questions, plans and permissions are answered right in the chat.

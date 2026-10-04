@@ -1,4 +1,6 @@
-import { EFFORTS, PERMISSIONS, PROVIDERS, type AgentSpec, type ChatDefaults, type Effort, type FallbackHop, type Permission, type ProviderKind } from './types'
+import { DEFAULT_CATALOG } from './catalog'
+import { clampEffort } from './effort'
+import { EFFORTS, PERMISSIONS, PROVIDERS, type AgentSpec, type ChatDefaults, type ChatMessage, type Effort, type FallbackHop, type ModelEntry, type Permission, type ProviderKind } from './types'
 
 export const DEFAULT_CHAT_NAME = 'New chat'
 
@@ -52,4 +54,35 @@ export const PROVIDER_COLOR: Record<ProviderKind, string> = {
   openrouter: '#a78bfa',
   compatible: '#22d3ee',
   mock: '#7c9cff'
+}
+
+/** What a provider is called where you pick one: the company for a subscription, the service for a key. */
+export const PROVIDER_NAME: Record<ProviderKind, string> = {
+  'claude-cli': 'Claude',
+  'codex-cli': 'ChatGPT',
+  anthropic: 'Anthropic API',
+  openai: 'OpenAI API',
+  google: 'Gemini API',
+  groq: 'Groq',
+  xai: 'xAI',
+  openrouter: 'OpenRouter',
+  compatible: 'Local model',
+  mock: 'Mock'
+}
+
+/**
+ * A chat keeps its provider once its conversation has started: the model can change, the company
+ * cannot, since the conversation lives in that provider's session. A fresh start or a clear begins
+ * a new conversation and frees it again.
+ */
+export function providerLocked(messages: readonly ChatMessage[]): boolean {
+  const line = messages.map((m) => m.fresh).lastIndexOf(true)
+  return messages.slice(line + 1).some((m) => m.role === 'user')
+}
+
+/** The settings a chat moves to on another provider: its first model (or the default one), an effort it supports. */
+export function onProvider(chat: Pick<AgentSpec, 'effort' | 'planMode'>, provider: ProviderKind, catalog: Partial<Record<ProviderKind, ModelEntry[]>>, defaults?: ChatDefaults): Partial<AgentSpec> {
+  const list = catalog[provider] ?? DEFAULT_CATALOG[provider]
+  const model = defaults?.provider === provider ? defaults.model : (list[0]?.id ?? '')
+  return { provider, model, effort: clampEffort(provider, chat.effort), planMode: provider === 'claude-cli' ? chat.planMode : false }
 }

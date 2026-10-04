@@ -7,7 +7,7 @@ const shots = resolve(process.env.MULTIMINE_SHOTS ?? 'test-results/shots')
 mkdirSync(shots, { recursive: true })
 const shot = (page: Page, name: string) => page.screenshot({ path: join(shots, `${name}.png`) })
 
-type Chat = { id: string; name: string; autoApprove: boolean; planMode: boolean; mcp: string[] }
+type Chat = { id: string; name: string; provider: string; model: string; autoApprove: boolean; planMode: boolean; mcp: string[] }
 
 test('Multimine runs end to end on the mock provider', async () => {
   const root = mkdtempSync(join(tmpdir(), 'mm-e2e-'))
@@ -394,15 +394,31 @@ test('Multimine runs end to end on the mock provider', async () => {
   // a new chat; what it is doing, live; and the loop guard pausing it when it relaunches the "game" again and again
   await page.getByTestId('new-chat').click()
   await expect.poll(async () => (await chats()).length, { timeout: 10_000 }).toBe(5)
+  const fresh = (await chats())[0]
+  await expect(panel.getByTestId('empty-chat')).toBeVisible()
+  // a fresh chat picks who it talks to from the composer: ChatGPT here, then back to the offline stand-in
+  await panel.getByTestId('composer-provider').click()
+  await expect(page.getByTestId('provider-menu')).toContainText('ChatGPT')
+  await page.waitForTimeout(400)
+  await shot(page, '21-provider-menu')
+  await page.getByTestId('provider-codex-cli').click()
+  await expect.poll(() => chatFile(fresh.id).provider, { timeout: 10_000 }).toBe('codex-cli')
+  await expect(panel.getByTestId('composer-model')).toHaveValue('gpt-5.6-sol')
+  await panel.getByTestId('composer-provider').click()
+  await page.getByTestId('provider-mock').click()
+  await expect.poll(() => chatFile(fresh.id).provider, { timeout: 10_000 }).toBe('mock')
   await panel.getByTestId('composer-access').selectOption('full')
   await say('/tool run_command {"command":"sleep 5"}')
+  // once the conversation has started it keeps its provider
+  await expect(panel.getByTestId('composer-provider')).toHaveAttribute('data-locked', '')
   const tester = (await chats())[0]
+  expect(tester.id).toBe(fresh.id)
   const line = page.getByTestId(`activity-${tester.id}`)
   await expect(line).toContainText('Running', { timeout: 10_000 })
   await expect(line).toContainText('sleep 5')
   await expect(line.getByTestId('activity-clock')).toHaveText(/^0:0[2-5]$/, { timeout: 5_000 })
   await expect(page.getByTestId(`chat-row-${tester.id}`)).toContainText('sleep 5')
-  await shot(page, '21-activity-line')
+  await shot(page, '21b-activity-line')
   await expect(line).toHaveCount(0, { timeout: 15_000 })
   const launch = '/tool run_command {"command":"echo ./gradlew runClient -PquickPlay=New_World"}'
   await say([launch, launch, launch, launch].join('\n'))

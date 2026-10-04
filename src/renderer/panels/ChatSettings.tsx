@@ -3,7 +3,8 @@ import { Save, Trash2 } from 'lucide-react'
 import { DEFAULT_CATALOG, PROVIDER_LABEL, needsKey } from '@shared/catalog'
 import { SUPPORTED_EFFORTS, clampEffort } from '@shared/effort'
 import { EFFORTS, PERMISSIONS, PROVIDERS, type AgentSpec } from '@shared/types'
-import { api, useStore } from '../state/store'
+import { PROVIDER_NAME, providerLocked } from '@shared/chat'
+import { EMPTY_LIST, api, useStore } from '../state/store'
 import { Modal } from './Modal'
 import { FallbackChain } from './FallbackChain'
 
@@ -22,6 +23,8 @@ export function ChatSettings({ agent }: { agent: AgentSpec }) {
   const close = () => useStore.getState().set({ modal: null })
   const [a, setA] = useState<AgentSpec>(agent)
   const [saving, setSaving] = useState(false)
+  // once the conversation has started the chat keeps its provider; its model can still change
+  const locked = providerLocked(useStore((s) => s.chats[agent.id] ?? EMPTY_LIST))
   const patch = (p: Partial<AgentSpec>) => setA((x) => ({ ...x, ...p }))
   const models = settings?.catalog[a.provider] ?? DEFAULT_CATALOG[a.provider]
 
@@ -66,11 +69,12 @@ export function ChatSettings({ agent }: { agent: AgentSpec }) {
               <label className="label">Provider</label>
               <div className="grid grid-cols-5 gap-1.5">
                 {PROVIDERS.map((p) => (
-                  <button key={p} className={`rounded-lg border px-2 py-1.5 text-[11px] font-semibold leading-tight transition ${a.provider === p ? 'border-violet-400 bg-violet-500/25 text-white' : 'border-white/10 bg-black/20 text-indigo-200 hover:border-white/25'}`} onClick={() => pickProvider(p)} title={PROVIDER_LABEL[p]}>
-                    {PROVIDER_LABEL[p].replace(' API key', '').replace(' subscription', ' sub')}
+                  <button key={p} disabled={locked && p !== a.provider} className={`rounded-lg border px-2 py-1.5 text-[11px] font-semibold leading-tight transition disabled:cursor-not-allowed disabled:opacity-30 ${a.provider === p ? 'border-violet-400 bg-violet-500/25 text-white' : 'border-white/10 bg-black/20 text-indigo-200 hover:border-white/25'}`} onClick={() => pickProvider(p)} title={PROVIDER_LABEL[p]}>
+                    {PROVIDER_NAME[p]}
                   </button>
                 ))}
               </div>
+              {locked && <div className="mt-1.5 text-xs text-indigo-300/70">This conversation is on {PROVIDER_NAME[a.provider]}, so the provider stays. The model can still change; a new chat (or a fresh start) can use another provider.</div>}
               {missingKey && (
                 <div className="mt-1.5 text-xs text-amber-300">
                   No {PROVIDER_LABEL[a.provider]} saved.{' '}

@@ -4,7 +4,7 @@ import type { PlanLimits } from '../providers/planLimits'
 import { exec } from 'node:child_process'
 import { z } from 'zod'
 import { newId } from '@shared/ids'
-import { DEFAULT_CHAT_NAME, MOCK_DEFAULTS, newChat } from '@shared/chat'
+import { DEFAULT_CHAT_NAME, MOCK_DEFAULTS, newChat, providerLocked } from '@shared/chat'
 import { CONCISE_RULES, RATE_SYSTEM, downshift, parseRating, type Difficulty, type TempModel } from '@shared/economy'
 import type { AgentSpec, AgentStatus, ChatMessage, FallbackHop, InboxItem, MainEvent, MediaItem, ProviderKind, Question, Usage } from '@shared/types'
 import type { AppConfig } from '../store/appConfig'
@@ -181,6 +181,8 @@ export class Engine {
   async saveChat(chat: AgentSpec): Promise<AgentSpec> {
     const before = this.d.project.get(chat.id)
     if (!before) throw new Error(`No chat ${chat.id}`)
+    if (chat.provider !== before.provider && providerLocked(this.chats[chat.id] ?? []))
+      throw new Error('This conversation has started, so it stays on its provider. Change the model, or start a new chat (or a fresh start) to switch.')
     const next: AgentSpec = { ...chat, id: before.id, created: before.created, updated: chat.updated || before.updated }
     this.d.project.set(next)
     await this.d.store.save(next)

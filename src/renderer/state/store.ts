@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { pushTerminalData } from '../ide/terminalBus'
-import type { AgentSpec, AgentStatus, AppSettings, PluginInfo, ChatMessage, InboxItem, MainEvent, MediaItem, ProjectInfo, Usage, PlanWindow } from '@shared/types'
+import type { AgentSpec, AgentStatus, AppSettings, CliStatus, PluginInfo, ChatMessage, InboxItem, MainEvent, MediaItem, ProjectInfo, Usage, PlanWindow } from '@shared/types'
 
 export type Panel = 'media' | 'instructions' | 'git' | null
 export type Modal = { kind: 'chat'; agent: AgentSpec } | { kind: 'settings'; tab?: string } | { kind: 'plugins' } | null
@@ -31,6 +31,8 @@ export interface State {
   planLimits: PlanWindow[]
   /** The chat on screen. */
   focused: string | null
+  /** Whether Claude Code and Codex are installed and logged in, once asked (the provider menu asks). */
+  clis: { claude: CliStatus; codex: CliStatus } | null
   panel: Panel
   /** The code window: mounted once opened (so terminals and tabs survive), shown or hidden. */
   ide: 'closed' | 'open' | 'hidden'
@@ -67,6 +69,7 @@ export const useStore = create<State>((set, get) => ({
   usageByAgent: {},
   planLimits: [],
   focused: null,
+  clis: null,
   panel: null,
   ide: 'closed',
   ideRequest: null,

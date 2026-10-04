@@ -126,6 +126,21 @@ describe('chats', () => {
     expect(app.engine!.chats[first].map((m) => m.role)).toEqual(['user', 'assistant'])
   })
 
+  it('lets a chat pick its provider until the conversation starts, then only its model', async () => {
+    const chat = await app.createChat()
+    // fresh: Claude, ChatGPT, anything
+    expect((await app.saveChat({ ...chat, provider: 'codex-cli', model: 'gpt-5.6-sol' })).provider).toBe('codex-cli')
+    const back = await app.saveChat({ ...app.project!.get(chat.id)!, provider: 'mock', model: 'mock' })
+    await app.engine!.send(chat.id, 'hello')
+    // started: the provider stays, the model can change
+    await expect(app.saveChat({ ...back, provider: 'claude-cli', model: 'claude-opus-5-5' })).rejects.toThrow('stays on its provider')
+    expect((await app.saveChat({ ...back, model: 'mock-2' })).model).toBe('mock-2')
+    expect(app.project!.get(chat.id)!.provider).toBe('mock')
+    // a fresh start begins a new conversation, which may go anywhere
+    await app.freshStart(chat.id)
+    expect((await app.saveChat({ ...app.project!.get(chat.id)!, provider: 'claude-cli', model: 'claude-opus-5-5' })).provider).toBe('claude-cli')
+  })
+
   it('deletes a chat and its folder; the last one is replaced by a fresh chat', async () => {
     const only = app.project!.list()[0].id
     await app.deleteChat(only)

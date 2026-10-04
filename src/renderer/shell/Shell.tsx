@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { BookOpen, Code2, Eraser, FolderOpen, GitBranch, Image, LayoutGrid, Leaf, RotateCcw, Search, Settings, SlidersHorizontal, SquarePen, Trash2, Upload } from 'lucide-react'
-import { SHORT_PROVIDER, modelLabel } from '@shared/catalog'
-import { PROVIDER_COLOR } from '@shared/chat'
+import { modelLabel } from '@shared/catalog'
+import { PROVIDER_COLOR, PROVIDER_NAME } from '@shared/chat'
 import type { AgentSpec, AgentStatus } from '@shared/types'
 import { EMPTY_MAP, api, useStore } from '../state/store'
 import { ChatPanel } from '../panels/ChatPanel'
@@ -132,7 +132,7 @@ function Sidebar({ current }: { current?: string }) {
 function ChatRow({ a, selected, st, asks, onClick }: { a: AgentSpec; selected: boolean; st?: { status: AgentStatus; activity?: string; detail?: string; quiet?: unknown }; asks: number; onClick: () => void }) {
   const busy = st && st.status !== 'idle'
   const catalog = useStore((s) => s.settings?.catalog ?? EMPTY_MAP)
-  const line = st?.activity ? `${st.activity}${st.detail ? ` ${st.detail}` : ''}` : busy ? STATUS_WORD[st.status] : a.provider === 'mock' ? 'Mock (no AI)' : `${SHORT_PROVIDER[a.provider]} ${modelLabel(catalog, a.provider, a.model)}`
+  const line = st?.activity ? `${st.activity}${st.detail ? ` ${st.detail}` : ''}` : busy ? STATUS_WORD[st.status] : a.provider === 'mock' ? 'Mock (no AI)' : `${PROVIDER_NAME[a.provider]} · ${modelLabel(catalog, a.provider, a.model)}`
   return (
     <div className={`group flex w-full items-center rounded-lg ${selected ? 'bg-violet-500/20' : 'hover:bg-white/5'}`}>
       <button className="flex min-w-0 flex-1 items-center gap-2.5 px-2 py-1.5 text-left" onClick={onClick} data-testid={`chat-row-${a.id}`}>
@@ -195,7 +195,7 @@ function Header({ agentId }: { agentId: string }) {
             <span className="hidden min-w-0 truncate text-[11px] text-indigo-300/60 xl:inline">
               {st?.fallback ? (
                 <span className="rounded bg-sky-400/20 px-1 font-semibold text-sky-200" title={`${st.fallback.reason}. Back to ${modelLabel(catalog, agent.provider, agent.model)} when it is available again.`}>
-                  ↪ {SHORT_PROVIDER[st.fallback.provider as keyof typeof SHORT_PROVIDER]} {modelLabel(catalog, st.fallback.provider as typeof agent.provider, st.fallback.model)} (fallback)
+                  ↪ {PROVIDER_NAME[st.fallback.provider as keyof typeof PROVIDER_NAME]} · {modelLabel(catalog, st.fallback.provider as typeof agent.provider, st.fallback.model)} (fallback)
                 </span>
               ) : st?.temp ? (
                 <span className="rounded bg-amber-400/20 px-1 font-semibold text-amber-200" title={`This message runs on a cheaper model; the chat goes back to ${modelLabel(catalog, agent.provider, agent.model)} · ${agent.effort} afterwards.`}>
@@ -204,7 +204,7 @@ function Header({ agentId }: { agentId: string }) {
               ) : agent.provider === 'mock' ? (
                 'Mock (no AI)'
               ) : (
-                `${SHORT_PROVIDER[agent.provider]} ${modelLabel(catalog, agent.provider, agent.model)}`
+                `${PROVIDER_NAME[agent.provider]} · ${modelLabel(catalog, agent.provider, agent.model)}`
               )}
             </span>
             <button className="btn btn-ghost !p-1" title="Chat settings: provider, permissions, MCP servers, fallbacks" onClick={() => set({ modal: { kind: 'chat', agent } })} data-testid="chat-settings">

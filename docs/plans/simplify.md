@@ -164,16 +164,19 @@ named after its message ("UI Sketcher: Build the UI sketch \"Mana Furnace\"").
 - Updated `docs/plugins.md`, `src/main/plugins/sdk/multimine.js`, `examples/plugins/hello`, and
   `plugins.test.ts` / `pluginApi.test.ts`.
 
-### Phase 7 - Open-source ready
+### Phase 7 - Open-source ready (done)
 
-- README rewritten around the pitch: what it is in one paragraph, a 30-second GIF, install, the four
-  tools, plugins, usage savers with the measured numbers. A line pointing to `archive/multi-agent`.
-- `LICENSE` (MIT, as `package.json` already says), `CONTRIBUTING.md` (plugins and engine targets
-  as first contributions), issue templates.
-- Mark it **experimental**; say which OSes are tested.
-- Check a clean `npm install && npm run dev` on Windows, macOS and Linux with the Mock provider.
-- New screenshots in `docs/`; remove the ones of removed features (`team.png`, `inbox.png`,
-  `balloon.png`, `economy-link.png`).
+- README rewritten around the pitch: what it is in one paragraph, a demo GIF made from the e2e
+  screenshots, the tools, plugins, the usage savers with the one number that was measured, and a
+  pointer to `archive/multi-agent`.
+- `LICENSE` (MIT), `CONTRIBUTING.md` (plugins and engine targets as first contributions, how to report
+  a security problem), issue templates.
+- Marked **experimental**; it says the suite runs on Linux, development is on Windows, macOS is untested.
+- A fresh clone installs, typechecks, passes the unit tests and builds on Linux; the e2e run drives
+  the built app on the Mock provider. Windows and macOS are left to people who have them.
+- New screenshots in `docs/screenshots/`; the old ones (team, inbox, balloon, economy link, focus,
+  code window, fallback, git) are gone from the branch and kept on `archive/multi-agent`.
+- `docs/roadmap.md` is the new roadmap; the older plans in `docs/plans/` are marked historical.
 
 ## Decisions (taken)
 

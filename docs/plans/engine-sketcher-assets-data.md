@@ -1,5 +1,8 @@
 # Engine-ready UI Sketcher, Asset Board, Game Data Tables
 
+> Historical: written for the multi-agent version (Mastermind, roles, the Map), kept for its
+> reasoning. The tools now send their work to a chat; see `simplify.md`.
+
 ## Context
 
 The UI Sketcher shipped Minecraft-first: its element set (slots, inventory stamp), starter and only

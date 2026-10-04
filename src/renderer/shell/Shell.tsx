@@ -37,6 +37,7 @@ export function Shell() {
     return () => window.removeEventListener('keydown', key)
   }, [])
   const focused = useStore((s) => s.focused)
+  const tool = useStore((s) => s.activeTool)
   const chats = useStore((s) => s.project?.agents ?? [])
   const id = focused && chats.some((a) => a.id === focused) ? focused : chats[0]?.id
   // the chat on screen is where a tool's messages to 'active' go: main hears about it whenever it changes
@@ -53,7 +54,8 @@ export function Shell() {
       <Sidebar current={id} />
       <div className="flex min-w-0 flex-1 flex-col">
         {id && <Header agentId={id} />}
-        <div className="flex min-h-0 flex-1">{id && <ChatPanel key={id} agentId={id} />}</div>
+        {/* a tool window covers the chat; hidden, it cannot show through around the window's edges */}
+        <div className={`flex min-h-0 flex-1 ${tool ? 'invisible' : ''}`}>{id && <ChatPanel key={id} agentId={id} />}</div>
       </div>
     </div>
   )

@@ -143,14 +143,18 @@ export function AssetBoard({ plugin }: { plugin: PluginInfo }) {
     <div className="flex h-full min-h-0" data-testid="asset-board">
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
-          <div className="text-xs text-indigo-300/80">
-            {board.assets.length} assets{engineName ? ` · ${engineName} project` : ''} · <span className="font-mono text-[11px]">{BOARD_PATH}</span>
+          <div className="min-w-0 truncate text-xs text-indigo-300/80" title={BOARD_PATH}>
+            {board.assets.length} assets{engineName ? ` · ${engineName} project` : ''}
           </div>
           <div className="flex-1" />
-          {noGenerator && <span className="text-[11px] text-amber-300" title="Switch Meshy, WaveSpeed or Higgsfield on for it in its chat settings, or in Settings -> MCP servers">That chat has no image or 3D generator on</span>}
-          <span className="text-[11px] text-indigo-300/70">Requests go to</span>
-          <ChatTarget chats={chats} value={to} onChange={setTo} testId="ab-send-to" />
-          <button className={`btn !py-1 ${styleOpen ? '!border-violet-400/60' : ''}`} onClick={() => setStyleOpen(!styleOpen)} data-testid="ab-style">
+          {noGenerator && (
+            <span className="whitespace-nowrap text-[11px] text-amber-300" title="That chat has no image or 3D generator on. Switch Meshy, WaveSpeed or Higgsfield on for it in its chat settings, or in Settings -> MCP servers.">
+              No generator on
+            </span>
+          )}
+          <span className="whitespace-nowrap text-[11px] text-indigo-300/70">Requests go to</span>
+          <ChatTarget chats={chats} value={to} onChange={setTo} testId="ab-send-to" className="max-w-[220px]" />
+          <button className={`btn shrink-0 whitespace-nowrap !py-1 ${styleOpen ? '!border-violet-400/60' : ''}`} onClick={() => setStyleOpen(!styleOpen)} data-testid="ab-style">
             <Palette size={13} /> Style guide
           </button>
         </div>

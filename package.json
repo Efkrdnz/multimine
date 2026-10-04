@@ -1,7 +1,7 @@
 {
   "name": "multimine",
-  "version": "0.1.0",
-  "description": "Multi-agent workstation: a team of AI agents around a Mastermind, drawn in space.",
+  "version": "0.2.0",
+  "description": "A desktop app for your coding agents (Claude Code, Codex, API models) with game-dev tools built in and plugins for more.",
   "main": "./out/main/index.js",
   "author": "Efkrdnz",
   "license": "MIT",

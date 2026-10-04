@@ -1,5 +1,8 @@
 # Tools launcher, plugin system, UI Sketcher
 
+> Historical: written for the multi-agent version (Mastermind, roles, the Map), kept for its
+> reasoning. The tools now send their work to a chat; see `simplify.md`.
+
 ## Context
 
 The left rail is filling up (Create agent, Inbox, Media, Context, Code, Repository, Mastermind,

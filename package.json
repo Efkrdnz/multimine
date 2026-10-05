@@ -3,6 +3,7 @@
   "version": "0.2.0",
   "description": "A desktop app for your coding agents (Claude Code, Codex, API models) with game-dev tools built in and plugins for more.",
   "main": "./out/main/index.js",
+  "desktopName": "multimine.desktop",
   "author": "Efkrdnz",
   "license": "MIT",
   "private": true,
@@ -17,7 +18,10 @@
     "test": "vitest run",
     "test:e2e": "npm run build && playwright test",
     "pretest:e2e": "node scripts/ensure-electron.mjs",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:linux": "npm run build && electron-builder --linux"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^2.0.108",
@@ -68,12 +72,15 @@
   "build": {
     "appId": "com.efkrdnz.multimine",
     "productName": "Multimine",
+    "copyright": "Copyright (c) Efkrdnz",
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "build"
     },
     "files": [
       "out/**",
       "templates/**",
+      "build/icon.png",
       "package.json"
     ],
     "asarUnpack": [
@@ -81,15 +88,64 @@
       "templates/**",
       "node_modules/node-pty/**"
     ],
-    "extraResources": [],
+    "npmRebuild": false,
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "win": {
-      "target": "nsis"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "files": [
+        "!node_modules/@anthropic-ai/claude-agent-sdk-linux-*/**",
+        "!node_modules/@anthropic-ai/claude-agent-sdk-darwin-*/**"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "Multimine",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}"
     },
     "mac": {
-      "target": "dmg"
+      "target": "dmg",
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.png",
+      "files": [
+        "!node_modules/@anthropic-ai/claude-agent-sdk-linux-*/**",
+        "!node_modules/@anthropic-ai/claude-agent-sdk-win32-*/**"
+      ]
     },
     "linux": {
-      "target": "AppImage"
+      "target": [
+        "AppImage"
+      ],
+      "category": "Development",
+      "icon": "build/icon.png",
+      "synopsis": "A desktop app for your coding agents",
+      "files": [
+        "!node_modules/@anthropic-ai/claude-agent-sdk-darwin-*/**",
+        "!node_modules/@anthropic-ai/claude-agent-sdk-win32-*/**",
+        "!node_modules/@anthropic-ai/claude-agent-sdk-*-musl/**"
+      ]
     }
   }
 }

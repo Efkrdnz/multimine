@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1a1240"/>
+      <stop offset="1" stop-color="#05060f"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.45" r="0.5">
+      <stop offset="0" stop-color="#7c3aed" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#7c3aed" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c4b5fd"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient>
+    <linearGradient id="b" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a78bfa"/><stop offset="1" stop-color="#6d28d9"/></linearGradient>
+    <linearGradient id="c" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#67e8f9"/><stop offset="1" stop-color="#0891b2"/></linearGradient>
+    <linearGradient id="d" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#0e7490"/></linearGradient>
+  </defs>
+  <rect x="32" y="32" width="960" height="960" rx="216" fill="url(#bg)"/>
+  <rect x="32" y="32" width="960" height="960" rx="216" fill="url(#glow)"/>
+  <rect x="34" y="34" width="956" height="956" rx="214" fill="none" stroke="#a78bfa" stroke-opacity="0.35" stroke-width="4"/>
+  <!-- a cut gem: crown on top, pavilion below -->
+  <g stroke="#05060f" stroke-opacity="0.35" stroke-width="6" stroke-linejoin="round">
+    <polygon points="352,280 672,280 800,420 224,420" fill="url(#a)"/>
+    <polygon points="352,280 432,420 224,420" fill="#ddd6fe"/>
+    <polygon points="512,280 592,420 432,420" fill="#ede9fe"/>
+    <polygon points="672,280 800,420 592,420" fill="url(#b)"/>
+    <polygon points="224,420 432,420 512,800" fill="url(#b)"/>
+    <polygon points="432,420 592,420 512,800" fill="url(#c)"/>
+    <polygon points="592,420 800,420 512,800" fill="url(#d)"/>
+  </g>
+  <polygon points="380,300 420,300 360,400 320,400" fill="#ffffff" fill-opacity="0.55"/>
+</svg>

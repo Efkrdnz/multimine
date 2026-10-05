@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, net, Notification, protocol, safeStorage, shell } from 'electron'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { API_METHODS } from '@shared/api'
@@ -10,6 +10,24 @@ import { servePlugin } from './plugins/protocol'
 
 // Tests and portable installs can point the user-data folder elsewhere.
 if (process.env.MULTIMINE_USER_DATA) app.setPath('userData', resolve(process.env.MULTIMINE_USER_DATA))
+
+// Opening Multimine again (the desktop icon clicked twice) brings the open window forward.
+if (!app.requestSingleInstanceLock()) app.exit(0)
+app.on('second-instance', () => {
+  if (!win || win.isDestroyed()) return
+  if (win.isMinimized()) win.restore()
+  win.focus()
+})
+
+// A Mac app opened from the Dock gets a bare PATH; take the login shell's so claude and codex are found.
+if (process.platform === 'darwin' && app.isPackaged) {
+  try {
+    const path = execFileSync(process.env.SHELL || '/bin/zsh', ['-ilc', 'printf %s "$PATH"'], { encoding: 'utf8', timeout: 5000 }).trim().split('\n').pop()
+    if (path) process.env.PATH = path
+  } catch {
+    // keep the PATH we were given
+  }
+}
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'mm', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true, bypassCSP: true } },
@@ -82,6 +100,8 @@ function createWindow(): void {
     title: 'Multimine',
     autoHideMenuBar: true,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    // Windows and macOS take the icon from the app itself; Linux window managers need it here
+    ...(process.platform === 'linux' ? { icon: join(__dirname, '../../build/icon.png') } : {}),
     webPreferences: { preload: join(__dirname, '../preload/index.cjs'), sandbox: true, contextIsolation: true }
   })
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)

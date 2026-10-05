@@ -4,6 +4,8 @@ import type { Question } from '@shared/types'
 import type { AgentEvent, ProviderAdapter, TurnRequest } from './types'
 import { hardStop, readOnlyCommand } from './guard'
 import { projectInstructions } from './projectDoc'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 
 const WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']
 const READ_TOOLS = ['Read', 'Glob', 'Grep', 'LS', 'WebSearch', 'WebFetch', 'TodoWrite']
@@ -215,7 +217,7 @@ export class ClaudeCliProvider implements ProviderAdapter {
       mcpServers,
       settingSources: ['user', 'project', 'local'] as ('user' | 'project' | 'local')[],
       settings,
-      pathToClaudeCodeExecutable: req.executable || undefined
+      pathToClaudeCodeExecutable: req.executable || bundledClaude()
     }
     // the loop guard sees every call, including ones the user's own settings allow outright
     const hooks = {
@@ -467,4 +469,21 @@ class Translator {
       }
     }
   }
+}
+
+/**
+ * In an installed app the SDK finds its Claude Code binary inside app.asar, where it cannot be run;
+ * electron-builder unpacks it next to the archive, so point the SDK there. Undefined when running
+ * from source, where the SDK finds it in node_modules itself.
+ */
+export function bundledClaude(resources = (process as { resourcesPath?: string }).resourcesPath): string | undefined {
+  if (!resources) return undefined
+  const base = join(resources, 'app.asar.unpacked', 'node_modules', '@anthropic-ai')
+  const ext = process.platform === 'win32' ? '.exe' : ''
+  const kinds = process.platform === 'linux' ? [`linux-${process.arch}`, `linux-${process.arch}-musl`] : [`${process.platform}-${process.arch}`]
+  for (const kind of kinds) {
+    const file = join(base, `claude-agent-sdk-${kind}`, `claude${ext}`)
+    if (existsSync(file)) return file
+  }
+  return undefined
 }

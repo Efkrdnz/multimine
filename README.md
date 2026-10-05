@@ -14,6 +14,23 @@ spells, items and enemies in tables linked to the code, where editing a number e
 
 ![Multimine: the UI Sketcher, the Asset Board, the Logic Board and a chat](docs/screenshots/demo.gif)
 
+## Install
+
+Download the latest build from [Releases](https://github.com/Efkrdnz/multimine/releases) (or the
+**Installers** run in the Actions tab):
+
+- **Windows:** `Multimine-Setup-<version>.exe` installs Multimine for your user, lets you pick the
+  folder, and adds it to the Start Menu and the desktop. Open it from either, like any app;
+  uninstall from Settings -> Apps. `Multimine-<version>-portable.exe` runs without installing
+  (slower to start: it unpacks itself each time).
+- **macOS:** open the `.dmg` and drag Multimine to Applications.
+- **Linux:** make the `.AppImage` executable (`chmod +x`) and run it.
+
+The builds are not code-signed yet, so Windows SmartScreen says "Windows protected your PC": click
+**More info -> Run anyway**. On macOS, right-click the app and choose **Open** the first time.
+
+Opening Multimine again while it is running brings the open window forward.
+
 ## Chats
 
 - **One agent per chat, as many chats as you like.** Each chat has its own provider, model, effort
@@ -124,15 +141,21 @@ above are built the same way and hold no privileges a plugin could not have.
 
 See [`docs/plugins.md`](docs/plugins.md) and [`examples/plugins/hello`](examples/plugins/hello).
 
-## Running it
+## Running it from source
 
 ```bash
 npm install
 npm run dev        # the app with hot reload
 npm run build      # production bundle in out/
 npm start          # run the production bundle
-npm run dist       # an installer for your OS (electron-builder; unsigned)
+npm run dist       # an installer for your OS in dist/ (electron-builder; unsigned)
 ```
+
+To get a real app from source instead of a terminal command, run `npm run dist:win` on Windows
+(`dist:mac`, `dist:linux` elsewhere): `dist/Multimine-Setup-<version>.exe` installs it with Start Menu
+and desktop shortcuts, and `dist/win-unpacked/Multimine.exe` runs as is. Each OS builds its own
+installer; the [Installers workflow](.github/workflows/installers.yml) builds all three on GitHub.
+The app icon is `build/icon.svg` (rendered to `build/icon.png` and `build/icon.ico`).
 
 If npm asks about install scripts, approve esbuild once (`npm install-scripts approve esbuild`). The
 first `npm run dev` (or `npm start`) downloads the Electron binary (`scripts/ensure-electron.mjs`);

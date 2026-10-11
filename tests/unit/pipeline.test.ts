@@ -169,6 +169,6 @@ describe('chats', () => {
     await app.openProject(old)
     expect(app.project!.list()).toHaveLength(1)
     expect(existsSync(join(old, '.multimine', 'agents', 'mastermind.md'))).toBe(true)
-    expect(await readFile(join(old, '.multimine', '.gitignore'), 'utf8')).toBe('sessions/\nmedia/\nlayout.json\nchats/\n')
+    expect(await readFile(join(old, '.multimine', '.gitignore'), 'utf8')).toBe('sessions/\nmedia/\nlayout.json\nchats/\nhistory.git/\n')
   })
 })

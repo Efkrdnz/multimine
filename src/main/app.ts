@@ -23,6 +23,8 @@ import { Terminals, shellQuote } from './ide/terminals'
 import { ProjectWatcher } from './ide/watcher'
 import { readJson, writeJson } from './store/fsx'
 import type { TerminalKind } from '@shared/types'
+import { crashPrompt } from '@shared/run/crash'
+import { Runner, suggestCommand } from './run/runner'
 
 export interface AppOptions {
   userDataDir: string
@@ -54,6 +56,8 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
   private files: ProjectFiles | null = null
   /** The chat on screen: where a tool's 'active' messages go. */
   private activeChat: string | null = null
+  /** The project's run button. */
+  runner: Runner | null = null
 
   constructor(private readonly o: AppOptions) {
     this.config = new AppConfig(o.userDataDir, o.cipher)
@@ -106,6 +110,7 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
   async shutdown(): Promise<void> {
     this.providers.release()
     this.terminals.closeAll()
+    await this.runner?.stop()
     await this.watcher?.stop()
     await this.engine?.close('Multimine closed.')
     await this.hub.closeAll()
@@ -129,8 +134,10 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     const project = await ProjectStore.open(dir)
     await this.detectDefaults()
     await this.engine?.close('Another project was opened.')
+    await this.runner?.stop()
     this.providers.release()
     this.project = project
+    this.runner = new Runner(project.dir, this.o.emit)
     this.activeChat = null
     this.engine = new Engine({
       health: this.health,
@@ -162,6 +169,8 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
 
   async closeProject(): Promise<void> {
     this.terminals.closeAll()
+    await this.runner?.stop()
+    this.runner = null
     await this.watcher?.stop()
     this.watcher = null
     await this.engine?.close('The project was closed.')
@@ -227,6 +236,14 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
 
   async clearChat(agentId: string): Promise<void> {
     await this.need().engine.clearChat(agentId)
+  }
+
+  turnDiff(agentId: string, messageId: string, path: string) {
+    return this.need().engine.turnDiff(agentId, messageId, path)
+  }
+
+  turnUndo(agentId: string, messageId: string, force?: boolean) {
+    return this.need().engine.undoTurn(agentId, messageId, !!force)
   }
 
   async answer(id: string, answers: Record<string, string>, note?: string): Promise<void> {
@@ -383,6 +400,43 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
 
   async terminalClose(id: string) {
     this.terminals.close(id)
+  }
+
+  // ---------------------------------------------------------------- the run button
+
+  private run(): Runner {
+    this.need()
+    return this.runner!
+  }
+
+  async runInfo() {
+    const runner = this.run()
+    const [config, suggested] = await Promise.all([runner.config(), suggestCommand(this.need().project.dir)])
+    return { command: config?.command ?? null, suggested, state: runner.state, lines: runner.output() }
+  }
+
+  async runStart(command?: string): Promise<void> {
+    const runner = this.run()
+    const cmd = command?.trim() || (await runner.config())?.command || (await suggestCommand(this.need().project.dir)) || ''
+    if (!cmd) throw new Error('Set the command that starts the game first.')
+    if ((await runner.config())?.command !== cmd) await runner.saveConfig({ command: cmd })
+    await runner.start(cmd)
+  }
+
+  async runStop(): Promise<void> {
+    await this.runner?.stop()
+  }
+
+  /** A problem from the run, with the code it points at, as a message to a chat. */
+  async runSend(problemId: string, to: string): Promise<string> {
+    const { engine } = this.need()
+    const runner = this.run()
+    const problem = runner.find(problemId)
+    if (!problem) throw new Error('That problem is from an earlier run.')
+    const body = crashPrompt(problem, { command: runner.state.command, code: runner.state.status === 'exited' ? runner.state.code : undefined })
+    const id = await engine.fromTool('Run', to, body, this.activeChat ?? undefined)
+    this.activeChat = id
+    return id
   }
 
   // ---------------------------------------------------------------- git and GitHub

@@ -26,6 +26,17 @@ describe('notifications', () => {
     expect(messageFor(item('l', { kind: 'approval', title: 'x'.repeat(300) }), 'A').body.length).toBe(120)
   })
 
+  it('says when the game crashes, once per run, and a click opens the Run panel', () => {
+    const { n, shown } = rig()
+    const crash = { id: 'p1', kind: 'java' as const, title: 'java.lang.NullPointerException: target', trace: [], frames: [], fatal: true, signature: 's', ts: 1 }
+    const run = (patch: object) => n.handle({ type: 'run', state: { status: 'exited', command: 'gradlew runClient', startedAt: 5, code: 1, problems: [crash], ...patch } } as MainEvent)
+    run({})
+    run({}) // the same run published again when its files are matched
+    run({ startedAt: 6, stopped: true, code: 143 })
+    run({ startedAt: 7, code: 0, problems: [] })
+    expect(shown).toEqual([{ title: 'The game crashed', body: 'java.lang.NullPointerException: target', panel: 'run' }])
+  })
+
   it('notifies once per new item, only when the window is elsewhere', () => {
     const { n, shown, state } = rig()
     n.handle({ type: 'inbox', items: [item('q1')] })

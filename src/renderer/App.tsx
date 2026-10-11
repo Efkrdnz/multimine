@@ -3,6 +3,7 @@ import { applyEvent, api, useStore } from './state/store'
 import { MediaPanel } from './panels/MediaPanel'
 import { InstructionsPanel } from './panels/InstructionsPanel'
 import { GitPanel } from './panels/GitPanel'
+import { RunPanel } from './panels/RunPanel'
 import { ChatSettings } from './panels/ChatSettings'
 import { SettingsModal } from './panels/SettingsModal'
 import { Welcome } from './panels/Welcome'
@@ -45,6 +46,7 @@ export function App() {
           {panel === 'media' && <MediaPanel />}
           {panel === 'instructions' && <InstructionsPanel />}
           {panel === 'git' && <GitPanel />}
+          {panel === 'run' && <RunPanel />}
           <ToolWindows />
           {ide !== 'closed' && (
             <Suspense fallback={null}>

@@ -1,4 +1,4 @@
-import type { AgentSpec, AppSettings, CliStatus, GhItem, GitCommit, GitStatus, IdeEntry, IdeHit, MainEvent, McpServerConfig, ModelEntry, PlanWindow, PluginInfo, PluginManifest, PluginPermission, ProjectInfo, ProviderKind, TerminalInfo, TerminalKind } from './types'
+import type { AgentSpec, RunState, AppSettings, CliStatus, GhItem, GitCommit, GitStatus, IdeEntry, IdeHit, MainEvent, McpServerConfig, ModelEntry, PlanWindow, PluginInfo, PluginManifest, PluginPermission, ProjectInfo, ProviderKind, TerminalInfo, TerminalKind } from './types'
 
 /** Everything the renderer can ask of the main process. One method, one IPC channel. */
 export interface Api {
@@ -23,6 +23,10 @@ export interface Api {
   /** A new conversation in the same chat: the messages stay, the agent starts clean with a short recap. */
   freshStart(agentId: string): Promise<boolean>
   clearChat(agentId: string): Promise<void>
+  /** One file's diff from the turn a reply ran: before the turn against after it. */
+  turnDiff(agentId: string, messageId: string, path: string): Promise<string>
+  /** Puts back the files a reply's turn changed; files changed since come back as conflicts unless `force`. */
+  turnUndo(agentId: string, messageId: string, force?: boolean): Promise<{ undone: boolean; conflicts: string[] }>
 
   answer(id: string, answers: Record<string, string>, note?: string): Promise<void>
   decide(id: string, approved: boolean, note?: string, always?: boolean): Promise<void>
@@ -69,6 +73,14 @@ export interface Api {
   pluginRemove(id: string): Promise<void>
   pluginCall(id: string, method: string, args: unknown[]): Promise<unknown>
 
+  /** The run button: its saved command, the one Multimine suggests for this project, the current run and its output. */
+  runInfo(): Promise<{ command: string | null; suggested: string | null; state: RunState; lines: string[] }>
+  /** Starts the game (with `command`, saved as the project's from then on, or the saved one). */
+  runStart(command?: string): Promise<void>
+  runStop(): Promise<void>
+  /** Sends a problem from the run to a chat ('active', 'new' or an id); resolves to the chat it went to. */
+  runSend(problemId: string, to: string): Promise<string>
+
   /** Shows a sample desktop notification; false when the system does not support them. */
   testNotification(): Promise<boolean>
 
@@ -81,7 +93,7 @@ export type ApiMethod = keyof Api
 export const API_METHODS: ApiMethod[] = [
   'init', 'pickProject', 'openProject', 'closeProject', 'saveMultimineMd',
   'createChat', 'saveChat', 'deleteChat', 'setActiveChat',
-  'send', 'stop', 'retry', 'clearChat', 'freshStart',
+  'send', 'stop', 'retry', 'clearChat', 'freshStart', 'turnDiff', 'turnUndo',
   'answer', 'decide',
   'updateSettings', 'setKey', 'detectClis', 'refreshModels', 'testMcp',
   'gitStatus', 'gitInit', 'gitDiff', 'gitStage', 'gitUnstage', 'gitCommit', 'gitLog', 'gitShow', 'gitBranches', 'gitCheckout', 'gitPull', 'gitPush',
@@ -89,6 +101,7 @@ export const API_METHODS: ApiMethod[] = [
   'ideList', 'ideFind', 'ideGrep', 'ideRead', 'ideWrite', 'ideOpenExternal',
   'terminalAvailable', 'terminalOpen', 'terminalWrite', 'terminalResize', 'terminalClose',
   'pluginList', 'pluginPickAndInstall', 'pluginInstall', 'pluginSetEnabled', 'pluginRevoke', 'pluginRemove', 'pluginCall',
+  'runInfo', 'runStart', 'runStop', 'runSend',
   'testNotification', 'openPath', 'mediaUrl'
 ]
 

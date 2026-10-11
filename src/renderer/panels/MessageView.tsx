@@ -7,6 +7,7 @@ import type { ChatMessage, ToolCallView } from '@shared/types'
 import { api, useStore } from '../state/store'
 import { MediaView } from './MediaView'
 import { TableCardView } from './TableCardView'
+import { TurnChanges } from './TurnChanges'
 import { useNow } from '../state/useNow'
 import { describeTool, duration, elapsed, workSummary } from '@shared/activity'
 import { blocks, type Block } from '@shared/segments'
@@ -279,10 +280,11 @@ export const MessageView = memo(function MessageView({ m, last = false }: { m: C
   )
 })
 
-/** The end of a reply: its error with a Retry, and what it cost. */
+/** The end of a reply: the files it changed, its error with a Retry, and what it cost. */
 function Tail({ m, last }: { m: ChatMessage; last: boolean }) {
   return (
     <>
+      {m.changes && !m.streaming && <TurnChanges m={m} />}
       {m.error && (
         <div className="mt-2 flex gap-2 rounded-lg border border-red-400/30 bg-red-950/40 px-3 py-2 text-xs text-red-100">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" /> <span className="flex-1 whitespace-pre-wrap">{m.error}</span>

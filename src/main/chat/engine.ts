@@ -10,6 +10,7 @@ import type { AgentSpec, AgentStatus, ChatMessage, FallbackHop, InboxItem, MainE
 import { cellText, parseTable, type Table } from '@shared/tables/model'
 import { contextSection, tableCommandPrompt } from '@shared/tables/prompt'
 import { TableStore } from '../store/tables'
+import { Checkpoints } from './checkpoints'
 import type { AppConfig } from '../store/appConfig'
 import type { ProjectStore } from '../store/project'
 import type { ChatStore } from '../store/chats'
@@ -37,6 +38,8 @@ export interface EngineDeps {
   health?: ProviderHealth
   /** The Claude plan's usage windows, app-wide like `health`. */
   planLimits?: PlanLimits
+  /** Snapshot the project around every turn so its changes can be listed and undone (default on). */
+  checkpoints?: boolean
   /** The URL of a chat's endpoint on the local MCP bus (set once the bus server is up). */
   busUrl?: (chatId: string) => string | undefined
 }
@@ -54,6 +57,9 @@ export interface SendOptions {
 }
 
 const text = (t: string, isError = false): ToolOutput => ({ text: t, isError })
+
+/** How long a turn waits for the snapshot before it (the first one of a big project reads every file). */
+const SNAPSHOT_WAIT_MS = 15_000
 
 /**
  * Tool output as the chat shows it. The model already has the whole thing; the window only needs
@@ -113,6 +119,12 @@ export class Engine {
   /** Usage per chat: which one spent what. */
   private byAgent: Record<string, Usage> = {}
   private mediaStore: MediaStore
+  /** Which other chats were working at some point during each running turn. */
+  private overlaps = new Map<string, Set<string>>()
+  /** What the user undid since a chat's last turn: told to it with its next message. */
+  private undoNotes = new Map<string, string[]>()
+  /** Snapshots around every turn, for the changes under a reply and Undo. */
+  readonly checkpoints: Checkpoints | null
 
   readonly health: ProviderHealth
 
@@ -121,6 +133,7 @@ export class Engine {
     this.health = d.health ?? new ProviderHealth((h) => d.emit({ type: 'provider-health', health: h }))
     this.inbox = new Inbox((items) => d.emit({ type: 'inbox', items }))
     this.tables = new TableStore(d.project.dir)
+    this.checkpoints = d.checkpoints === false ? null : new Checkpoints(d.project.dir)
   }
 
   /** The project's tables, in `.multimine/tables/`. */
@@ -137,7 +150,7 @@ export class Engine {
   async close(reason: string): Promise<void> {
     this.inbox.cancelAll(reason)
     for (const c of this.controllers.values()) c.abort()
-    const settled = Promise.allSettled([...this.queues.values()])
+    const settled = Promise.allSettled([...this.queues.values(), this.checkpoints?.idle()])
     await Promise.race([settled, new Promise((r) => setTimeout(r, 3000))])
     if (this.quietTimer) clearInterval(this.quietTimer)
     this.quietTimer = null
@@ -167,6 +180,8 @@ export class Engine {
     this.d.emit({ type: 'inbox', items: this.inbox.items })
     this.d.emit({ type: 'media', items: this.media })
     this.d.emit({ type: 'usage', total: this.totals, byAgent: this.byAgent })
+    // a first snapshot in the background, so the one before a turn only reads what changed since
+    void this.checkpoints?.snapshot('Project opened').catch(() => undefined)
   }
 
   private emitProject(): void {
@@ -479,13 +494,23 @@ export class Engine {
     const agent: AgentSpec = temp ? { ...own, model: temp.model, effort: temp.effort } : own
     if (temp) this.temps.set(agentId, temp)
     else this.temps.delete(agentId)
-    const prompt = userMsg.command === 'table' ? tableCommandPrompt(userMsg.text.trimStart().replace(/^\/table\s*/, ''), await this.tables.list()) : userMsg.text
+    const asked = userMsg.command === 'table' ? tableCommandPrompt(userMsg.text.trimStart().replace(/^\/table\s*/, ''), await this.tables.list()) : userMsg.text
+    const undone = this.undoNotes.get(agentId)
+    this.undoNotes.delete(agentId)
+    const prompt = undone?.length ? `${undoNote(undone)}\n\n${asked}` : asked
     const history = this.history(agentId, userMsg)
 
+    // every turn running now overlaps this one, and this one each of them
+    for (const t of this.turns) this.overlaps.get(t)?.add(agentId)
+    this.overlaps.set(agentId, new Set(this.turns))
     this.turns.add(agentId)
     let ctl = new AbortController()
     this.controllers.set(agentId, ctl)
     this.setStatus(agentId, 'thinking', 'Thinking')
+    // read-only chats cannot change files: nothing to snapshot
+    const snapping = own.permissions === 'write' ? this.checkpoints : null
+    // a first snapshot of a large project can take a while: a turn waits for it only so long, then goes without
+    const before = snapping ? await Promise.race([snapping.snapshot(`Before a turn of ${own.name}`).catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), SNAPSHOT_WAIT_MS))]) : null
     const wd = new Watchdog(this.d.config.settings.watchdog, Date.now())
     this.lastBeat.set(agentId, Date.now())
     this.quietTimer ??= setInterval(() => this.checkQuiet(), 15_000)
@@ -572,12 +597,61 @@ export class Engine {
     closeSegments(reply)
     if (error) reply.error = error
     for (const t of reply.tools ?? []) if (t.status === 'running') t.status = 'error'
+    const others = [...(this.overlaps.get(agentId) ?? [])]
+    this.overlaps.delete(agentId)
+    if (before && snapping && this.d.project.get(agentId)) {
+      const changes = await this.turnChanges(snapping, before, own.name, others).catch(() => null)
+      if (changes) reply.changes = changes
+    }
     if (this.d.project.get(agentId)) {
       this.upsert(reply, true)
       await this.persist(reply)
       this.setStatus(agentId, error && !/^Stopped/.test(error) ? 'error' : 'idle')
     }
     return { text: reply.text, error }
+  }
+
+  /** What a turn changed, from the snapshot before it to one taken now; null when it changed nothing. */
+  private async turnChanges(cp: Checkpoints, before: string, name: string, others: string[]): Promise<ChatMessage['changes'] | null> {
+    const after = await cp.snapshot(`After a turn of ${name}`)
+    if (!after || after === before) return null
+    const { files, more } = await cp.changes(before, after)
+    if (!files.length) return null
+    const overlapped = others.map((id) => this.d.project.get(id)?.name).filter((n): n is string => !!n)
+    return { before, after, files, ...(more ? { more } : {}), ...(overlapped.length ? { overlapped } : {}) }
+  }
+
+  private changesOf(agentId: string, messageId: string): { msg: ChatMessage; changes: NonNullable<ChatMessage['changes']> } {
+    const msg = this.chats[agentId]?.find((m) => m.id === messageId)
+    if (!msg?.changes) throw new Error('That reply changed no files.')
+    if (!this.checkpoints) throw new Error('Turn snapshots are off.')
+    return { msg, changes: msg.changes }
+  }
+
+  /** One file's diff from a turn: how it was before the turn against how the turn left it. */
+  async turnDiff(agentId: string, messageId: string, path: string): Promise<string> {
+    const { changes } = this.changesOf(agentId, messageId)
+    return this.checkpoints!.diff(changes.before, changes.after, path)
+  }
+
+  /**
+   * Puts back every file a turn changed. Files changed again since then come back as conflicts
+   * first; `force` overwrites them too. The chat is told with its next message, since its own
+   * context still holds the changes.
+   */
+  async undoTurn(agentId: string, messageId: string, force = false): Promise<{ undone: boolean; conflicts: string[] }> {
+    const { msg, changes } = this.changesOf(agentId, messageId)
+    if (changes.undone) throw new Error('This turn was already undone.')
+    if (this.busy(agentId)) throw new Error('Wait for the chat to finish (or stop it) before undoing.')
+    const r = await this.checkpoints!.undo(changes, force)
+    if (!r.undone) return r
+    const next: ChatMessage = { ...msg, changes: { ...changes, undone: Date.now() } }
+    this.upsert(next, true)
+    await this.persist(next)
+    const paths = changes.files.map((f) => f.path)
+    this.undoNotes.set(agentId, [...(this.undoNotes.get(agentId) ?? []), ...paths, ...(changes.more ? [`and ${changes.more} more files`] : [])])
+    await this.note(agentId, `Undid the changes to ${paths.length + (changes.more ?? 0)} file${paths.length + (changes.more ?? 0) === 1 ? '' : 's'} from that turn`)
+    return r
   }
 
   /** One provider's run of a turn, streaming into `reply`. Returns the error it ended on, if any. */
@@ -1022,3 +1096,9 @@ export class Engine {
 }
 
 const clipTo = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
+
+/** Tells a chat what the user undid since its last reply: its own context still holds those edits. */
+export function undoNote(paths: string[]): string {
+  const list = paths.slice(0, 40).join(', ')
+  return `[Multimine: since your last reply the user undid your changes to ${list}${paths.length > 40 ? ` and ${paths.length - 40} more` : ''}. Those files are back to how they were before that turn; read them again before editing them.]`
+}

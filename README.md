@@ -7,7 +7,8 @@ Open a project folder and chat with an agent that works in it, the way you would
 Codex, with as many chats running side by side as you like. Around the chat sit the tools nobody
 else has: draw a HUD and have it built for Godot, Unity, Unreal or Minecraft; track the art the game
 needs and drop the approved file into place; design a mechanic as boxes in plain words; keep your
-spells, items and enemies in tables linked to the code, where editing a number edits the class. Any of them sends its work to a chat with one click.
+spells, items and enemies in tables linked to the code, where editing a number edits the class. Any of them sends its work to a chat with one click. Run the game from the header, and a crash goes to a
+chat with the line it broke on; every turn's file changes can be reviewed and undone.
 
 > **Experimental.** Multimine is young and was built mostly with AI. It is developed on Windows and
 > its test suite runs on Linux; macOS is untested. Expect rough edges, and please report them.
@@ -49,11 +50,35 @@ Opening Multimine again while it is running brings the open window forward.
   Questions, plans and permissions are answered right in the chat.
 - **`multimine.md`** at the project root is given to every chat, like `CLAUDE.md` or `AGENTS.md`.
   Fill in its "How to verify" section with your project's exact commands.
+- **Every turn's changes, and Undo.** Under each reply that changed files: which ones, with lines
+  added and removed. Click a file for its diff, or **Undo** to put every file back as it was before
+  that turn (files it added are deleted). A file changed again since then is named and kept
+  unless you say otherwise, and the chat is told with your next message, so it does not build on
+  edits that are gone. The snapshots live in `.multimine/history.git`, Multimine's own store: your
+  repository, its index and its branches are never touched, and it works in a folder that is not a
+  repository at all.
 - **The loop guard.** A chat that relaunches the same game with nothing changed, repeats a step,
   cycles through the same few steps, or runs past its time or usage budget is paused and asks you:
   tell it what to do instead, let it continue, or stop it.
 
 ![A chat paused by the loop guard](docs/screenshots/loop-guard.png)
+
+## Run the game
+
+**▶ Run** in the header (or F5) starts your game: `./gradlew runClient` for a Minecraft mod,
+`godot --path .`, `npm run dev`, `cargo run`, or any command you type (saved in
+`.multimine/run.json`). The **Run** panel streams its output and reads it as it comes: Java and
+Kotlin stack traces, Minecraft crash reports (and the report file the game saved), Godot script
+errors, Python tracebacks, JavaScript, Unity and .NET stack traces, and Rust panics. Each problem
+shows once, with the line in your project it points at; click it to open the file there.
+
+**Send to chat** gives a chat the error, the trace with the library frames folded away, and the code
+around the line it broke - so it starts on the fix instead of re-running the game and reading the
+log itself. Stop (Shift+F5) ends the game and everything it started.
+
+| | |
+|---|---|
+| ![The files a turn changed, with Undo](docs/screenshots/turn-changes.png) | ![A crash found in the game's output](docs/screenshots/run-crash.png) |
 
 ## The tools
 
@@ -183,11 +208,12 @@ Settings -> Models, and API providers have **Refresh from vendor** to pull their
 ## How it is built
 
 ```
-src/shared/        types, the chat format, effort mapping, model presets
+src/shared/        types, the chat format, effort mapping, model presets, the crash parser (run/)
   sketch/ logic/ assets/ data/   the tools' pure logic (unit tested)
 src/main/
   app.ts           the API the window calls
-  chat/            the engine (turn queues, fallbacks, the loop guard), prompts, workspace tools
+  chat/            the engine (turn queues, fallbacks, the loop guard), turn snapshots, prompts, workspace tools
+  run/             the run button: the game's process, its output, problems matched to project files
   store/           the project folder, chats on disk, app settings and encrypted keys
   providers/       aiSdk (API keys), claudeCli (Agent SDK), codexCli (codex exec), mock
   mcp/             the local MCP server CLI chats call back into, and external MCP servers

@@ -1,6 +1,7 @@
 import { _electron as electron, expect, test, type Page } from '@playwright/test'
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { execFileSync } from 'node:child_process'
 import { join, resolve } from 'node:path'
 
 const shots = resolve(process.env.MULTIMINE_SHOTS ?? 'test-results/shots')
@@ -560,6 +561,75 @@ test('Multimine runs end to end on the mock provider', async () => {
   // a fresh start: the messages stay, the agent starts clean
   await page.getByTestId('fresh-start').click()
   await expect(panel.getByTestId('fresh-line')).toBeVisible()
+
+  // a turn that edits a file lists it under the reply: its diff, and Undo puts it back as it was
+  const mendPath = join(spellDir, 'Mend.java')
+  const mendBefore = readFileSync(mendPath, 'utf8')
+  await say(`/tool write_file ${JSON.stringify({ path: 'src/main/java/com/mana/spells/Mend.java', content: mendBefore.replace('BASE_DAMAGE = -6', 'BASE_DAMAGE = -9') })}\n/say Mend heals for 9 now.`)
+  const changes = panel.getByTestId('turn-changes').last()
+  await expect(changes).toContainText('Changed 1 file', { timeout: 15_000 })
+  await expect(changes).toContainText('+1')
+  await changes.getByTestId('turn-changes-toggle').click()
+  await expect(changes.getByTestId('turn-file')).toContainText('src/main/java/com/mana/spells/Mend.java')
+  await page.waitForTimeout(300)
+  await shot(page, '24b-turn-changes')
+  await changes.getByTestId('turn-file').click()
+  await expect(page.getByTestId('turn-diff')).toContainText('+    public static final int BASE_DAMAGE = -9;')
+  await expect(page.getByTestId('turn-diff')).toContainText('-    public static final int BASE_DAMAGE = -6;')
+  await page.waitForTimeout(300)
+  await shot(page, '24c-turn-diff')
+  await page.keyboard.press('Escape')
+  await changes.getByTestId('turn-undo').click()
+  await expect(changes.getByTestId('turn-undone')).toBeVisible({ timeout: 10_000 })
+  expect(readFileSync(mendPath, 'utf8')).toBe(mendBefore)
+  await expect(panel).toContainText('Undid the changes to 1 file from that turn')
+  // the snapshots live in Multimine's own store, never in the project's history
+  expect(existsSync(join(project, '.multimine', 'history.git', 'HEAD'))).toBe(true)
+  expect(execFileSync('git', ['branch', '--list', 'snapshots'], { cwd: project, encoding: 'utf8' })).toBe('')
+  expect(execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: project, encoding: 'utf8' })).not.toContain('history.git')
+
+  // the run button: the game's output, the crash found in it, and a chat sent the trace with the code it points at
+  writeFileSync(
+    join(project, 'fake-game.js'),
+    [
+      "console.log('[12:00:00] [main/INFO] (manamod) Registering 2 spells')",
+      "setTimeout(() => {",
+      "  console.error('[12:00:01] [Render thread/ERROR] (Minecraft) Exception ticking spell')",
+      "  console.error('java.lang.NullPointerException: Cannot invoke \"Entity.hurt(float)\" because \"this.target\" is null')",
+      "  console.error('\\tat com.mana.spells.Fireball.cast(Fireball.java:5)')",
+      "  console.error('\\tat net.minecraft.client.Minecraft.tick(Minecraft.java:1800)')",
+      "  process.exit(1)",
+      "}, 600)"
+    ].join('\n')
+  )
+  await page.getByTestId('run-panel-toggle').click()
+  await expect(page.getByTestId('run-command')).toHaveValue('gradle runClient')
+  await page.getByTestId('run-command').fill('node fake-game.js')
+  await page.getByTestId('run-start').click()
+  await expect(page.getByTestId('run-output')).toContainText('Registering 2 spells', { timeout: 10_000 })
+  const problem = page.getByTestId('run-problem')
+  await expect(problem).toContainText('java.lang.NullPointerException', { timeout: 15_000 })
+  await expect(problem.getByTestId('run-problem-place')).toHaveText('src/main/java/com/mana/spells/Fireball.java:5', { timeout: 10_000 })
+  await expect(page.getByTestId('run-status')).toContainText('Exited with code 1')
+  await expect(problem).toContainText('Crash')
+  expect(JSON.parse(readFileSync(join(project, '.multimine', 'run.json'), 'utf8'))).toEqual({ command: 'node fake-game.js' })
+  await page.waitForTimeout(400)
+  await shot(page, '24d-run-crash')
+  const chatsBefore = (await chats()).length
+  await problem.getByTestId('run-send-target').selectOption('new')
+  await problem.getByTestId('run-send').click()
+  await expect.poll(async () => (await chats()).length, { timeout: 10_000 }).toBe(chatsBefore + 1)
+  const fixer = (await chats()).find((c) => c.name.startsWith('Run:'))!
+  expect(fixer.name).toContain('Fix: java.lang.NullPointerException')
+  await expect.poll(() => readFileSync(join(project, '.multimine', 'chats', fixer.id, 'messages.jsonl'), 'utf8'), { timeout: 10_000 }).toContain('## Where it points in the project')
+  const sent = readFileSync(join(project, '.multimine', 'chats', fixer.id, 'messages.jsonl'), 'utf8')
+  expect(sent).toContain('`node fake-game.js` crashed (exit code 1)')
+  expect(sent).toContain('`src/main/java/com/mana/spells/Fireball.java:5`')
+  expect(sent).toContain('> 5 |     public static final float COOLDOWN = 2.5f;')
+  await expect(page.locator(`[data-chat-panel="${fixer.id}"]`)).toContainText('from Run', { timeout: 10_000 })
+  await page.waitForTimeout(400)
+  await shot(page, '24e-run-sent')
+  await page.getByTestId(`chat-row-${tester.id}`).click()
 
   // rename the chat in the header
   await page.getByTestId('chat-name').click()

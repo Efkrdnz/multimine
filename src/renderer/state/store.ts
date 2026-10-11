@@ -1,8 +1,8 @@
 import { create } from 'zustand'
 import { pushTerminalData } from '../ide/terminalBus'
-import type { AgentSpec, AgentStatus, AppSettings, CliStatus, PluginInfo, ChatMessage, InboxItem, MainEvent, MediaItem, ProjectInfo, Usage, PlanWindow } from '@shared/types'
+import type { AgentSpec, AgentStatus, AppSettings, CliStatus, PluginInfo, ChatMessage, InboxItem, MainEvent, MediaItem, ProjectInfo, RunState, Usage, PlanWindow } from '@shared/types'
 
-export type Panel = 'media' | 'instructions' | 'git' | null
+export type Panel = 'media' | 'instructions' | 'git' | 'run' | null
 export type Modal = { kind: 'chat'; agent: AgentSpec } | { kind: 'settings'; tab?: string } | { kind: 'plugins' } | null
 
 interface Toast {
@@ -42,6 +42,11 @@ export interface State {
   tableRequest: { id: string; n: number } | null
   /** The last table a chat saved, so the Tables tool reloads it. */
   tablesChanged: { id: string; n: number } | null
+  /** The run button's current or last run, and its output. */
+  run: RunState | null
+  runLines: string[]
+  /** A problem turned up while the Run panel was closed. */
+  runUnseen: boolean
   plugins: PluginInfo[]
   brokenPlugins: { dir: string; errors: string[] }[]
   /** Tool windows opened this run (kept mounted so they keep their state) and the one on screen. */
@@ -79,6 +84,9 @@ export const useStore = create<State>((set, get) => ({
   ideRequest: null,
   tableRequest: null,
   tablesChanged: null,
+  run: null,
+  runLines: [],
+  runUnseen: false,
   plugins: [],
   brokenPlugins: [],
   openTools: [],
@@ -154,6 +162,10 @@ export function applyEvent(e: MainEvent): void {
       s.set({ ide: 'open', panel: null, activeTool: null, ideRequest: { path: e.path, line: e.line, n: (s.ideRequest?.n ?? 0) + 1 } })
       break
     case 'reveal': {
+      if (e.panel === 'run') {
+        s.set({ panel: 'run', activeTool: null, ide: s.ide === 'open' ? 'hidden' : s.ide, runUnseen: false })
+        break
+      }
       // a clicked notification: the chat that asked comes up, with its question in view
       const item = e.itemId ? s.inbox.find((x) => x.id === e.itemId) : undefined
       const id = item?.askedBy ?? e.agentId
@@ -169,6 +181,20 @@ export function applyEvent(e: MainEvent): void {
     case 'tables-changed':
       s.set({ tablesChanged: { id: e.id, n: (s.tablesChanged?.n ?? 0) + 1 } })
       break
+    case 'run': {
+      const more = e.state.problems.length > (s.run?.problems.length ?? 0) && e.state.startedAt === s.run?.startedAt
+      s.set({ run: e.state, ...(more && s.panel !== 'run' ? { runUnseen: true } : {}) })
+      break
+    }
+    case 'run-output': {
+      if (e.reset) {
+        s.set({ runLines: e.lines })
+        break
+      }
+      const next = s.runLines.concat(e.lines)
+      s.set({ runLines: next.length > 5000 ? next.slice(-5000) : next })
+      break
+    }
     case 'provider-health':
       s.set({ health: e.health })
       break

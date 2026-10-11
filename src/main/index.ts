@@ -55,7 +55,7 @@ function showNote(n: Note): boolean {
     if (win.isMinimized()) win.restore()
     win.show()
     win.focus()
-    emit({ type: 'reveal', itemId: n.itemId, agentId: n.agentId })
+    emit({ type: 'reveal', itemId: n.itemId, agentId: n.agentId, panel: n.panel })
   })
   note.on('close', () => live.delete(note))
   note.show()

@@ -15,6 +15,8 @@ export interface Note {
   /** What a click should bring up. */
   itemId?: string
   agentId?: string
+  /** A panel to open instead: the run's, for a crash. */
+  panel?: 'run'
 }
 
 export interface NotifierDeps {
@@ -46,6 +48,8 @@ export class Notifier {
   private queue: InboxItem[] = []
   private timer: ReturnType<typeof setTimeout> | null = null
   private busy = new Map<string, boolean>()
+  /** Runs already told about, by start time. */
+  private runs = new Set<number>()
 
   constructor(private readonly d: NotifierDeps) {}
 
@@ -55,6 +59,12 @@ export class Notifier {
     else if (e.type === 'status') this.status(e.agentId, e.status)
     // a usage window crossing 90%: worth hearing about before a chat stops mid-task
     else if (e.type === 'plan-limits' && e.warning && this.allowed()) this.d.show({ title: 'Claude usage', body: e.warning })
+    // the game crashing: the user is usually in the game, not in Multimine
+    else if (e.type === 'run' && e.state.status === 'exited' && !e.state.stopped && e.state.code !== 0 && e.state.startedAt && !this.runs.has(e.state.startedAt)) {
+      this.runs.add(e.state.startedAt)
+      const p = e.state.problems.find((x) => x.fatal)
+      if (this.allowed()) this.d.show({ title: 'The game crashed', body: clip((p && p.kind !== 'exit' ? p.title : (p?.title ?? 'It exited with an error')).replace(/\s+/g, ' '), 120), panel: 'run' })
+    }
   }
 
   private allowed(): boolean {

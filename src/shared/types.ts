@@ -1,3 +1,4 @@
+import type { Crash } from './run/crash'
 // Everything that crosses the IPC boundary or lands on disk is described here.
 
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
@@ -153,6 +154,30 @@ export interface ChatMessage {
   command?: 'table'
   /** A table a chat saved, shown as a card in the chat. */
   table?: TableCard
+  /** The files this reply's turn changed, with the snapshots to diff or undo them. */
+  changes?: TurnChanges
+}
+
+/** A file one turn changed. */
+export interface FileChange {
+  path: string
+  status: 'A' | 'M' | 'D'
+  add: number
+  del: number
+  binary?: boolean
+}
+
+/** What one turn did to the project: snapshots of the files before and after it, in Multimine's own history. */
+export interface TurnChanges {
+  before: string
+  after: string
+  files: FileChange[]
+  /** Files changed beyond the ones listed. */
+  more?: number
+  /** Other chats that were working at the same time: their edits may be in here too. */
+  overlapped?: string[]
+  /** When the user undid it. */
+  undone?: number
 }
 
 /** A saved table as a chat shows it: what it holds, how much of it is linked, and its first rows. */
@@ -397,6 +422,20 @@ export interface CliStatus {
 }
 
 /** Pushed from main to the renderer. */
+/** The project's run button: what it starts, and how the last run went. */
+export interface RunState {
+  status: 'idle' | 'running' | 'exited'
+  command: string
+  startedAt?: number
+  endedAt?: number
+  code?: number | null
+  signal?: string | null
+  /** The user pressed Stop. */
+  stopped?: boolean
+  /** Errors and crashes found in the output, newest last. */
+  problems: Crash[]
+}
+
 export type MainEvent =
   | { type: 'project'; project: ProjectInfo | null }
   | { type: 'chat-reset'; chats: Record<string, ChatMessage[]> }
@@ -423,7 +462,7 @@ export type MainEvent =
   | { type: 'plugins'; plugins: PluginInfo[]; broken: { dir: string; errors: string[] }[] }
   | { type: 'inbox'; items: InboxItem[] }
   /** A notification was clicked: bring up what it was about. */
-  | { type: 'reveal'; itemId?: string; agentId?: string }
+  | { type: 'reveal'; itemId?: string; agentId?: string; panel?: 'run' }
   | { type: 'media'; items: MediaItem[] }
   | { type: 'settings'; settings: AppSettings }
   | { type: 'usage'; total: Usage; byAgent?: Record<string, Usage> }
@@ -434,3 +473,7 @@ export type MainEvent =
   /** A table was saved by a chat: the Tables tool reloads it. */
   | { type: 'tables-changed'; id: string }
   | { type: 'toast'; level: 'info' | 'error'; text: string }
+  /** The run button's process started, stopped, or found a problem. */
+  | { type: 'run'; state: RunState }
+  /** New lines of the running game's output; `reset` starts a new run's log. */
+  | { type: 'run-output'; lines: string[]; reset?: boolean }

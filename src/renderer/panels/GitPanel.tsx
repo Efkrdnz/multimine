@@ -3,6 +3,7 @@ import { ArrowDownToLine, ArrowUpFromLine, ExternalLink, GitBranch, GitCommitHor
 import type { GhItem, GitCommit, GitFile, GitStatus } from '@shared/types'
 import { api, onMainEvent, useStore } from '../state/store'
 import { Drawer } from './Drawer'
+import { Diff } from './Diff'
 
 type Tab = 'changes' | 'history' | 'github'
 
@@ -14,30 +15,6 @@ function letterOf(f: GitFile): string {
 
 function letterColor(l: string): string {
   return l === 'D' ? 'text-red-300' : l === '?' || l === 'A' ? 'text-emerald-300' : l === 'U' ? 'text-orange-300' : 'text-amber-200'
-}
-
-/** A unified diff, coloured by line. */
-function Diff({ text }: { text: string }) {
-  return (
-    <pre className="scroll-thin max-h-[42vh] overflow-auto rounded-lg border border-white/10 bg-black/40 p-2 font-mono text-[11px] leading-[1.45] select-text">
-      {text.split('\n').map((l, i) => (
-        <div
-          key={i}
-          className={
-            l.startsWith('+') && !l.startsWith('+++')
-              ? 'bg-emerald-500/10 text-emerald-200'
-              : l.startsWith('-') && !l.startsWith('---')
-                ? 'bg-red-500/10 text-red-200'
-                : l.startsWith('@@')
-                  ? 'text-cyan-300'
-                  : 'text-slate-300'
-          }
-        >
-          {l || ' '}
-        </div>
-      ))}
-    </pre>
-  )
 }
 
 export function GitPanel() {

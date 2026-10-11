@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BookOpen, Code2, Eraser, FolderOpen, GitBranch, Image, LayoutGrid, Leaf, RotateCcw, Search, Settings, SlidersHorizontal, SquarePen, Trash2, Upload } from 'lucide-react'
+import { BookOpen, Code2, Eraser, FolderOpen, GitBranch, Image, LayoutGrid, Leaf, Play, RotateCcw, Search, Settings, SlidersHorizontal, Square, SquarePen, SquareTerminal, Trash2, Upload } from 'lucide-react'
 import { modelLabel } from '@shared/catalog'
 import { PROVIDER_COLOR, PROVIDER_NAME } from '@shared/chat'
 import type { AgentSpec, AgentStatus } from '@shared/types'
@@ -9,6 +9,7 @@ import { OrbAvatar } from '../panels/OrbAvatar'
 import { PlanGauge, UsagePill } from '../panels/Gauges'
 import { PluginIcon } from '../tools/PluginIcon'
 import { openTool } from '../tools/openTool'
+import { startRun } from '../panels/RunPanel'
 
 type Panel = 'media' | 'instructions' | 'git'
 
@@ -25,12 +26,17 @@ export async function startChat(): Promise<void> {
  * middle; tool windows and the side sheets (code, git, media, instructions) docked beside it.
  */
 export function Shell() {
-  // Ctrl+N: a new chat, as in the Claude apps
+  // Ctrl+N: a new chat, as in the Claude apps; F5 runs the game (again), Shift+F5 stops it
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'n') {
         e.preventDefault()
         void startChat()
+      }
+      if (e.key === 'F5') {
+        e.preventDefault()
+        if (e.shiftKey) void api().runStop()
+        else void startRun(useStore.getState().run?.command || undefined)
       }
     }
     window.addEventListener('keydown', key)
@@ -224,11 +230,52 @@ function Header({ agentId }: { agentId: string }) {
       <button className={`btn !px-2 !py-1 ${settings?.economy.enabled ? 'border-emerald-400/60 bg-emerald-500/20 text-emerald-100' : ''}`} title="Economy mode: short answers (and, if switched on in Settings, easy messages on a cheaper model)" onClick={() => settings && void api().updateSettings({ economy: { ...settings.economy, enabled: !settings.economy.enabled } })} data-testid="economy">
         <Leaf size={13} />
       </button>
+      <RunButton />
       <button className="btn !py-1" title="Review the changes, commit and push" onClick={() => set({ panel: 'git', ide: 'hidden', activeTool: null })} data-testid="commit">
-        <Upload size={13} /> Commit & push
+        <Upload size={13} /> <span className="hidden xl:inline">Commit & push</span>
       </button>
       <button className="btn !py-1" title="Open the project in VS Code" onClick={() => void api().ideOpenExternal('.', 'code')}>
-        <Code2 size={13} /> Open
+        <Code2 size={13} /> <span className="hidden xl:inline">Open</span>
+      </button>
+    </div>
+  )
+}
+
+/** Play (or Stop) for the project's game, and the Run panel with a dot when it found a problem you have not seen. */
+function RunButton() {
+  const run = useStore((s) => s.run)
+  const unseen = useStore((s) => s.runUnseen)
+  const panel = useStore((s) => s.panel)
+  const dir = useStore((s) => s.project?.dir)
+  const set = useStore.getState().set
+  // the last run of this project (it keeps going while you switch chats)
+  useEffect(() => {
+    void api()
+      .runInfo()
+      .then((r) => set({ run: r.state, runLines: r.lines }))
+      .catch(() => undefined)
+  }, [dir, set])
+  const running = run?.status === 'running'
+  const crashed = run?.status === 'exited' && !run.stopped && run.code !== 0
+  return (
+    <div className="flex items-center">
+      {running ? (
+        <button className="btn !rounded-r-none !py-1 border-red-400/50 bg-red-500/20 text-red-100" title="Stop the game (Shift+F5)" onClick={() => void api().runStop()} data-testid="run-header-stop">
+          <Square size={12} /> Stop
+        </button>
+      ) : (
+        <button className="btn !rounded-r-none !py-1 border-emerald-400/40 text-emerald-100" title={run?.command ? `Run ${run.command} (F5)` : 'Run the game (F5)'} onClick={() => void startRun(run?.command || undefined)} data-testid="run-header-start">
+          <Play size={13} /> Run
+        </button>
+      )}
+      <button
+        className={`btn relative !rounded-l-none !border-l-0 !px-2 !py-1 ${panel === 'run' ? 'bg-violet-500/25' : ''}`}
+        title="The game's output and the problems found in it"
+        onClick={() => set({ panel: panel === 'run' ? null : 'run', ide: useStore.getState().ide === 'open' ? 'hidden' : useStore.getState().ide, activeTool: null, runUnseen: false })}
+        data-testid="run-panel-toggle"
+      >
+        <SquareTerminal size={13} className={running ? 'text-emerald-300' : crashed ? 'text-red-300' : ''} />
+        {unseen && <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red-400 ring-2 ring-[#05060f]" data-testid="run-unseen" />}
       </button>
     </div>
   )

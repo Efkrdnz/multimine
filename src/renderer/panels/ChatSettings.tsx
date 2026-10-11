@@ -7,6 +7,7 @@ import { PROVIDER_NAME, providerLocked } from '@shared/chat'
 import { EMPTY_LIST, api, useStore } from '../state/store'
 import { Modal } from './Modal'
 import { FallbackChain } from './FallbackChain'
+import { ProviderMark } from './ProviderMark'
 
 const AUTO_HELP: Record<string, string> = {
   'claude-cli': 'Claude Code: on accepts edits and allows commands and tools without asking; off sends every permission prompt to you.',
@@ -69,7 +70,8 @@ export function ChatSettings({ agent }: { agent: AgentSpec }) {
               <label className="label">Provider</label>
               <div className="grid grid-cols-5 gap-1.5">
                 {PROVIDERS.map((p) => (
-                  <button key={p} disabled={locked && p !== a.provider} className={`rounded-lg border px-2 py-1.5 text-[11px] font-semibold leading-tight transition disabled:cursor-not-allowed disabled:opacity-30 ${a.provider === p ? 'border-violet-400 bg-violet-500/25 text-white' : 'border-white/10 bg-black/20 text-indigo-200 hover:border-white/25'}`} onClick={() => pickProvider(p)} title={PROVIDER_LABEL[p]}>
+                  <button key={p} disabled={locked && p !== a.provider} className={`lift-mark row flex flex-col items-center gap-1 rounded-xl border px-2 py-2 text-[11px] font-semibold leading-tight disabled:cursor-not-allowed disabled:opacity-30 ${a.provider === p ? 'border-violet-400 bg-violet-500/25 text-white' : 'border-white/10 bg-black/20 text-indigo-200 hover:border-white/25 hover:bg-white/5'}`} onClick={() => pickProvider(p)} title={PROVIDER_LABEL[p]}>
+                    <ProviderMark p={p} size={22} />
                     {PROVIDER_NAME[p]}
                   </button>
                 ))}

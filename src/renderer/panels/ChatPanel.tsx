@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
-import { Boxes, PenTool, Send, Square, Table2, Workflow, Zap } from 'lucide-react'
-import { modelLabel } from '@shared/catalog'
+import { Boxes, Check, PenTool, Send, Square, Table2, Workflow, Zap } from 'lucide-react'
+import { modelLabel, needsKey } from '@shared/catalog'
 import { PROVIDER_NAME, providerLocked } from '@shared/chat'
 import { downshift } from '@shared/economy'
-import type { AgentSpec, Effort } from '@shared/types'
+import type { AgentSpec, Effort, ProviderKind } from '@shared/types'
 import { SUPPORTED_EFFORTS } from '@shared/effort'
 import { tokens } from '@shared/usage'
 import { EMPTY_LIST, EMPTY_MAP, api, useStore } from '../state/store'
 import { ActivityLine } from './ActivityLine'
 import { MessageView } from './MessageView'
 import { PromptCard } from './PromptCard'
-import { ProviderPicker } from './ProviderPicker'
+import { ProviderPicker, chooseProvider, cliNote, loadClis } from './ProviderPicker'
+import { ProviderMark, providerTint } from './ProviderMark'
 
 /** How much a chat may do without asking, as the composer offers it. */
 type Access = 'read' | 'supervised' | 'full'
@@ -68,7 +69,7 @@ function ComposerBar({ agent }: { agent: AgentSpec }) {
   const models = catalog[agent.provider] ?? []
   const list = models.some((m) => m.id === agent.model) ? models : [{ id: agent.model, label: modelLabel(catalog, agent.provider, agent.model) }, ...models]
   const save = (patch: Partial<AgentSpec>) => void api().saveChat({ ...agent, ...patch })
-  const pick = 'cursor-pointer rounded-md bg-transparent px-1.5 py-0.5 text-[11px] text-indigo-200/80 outline-none hover:bg-white/5 hover:text-white'
+  const pick = 'row cursor-pointer rounded-md bg-transparent px-1.5 py-0.5 text-[11px] text-indigo-200/80 outline-none hover:bg-white/5 hover:text-white'
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-1 px-1" data-testid="composer-bar">
       <ProviderPicker agent={agent} locked={locked} />
@@ -114,9 +115,20 @@ function ComposerBar({ agent }: { agent: AgentSpec }) {
   )
 }
 
-/** A chat with nothing in it yet: what it is, and where to pick who it talks to. */
+/** The two subscriptions a new chat is most likely to use, as cards. */
+const MAIN: { p: 'claude-cli' | 'codex-cli'; hint: string }[] = [
+  { p: 'claude-cli', hint: 'Your Claude plan, through Claude Code' },
+  { p: 'codex-cli', hint: 'Your ChatGPT plan, through Codex' }
+]
+/** The rest, as small chips under them. */
+const OTHERS: ProviderKind[] = ['anthropic', 'openai', 'google', 'compatible', 'mock']
+
+/** A chat with nothing in it yet: who it talks to (Claude or ChatGPT, picked right here), and what is around it. */
 function EmptyChat({ agent }: { agent: AgentSpec }) {
   const project = useStore((s) => s.project?.name)
+  const clis = useStore((s) => s.clis)
+  const keyed = useStore((s) => s.keyed)
+  useEffect(() => loadClis(), [])
   const tools = [
     { icon: <PenTool size={13} />, name: 'UI Sketcher', what: 'draw a screen, have it built' },
     { icon: <Boxes size={13} />, name: 'Asset Board', what: 'art and sound, made and dropped in' },
@@ -124,13 +136,61 @@ function EmptyChat({ agent }: { agent: AgentSpec }) {
     { icon: <Table2 size={13} />, name: 'Tables', what: 'your numbers, linked to the code - try /table' }
   ]
   return (
-    <div className="mx-auto mt-[12vh] max-w-[520px] text-center" data-testid="empty-chat">
+    <div className="msg-in mx-auto mt-[9vh] max-w-[560px] text-center" data-testid="empty-chat">
       <div className="font-display text-2xl font-bold text-white">What are we building{project ? ` in ${project}` : ''}?</div>
-      <p className="mt-2 text-sm leading-relaxed text-indigo-200/70">
-        Ask about the project or tell it what to do. This chat talks to <b className="text-indigo-50">{PROVIDER_NAME[agent.provider]}</b>
-        {agent.provider === 'mock' ? ', an offline stand-in' : ''} - pick Claude, ChatGPT or another provider below before your first message.
-      </p>
-      <div className="mt-8 grid grid-cols-2 gap-2 text-left">
+      <p className="mt-2 text-sm leading-relaxed text-indigo-200/70">Pick who this chat talks to, then ask about the project or tell it what to do. Once the conversation starts it stays with them.</p>
+      <div className="mt-6 grid grid-cols-2 gap-3 text-left" data-testid="provider-cards">
+        {MAIN.map(({ p, hint }) => {
+          const on = agent.provider === p
+          const note = cliNote(p === 'claude-cli' ? clis?.claude : clis?.codex)
+          const tint = providerTint(p)
+          return (
+            <button
+              key={p}
+              className={`provider-card lift-mark relative flex flex-col items-start gap-3 rounded-2xl border p-4 text-left ${on ? '' : 'border-white/[0.08] bg-white/[0.025] hover:border-white/20 hover:bg-white/[0.045]'}`}
+              style={on ? { borderColor: `color-mix(in srgb, ${tint} 60%, transparent)`, background: `linear-gradient(160deg, color-mix(in srgb, ${tint} 14%, transparent), transparent 70%)`, boxShadow: `0 12px 40px -18px ${tint}` } : undefined}
+              onClick={() => chooseProvider(agent, p)}
+              aria-pressed={on}
+              data-testid={`provider-card-${p}`}
+            >
+              {on && (
+                <span className="pop absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full text-white" style={{ background: tint }}>
+                  <Check size={12} strokeWidth={3} />
+                </span>
+              )}
+              <ProviderMark p={p} size={40} />
+              <span className="min-w-0">
+                <span className="block font-display text-[17px] font-bold text-white">{PROVIDER_NAME[p]}</span>
+                <span className="mt-0.5 block text-[11.5px] text-indigo-300/70">{hint}</span>
+              </span>
+              <span className={`flex items-center gap-1.5 text-[10.5px] ${!note ? 'text-indigo-300/50' : note.ok ? 'text-emerald-200/90' : 'text-amber-200/90'}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${!note ? 'animate-pulse bg-indigo-300/50' : note.ok ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                {note?.text ?? 'Checking...'}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5">
+        <span className="mr-0.5 text-[11px] text-indigo-300/50">or</span>
+        {OTHERS.map((p) => {
+          const on = agent.provider === p
+          const noKey = needsKey(p) && !keyed.includes(p)
+          return (
+            <button
+              key={p}
+              className={`lift-mark row flex items-center gap-1.5 rounded-full border py-0.5 pl-0.5 pr-2.5 text-[11px] ${on ? 'border-violet-400/50 bg-violet-500/15 text-white' : 'border-white/[0.08] text-indigo-200/75 hover:border-white/20 hover:bg-white/5 hover:text-white'}`}
+              title={noKey ? `Add a ${PROVIDER_NAME[p]} key in Settings` : `Talk to ${PROVIDER_NAME[p]}`}
+              onClick={() => chooseProvider(agent, p)}
+              data-testid={`provider-chip-${p}`}
+            >
+              <ProviderMark p={p} size={18} className={noKey ? 'opacity-60' : ''} />
+              {PROVIDER_NAME[p]}
+            </button>
+          )
+        })}
+      </div>
+      <div className="mt-9 grid grid-cols-2 gap-2 text-left">
         {tools.map((t) => (
           <div key={t.name} className="flex items-start gap-2 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2">
             <span className="mt-0.5 text-violet-300/80">{t.icon}</span>
@@ -206,7 +266,7 @@ export function ChatPanel({ agentId }: { agentId: string }) {
       </div>
       <div className="relative mx-auto w-full max-w-[860px] p-3">
         {commands.length > 0 && (
-          <div className="glass absolute bottom-full left-3 right-3 z-20 mb-1 rounded-xl p-1" style={{ background: 'rgb(10 12 28 / 0.97)' }} data-testid="slash-menu">
+          <div className="glass menu-pop absolute bottom-full left-3 right-3 z-20 mb-1 rounded-xl p-1" style={{ background: 'rgb(10 12 28 / 0.97)' }} data-testid="slash-menu">
             {commands.map((c) => (
               <button key={c.cmd} className="flex w-full items-baseline gap-2 rounded-lg px-2.5 py-1.5 text-left hover:bg-white/5" onMouseDown={(e) => (e.preventDefault(), setDraft(`${c.cmd} `))}>
                 <span className="font-mono text-[12.5px] text-violet-200">{c.cmd}</span>
@@ -216,7 +276,7 @@ export function ChatPanel({ agentId }: { agentId: string }) {
             ))}
           </div>
         )}
-        <div className={`flex items-end gap-2 rounded-xl border bg-black/40 p-2 focus-within:border-violet-400/60 ${quick && light ? 'border-amber-400/50' : 'border-white/10'}`}>
+        <div className={`composer flex items-end gap-2 rounded-2xl border bg-black/40 p-2 focus-within:border-violet-400/60 ${quick && light ? 'border-amber-400/50' : 'border-white/10'}`}>
           <textarea
             className="scroll-thin max-h-48 min-h-[2.4rem] flex-1 resize-none bg-transparent px-1.5 py-1 text-sm outline-none"
             placeholder={quick && light ? `Quick: this message runs on ${modelLabel(settings?.catalog ?? {}, agent.provider, light.model)}...` : messages.length ? 'Reply...' : 'Ask about the project, or tell it what to build...'}
@@ -247,11 +307,11 @@ export function ChatPanel({ agentId }: { agentId: string }) {
             </button>
           )}
           {busy ? (
-            <button className="btn btn-danger !p-2" title="Stop" onClick={() => void api().stop(agentId)} data-testid="chat-stop">
+            <button className="btn btn-danger pop !p-2" title="Stop" onClick={() => void api().stop(agentId)} data-testid="chat-stop">
               <Square size={15} />
             </button>
           ) : null}
-          <button className="btn btn-primary !p-2" title="Send (Enter)" onClick={send} data-testid="chat-send">
+          <button className={`btn btn-primary !p-2 ${draft.trim() ? 'send-ready' : 'opacity-60'}`} title="Send (Enter)" onClick={send} data-testid="chat-send">
             <Send size={15} />
           </button>
         </div>

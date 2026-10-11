@@ -217,6 +217,16 @@ function FreshLine({ m }: { m: ChatMessage }) {
 
 /** One message. Memoised: a streaming reply re-renders itself, not the whole conversation above it. */
 export const MessageView = memo(function MessageView({ m, last = false }: { m: ChatMessage; last?: boolean }) {
+  // a message that arrives while the chat is open slides in; opening a chat shows its history still
+  const [arrived] = useState(() => Date.now() - m.ts < 3000)
+  return (
+    <div className={arrived ? 'msg-in' : undefined}>
+      <MessageBody m={m} last={last} />
+    </div>
+  )
+})
+
+function MessageBody({ m, last }: { m: ChatMessage; last: boolean }) {
   const media = useStore((s) => s.media)
   const [thinkOpen, setThinkOpen] = useState(false)
   if (m.fresh) return <FreshLine m={m} />
@@ -278,7 +288,7 @@ export const MessageView = memo(function MessageView({ m, last = false }: { m: C
       <Tail m={m} last={last} />
     </div>
   )
-})
+}
 
 /** The end of a reply: the files it changed, its error with a Retry, and what it cost. */
 function Tail({ m, last }: { m: ChatMessage; last: boolean }) {

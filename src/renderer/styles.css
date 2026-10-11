@@ -46,7 +46,22 @@ body,
   scrollbar-color: rgb(165 180 252 / 0.25) transparent;
 }
 
+:root {
+  /* one easing for everything that moves: quick out, soft landing */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* keyboard focus shows on every control, never on a mouse click */
+button:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 2px solid #a78bfa;
+  outline-offset: 2px;
+}
+
 .btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -57,22 +72,64 @@ body,
   border: 1px solid rgb(165 180 252 / 0.18);
   background: rgb(99 102 241 / 0.12);
   color: #e0e7ff;
-  transition: all 0.15s;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+  transition:
+    background-color 0.18s var(--ease-out),
+    border-color 0.18s var(--ease-out),
+    box-shadow 0.18s var(--ease-out),
+    color 0.18s var(--ease-out),
+    transform 0.18s var(--ease-out),
+    opacity 0.18s;
 }
 .btn:hover:not(:disabled) {
-  background: rgb(99 102 241 / 0.26);
-  border-color: rgb(165 180 252 / 0.4);
+  background-color: rgb(99 102 241 / 0.24);
+  border-color: rgb(165 180 252 / 0.42);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.07),
+    0 6px 18px -10px rgb(129 140 248 / 0.9);
+  transform: translateY(-1px);
+}
+.btn:active:not(:disabled) {
+  transform: translateY(0) scale(0.97);
+  transition-duration: 0.06s;
 }
 .btn:disabled {
   opacity: 0.4;
+  cursor: not-allowed;
+}
+.btn svg {
+  transition: transform 0.22s var(--ease-spring);
+}
+.btn:hover:not(:disabled) svg {
+  transform: scale(1.08);
 }
 .btn-primary {
-  background: linear-gradient(90deg, #7c3aed, #4f46e5);
-  border-color: transparent;
-  box-shadow: 0 0 20px -4px #7c3aed;
+  overflow: hidden;
+  background: linear-gradient(100deg, #7c3aed, #5b45ea 55%, #4f46e5);
+  border-color: rgb(196 181 253 / 0.25);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.18),
+    0 0 20px -6px #7c3aed;
 }
 .btn-primary:hover:not(:disabled) {
-  background: linear-gradient(90deg, #8b5cf6, #6366f1);
+  background: linear-gradient(100deg, #8b5cf6, #6d5bf3 55%, #6366f1);
+  border-color: rgb(221 214 254 / 0.4);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.22),
+    0 8px 26px -8px #8b5cf6;
+}
+/* a band of light crosses a primary button once as the pointer arrives */
+.btn-primary::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgb(255 255 255 / 0.28) 50%, transparent 70%);
+  transform: translateX(-120%);
+  pointer-events: none;
+}
+.btn-primary:hover:not(:disabled)::after {
+  transform: translateX(120%);
+  transition: transform 0.7s var(--ease-out);
 }
 .btn-danger {
   background: rgb(239 68 68 / 0.14);
@@ -82,9 +139,18 @@ body,
 .btn-ghost {
   background: transparent;
   border-color: transparent;
+  box-shadow: none;
+}
+.btn-ghost:hover:not(:disabled) {
+  background-color: rgb(255 255 255 / 0.06);
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .field {
+  transition:
+    border-color 0.18s var(--ease-out),
+    box-shadow 0.18s var(--ease-out);
   width: 100%;
   border-radius: 0.55rem;
   border: 1px solid rgb(165 180 252 / 0.16);
@@ -223,3 +289,179 @@ body,
 }
 .tile-wiggle { animation: tile-wiggle 0.28s ease-in-out infinite; }
 .tile-wiggle:nth-child(even) { animation-delay: -0.14s; }
+
+
+/* ---------------------------------------------------------------- small motions */
+
+/* a menu opens out of the control that opened it */
+@keyframes menu-pop {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.menu-pop {
+  transform-origin: bottom left;
+  animation: menu-pop 0.18s var(--ease-out);
+}
+
+/* a modal settles in: the backdrop fades, the panel rises a touch */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+.fade-in {
+  animation: fade-in 0.18s ease-out;
+}
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.modal-in {
+  animation: modal-in 0.24s var(--ease-out);
+}
+
+/* a message that just arrived slides up into place */
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.msg-in {
+  animation: msg-in 0.26s var(--ease-out);
+}
+
+/* a toast springs up from the bottom edge */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.toast-in {
+  animation: toast-in 0.3s var(--ease-spring);
+}
+
+/* a check mark or badge lands with a little bounce */
+@keyframes pop {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.pop {
+  animation: pop 0.26s var(--ease-spring);
+}
+
+/* the ring of a working chat's orb turns */
+@keyframes spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.orb-spin {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: spin-slow 2.6s linear infinite;
+}
+
+/* provider tiles lift a little under the pointer */
+.provider-mark {
+  transition: transform 0.22s var(--ease-spring), box-shadow 0.22s var(--ease-out);
+}
+.lift-mark:hover .provider-mark {
+  transform: translateY(-1px) scale(1.07);
+}
+
+/* the provider cards on a new chat */
+.provider-card {
+  transition:
+    transform 0.22s var(--ease-out),
+    border-color 0.22s var(--ease-out),
+    background-color 0.22s var(--ease-out),
+    box-shadow 0.22s var(--ease-out);
+}
+.provider-card:hover {
+  transform: translateY(-2px);
+}
+.provider-card:active {
+  transform: translateY(0) scale(0.985);
+  transition-duration: 0.06s;
+}
+
+/* rows in lists (chats, tools, menus) ease their highlight in and out */
+.row {
+  transition:
+    background-color 0.16s var(--ease-out),
+    color 0.16s var(--ease-out),
+    transform 0.16s var(--ease-out);
+}
+
+/* the composer glows softly while you type in it */
+.composer {
+  transition:
+    border-color 0.2s var(--ease-out),
+    box-shadow 0.25s var(--ease-out);
+}
+.composer:focus-within {
+  box-shadow:
+    0 0 0 3px rgb(139 92 246 / 0.12),
+    0 10px 40px -18px rgb(139 92 246 / 0.6);
+}
+
+/* the send arrow leans forward when there is something to send */
+.send-ready svg {
+  transition: transform 0.22s var(--ease-spring);
+}
+.send-ready:hover:not(:disabled) svg {
+  transform: translate(2px, -2px) rotate(-8deg);
+}
+
+
+/* the welcome screen's gem floats, slowly */
+@keyframes gem-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+.gem-float {
+  animation: gem-float 4.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

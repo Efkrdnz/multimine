@@ -8,6 +8,7 @@ import { ChatPanel } from '../panels/ChatPanel'
 import { OrbAvatar } from '../panels/OrbAvatar'
 import { PlanGauge, UsagePill } from '../panels/Gauges'
 import { PluginIcon } from '../tools/PluginIcon'
+import { ProviderMark } from '../panels/ProviderMark'
 import { openTool } from '../tools/openTool'
 import { startRun } from '../panels/RunPanel'
 
@@ -114,11 +115,13 @@ function Sidebar({ current }: { current?: string }) {
         {tools.map((p) => (
           <button
             key={p.manifest.id}
-            className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] ${activeTool === p.manifest.id ? 'bg-violet-500/20 text-white' : 'text-indigo-100/85 hover:bg-white/5'} ${p.enabled ? '' : 'opacity-60'}`}
+            className={`row group/tool flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] ${activeTool === p.manifest.id ? 'bg-violet-500/20 text-white' : 'text-indigo-100/85 hover:bg-white/5'} ${p.enabled ? '' : 'opacity-60'}`}
             onClick={() => (activeTool === p.manifest.id ? set({ activeTool: null }) : openTool(p))}
             data-testid={`tool-${p.manifest.id}`}
           >
-            <PluginIcon plugin={p} size={20} />
+            <span className="transition-transform duration-200 group-hover/tool:scale-110">
+              <PluginIcon plugin={p} size={20} />
+            </span>
             <span className="truncate">{p.manifest.name}</span>
           </button>
         ))}
@@ -140,9 +143,13 @@ function ChatRow({ a, selected, st, asks, onClick }: { a: AgentSpec; selected: b
   const catalog = useStore((s) => s.settings?.catalog ?? EMPTY_MAP)
   const line = st?.activity ? `${st.activity}${st.detail ? ` ${st.detail}` : ''}` : busy ? STATUS_WORD[st.status] : a.provider === 'mock' ? 'Mock (no AI)' : `${PROVIDER_NAME[a.provider]} · ${modelLabel(catalog, a.provider, a.model)}`
   return (
-    <div className={`group flex w-full items-center rounded-lg ${selected ? 'bg-violet-500/20' : 'hover:bg-white/5'}`}>
+    <div className={`row group relative flex w-full items-center rounded-lg ${selected ? 'bg-violet-500/20' : 'hover:bg-white/5'}`}>
+      {selected && <span className="pop absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-gradient-to-b from-fuchsia-300 to-violet-500" />}
       <button className="flex min-w-0 flex-1 items-center gap-2.5 px-2 py-1.5 text-left" onClick={onClick} data-testid={`chat-row-${a.id}`}>
-        <OrbAvatar color={PROVIDER_COLOR[a.provider]} status={st?.status} size={22} />
+        <span className="relative shrink-0" title={PROVIDER_NAME[a.provider]}>
+          <OrbAvatar color={PROVIDER_COLOR[a.provider]} status={st?.status} size={22} />
+          <ProviderMark p={a.provider} size={12} className="absolute -bottom-1 -right-1 ring-2 ring-[#090a19]" />
+        </span>
         <span className="min-w-0 flex-1">
           <span className={`block truncate text-[13px] ${selected ? 'font-semibold text-white' : 'text-indigo-50'}`}>{a.name}</span>
           <span className={`block truncate text-[10.5px] ${st?.status === 'error' ? 'text-red-300' : st?.status === 'waiting' || st?.quiet ? 'text-amber-300' : busy ? 'text-emerald-300/90' : 'text-indigo-300/50'}`}>{line}</span>
@@ -158,7 +165,7 @@ function ChatRow({ a, selected, st, asks, onClick }: { a: AgentSpec; selected: b
 
 function NavButton({ icon, label, onClick, active, testId }: { icon: React.ReactNode; label: string; onClick: () => void; active?: boolean; testId?: string }) {
   return (
-    <button className={`relative flex h-9 items-center justify-center rounded-lg ${active ? 'bg-violet-500/25 text-white' : 'text-indigo-300/80 hover:bg-white/5 hover:text-white'}`} title={label} onClick={onClick} data-testid={testId}>
+    <button className={`row relative flex h-9 items-center justify-center rounded-lg active:scale-95 ${active ? 'bg-violet-500/25 text-white' : 'text-indigo-300/80 hover:bg-white/5 hover:text-white'}`} title={label} onClick={onClick} data-testid={testId}>
       {icon}
     </button>
   )

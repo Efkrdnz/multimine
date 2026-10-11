@@ -5,6 +5,7 @@ import { PROVIDER_COLOR } from '@shared/chat'
 import type { Usage } from '@shared/types'
 import { tokens, usageLine } from '@shared/usage'
 import { useStore } from '../state/store'
+import { ProviderMark } from './ProviderMark'
 
 /** What a usage weighs: cached context a tenth, output five times (how it is priced). */
 const weight = (u: Usage) => u.inputTokens + (u.cacheWrite ?? 0) * 1.25 + (u.cacheRead ?? 0) * 0.1 + u.outputTokens * 5
@@ -84,7 +85,7 @@ export function UsagePill() {
               <div key={id} className="mb-2">
                 <div className="flex items-center justify-between gap-2">
                   <span className="flex items-center gap-1.5 text-indigo-100">
-                    <span className="h-2 w-2 rounded-full" style={{ background: (a ? PROVIDER_COLOR[a.provider] : '#a5b4fc') }} />
+                    {a ? <ProviderMark p={a.provider} size={14} /> : <span className="h-2 w-2 rounded-full bg-indigo-300" />}
                     {a?.name ?? id}
                     {a?.model && <span className="text-indigo-300/50">{a.model} · {a.effort}</span>}
                   </span>

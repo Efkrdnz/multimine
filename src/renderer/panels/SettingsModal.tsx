@@ -7,6 +7,7 @@ import { PROVIDERS, type AppSettings, type CliStatus, type McpServerConfig, type
 import { api, useStore } from '../state/store'
 import { Modal } from './Modal'
 import { FallbackChain } from './FallbackChain'
+import { ProviderMark } from './ProviderMark'
 
 const TABS = [
   ['general', 'General'],
@@ -16,13 +17,19 @@ const TABS = [
 ] as const
 type Tab = (typeof TABS)[number][0]
 
-function CliCard({ name, status, path, onPath }: { name: string; status?: CliStatus; path?: string; onPath: (p: string) => void }) {
+function CliCard({ p, name, status, path, onPath }: { p: ProviderKind; name: string; status?: CliStatus; path?: string; onPath: (p: string) => void }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-black/25 p-3">
-      <div className="flex items-center gap-2 text-sm font-semibold">
-        {status === undefined ? <RefreshCw size={14} className="animate-spin" /> : status.installed && status.loggedIn !== false ? <CheckCircle2 size={15} className="text-emerald-300" /> : <XCircle size={15} className="text-amber-300" />}
-        {name}
-        <span className="font-mono text-[11px] font-normal text-indigo-300/70">{status?.version}</span>
+    <div className="lift-mark rounded-xl border border-white/10 bg-black/25 p-3">
+      <div className="flex items-center gap-2.5 text-sm font-semibold">
+        <ProviderMark p={p} size={28} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate">{name}</span>
+          <span className="flex items-center gap-1 text-[11px] font-normal text-indigo-300/70">
+            {status === undefined ? <RefreshCw size={11} className="animate-spin" /> : status.installed && status.loggedIn !== false ? <CheckCircle2 size={12} className="text-emerald-300" /> : <XCircle size={12} className="text-amber-300" />}
+            {status === undefined ? 'Checking...' : status.installed ? (status.loggedIn === false ? 'Not logged in' : 'Ready') : 'Not installed'}
+            {status?.version && <span className="font-mono">· v{status.version}</span>}
+          </span>
+        </span>
       </div>
       {status?.detail && <div className="mt-1 text-xs text-indigo-200/70">{status.detail}</div>}
       <input className="field mt-2 font-mono text-xs" placeholder="Executable path (optional)" defaultValue={path} onBlur={(e) => onPath(e.target.value)} />
@@ -320,8 +327,8 @@ function Providers({ settings }: { settings: AppSettings }) {
           </button>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <CliCard name="Claude Code (Claude subscription)" status={clis?.claude} path={settings.claudePath} onPath={(p) => void api().updateSettings({ claudePath: p || undefined })} />
-          <CliCard name="Codex CLI (ChatGPT subscription)" status={clis?.codex} path={settings.codexPath} onPath={(p) => void api().updateSettings({ codexPath: p || undefined })} />
+          <CliCard p="claude-cli" name="Claude Code (Claude subscription)" status={clis?.claude} path={settings.claudePath} onPath={(p) => void api().updateSettings({ claudePath: p || undefined })} />
+          <CliCard p="codex-cli" name="Codex CLI (ChatGPT subscription)" status={clis?.codex} path={settings.codexPath} onPath={(p) => void api().updateSettings({ codexPath: p || undefined })} />
         </div>
       </section>
       <section>
@@ -329,7 +336,8 @@ function Providers({ settings }: { settings: AppSettings }) {
         <div className="space-y-2">
           {keyProviders.map((p) => (
             <div key={p} className="flex items-center gap-2">
-              <div className="w-56 text-sm">
+              <div className="flex w-56 items-center gap-2 text-sm">
+                <ProviderMark p={p} size={20} />
                 {PROVIDER_LABEL[p]}
                 {keyed.includes(p) && <span className="ml-2 rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] text-emerald-200">saved</span>}
               </div>

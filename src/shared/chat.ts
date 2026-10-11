@@ -44,8 +44,8 @@ export function parseChat(id: string, raw: unknown): AgentSpec {
 
 /** A chat's colour, for its avatar: one per provider, so a glance says what runs it. */
 export const PROVIDER_COLOR: Record<ProviderKind, string> = {
-  'claude-cli': '#f59e0b',
-  anthropic: '#fb923c',
+  'claude-cli': '#d97757',
+  anthropic: '#e8956f',
   'codex-cli': '#10b981',
   openai: '#34d399',
   google: '#60a5fa',

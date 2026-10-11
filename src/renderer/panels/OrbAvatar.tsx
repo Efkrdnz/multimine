@@ -42,7 +42,7 @@ export function OrbAvatar({ color, size = 28, status = 'idle', brain = false }: 
           <path d="M44 62 Q50 68 56 62" stroke="#1a1033" strokeWidth="3.5" fill="none" strokeLinecap="round" />
         </g>
       )}
-      <circle cx="50" cy="50" r="47" fill="none" stroke={ring} strokeWidth="4" strokeDasharray={status === 'thinking' || status === 'working' ? '40 20' : undefined} />
+      <circle cx="50" cy="50" r="47" fill="none" stroke={ring} strokeWidth="4" strokeDasharray={status === 'thinking' || status === 'working' ? '40 20' : undefined} className={status === 'thinking' || status === 'working' ? 'orb-spin' : undefined} />
     </svg>
   )
 }

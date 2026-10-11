@@ -8,8 +8,8 @@ export function Modal({ title, onClose, children, width = 'w-[920px]' }: { title
     return () => window.removeEventListener('keydown', key)
   }, [onClose])
   return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/55 backdrop-blur-sm" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`glass rise flex max-h-[92vh] ${width} max-w-[96vw] flex-col rounded-2xl`}>
+    <div className="fade-in absolute inset-0 z-40 flex items-center justify-center bg-black/55 backdrop-blur-sm" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className={`glass modal-in flex max-h-[92vh] ${width} max-w-[96vw] flex-col rounded-2xl`}>
         <div className="flex items-center gap-2 border-b border-white/10 px-5 py-3.5">
           <div className="flex-1 font-display text-base font-bold">{title}</div>
           <button className="btn btn-ghost !p-1" onClick={onClose}>

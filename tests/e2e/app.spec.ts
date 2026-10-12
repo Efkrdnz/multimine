@@ -685,6 +685,53 @@ test('Multimine runs end to end on the mock provider', async () => {
   await page.waitForTimeout(300)
   await shot(page, '28-overview')
 
+  // a tool made by describing it: a chat writes the plugin, the checks send its first try back (it
+  // throws when the page loads), the fixed one installs, the user allows it, and it opens and works
+  await page.getByTestId('make-tool-open').click()
+  await expect(page.getByTestId('make-tool')).toBeVisible()
+  await page.getByTestId('make-tool').getByText('A to-do board for this project').click()
+  await page.waitForTimeout(300)
+  await shot(page, '28b-make-tool')
+  const notesDir = '.multimine/tool-drafts/spell-notes'
+  const notesManifest = JSON.stringify({ id: 'spell-notes', name: 'Spell Notes', version: '1.0.0', api: 2, description: 'Notes on spell ideas, kept in the tool.', icon: { glyph: 'notebook-pen', gradient: ['#f472b6', '#8b5cf6'] }, entry: 'index.html', window: { width: 560, height: 420 }, permissions: [] })
+  const notesPage = (body: string) => `<!doctype html><html><head><meta charset="utf-8"><script src="mmplugin://sdk/multimine.js"></script><style>body{font:14px system-ui;color:#e5e7ff;padding:16px}h1{font-size:18px;margin:0 0 4px}.muted{color:#a5b4fc;font-size:12px}textarea{width:100%;min-height:120px;margin-top:10px;background:#0b0d22;color:#eef2ff;border:1px solid #333a70;border-radius:8px;padding:8px}</style></head><body><h1>Spell Notes</h1><div class="muted" id="project">...</div><textarea id="notes"></textarea><script type="module">${body}</script></body></html>`
+  const broken = notesPage("document.getElementById('missing').textContent = 'x'")
+  const fixed = notesPage("const i = await multimine.info()\ndocument.getElementById('project').textContent = 'Notes for ' + i.project\nconst box = document.getElementById('notes')\nbox.value = (await multimine.storage.get('notes')) || ''\nbox.oninput = () => multimine.storage.set('notes', box.value)")
+  await page.getByTestId('make-tool-input').fill(
+    [
+      'Notes on spell ideas, kept in the tool.',
+      `/tool write_file ${JSON.stringify({ path: `${notesDir}/plugin.json`, content: notesManifest })}`,
+      `/tool write_file ${JSON.stringify({ path: `${notesDir}/index.html`, content: broken })}`,
+      '/tool install_plugin {"id":"spell-notes"}',
+      `/tool write_file ${JSON.stringify({ path: `${notesDir}/index.html`, content: fixed })}`,
+      '/tool install_plugin {"id":"spell-notes"}',
+      '/say Made Spell Notes: it is under Tools in the sidebar.'
+    ].join('\n')
+  )
+  await page.getByTestId('make-tool-go').click()
+  const consent = page.getByTestId('consent')
+  await expect(consent).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText('Your new tool is ready')).toBeVisible()
+  await expect(consent).toContainText('Spell Notes')
+  await expect(consent).toContainText('made just now by')
+  const maker = (await chats()).find((c) => c.name.startsWith('Tool:'))!
+  const makerLog = readFileSync(join(project, '.multimine', 'chats', maker.id, 'messages.jsonl'), 'utf8')
+  // the hidden load caught the first try's error before the user ever saw it
+  expect(makerLog).toContain('Not installed. Fix these')
+  expect(makerLog).toContain('when the page loaded it reported')
+  expect(makerLog).toContain("Cannot set properties of null")
+  expect(makerLog).toContain('Installed \\"Spell Notes\\" v1.0.0')
+  await page.waitForTimeout(300)
+  await shot(page, '28c-tool-consent')
+  await page.getByTestId('consent-allow').click()
+  const notesFrame = page.frameLocator('[data-testid="plugin-frame-spell-notes"]')
+  await expect(notesFrame.locator('#project')).toHaveText('Notes for my-mod', { timeout: 15_000 })
+  await notesFrame.locator('#notes').fill('Void Lance: 30 mana, pierces shields')
+  await expect(page.getByTestId('tool-spell-notes')).toBeVisible()
+  await page.waitForTimeout(400)
+  await shot(page, '28d-tool-made')
+  await page.getByTestId('toolwin-spell-notes').getByTitle('Close', { exact: true }).click()
+
   // delete a chat from the sidebar: its folder goes
   await page.getByTestId(`chat-row-${tester.id}`).hover()
   await page.getByTestId(`chat-row-delete-${tester.id}`).click()

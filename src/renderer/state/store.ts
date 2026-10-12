@@ -3,7 +3,7 @@ import { pushTerminalData } from '../ide/terminalBus'
 import type { AgentSpec, AgentStatus, AppSettings, CliStatus, PluginInfo, ChatMessage, InboxItem, MainEvent, MediaItem, ProjectInfo, RunState, Usage, PlanWindow } from '@shared/types'
 
 export type Panel = 'media' | 'instructions' | 'git' | 'run' | null
-export type Modal = { kind: 'chat'; agent: AgentSpec } | { kind: 'settings'; tab?: string } | { kind: 'plugins' } | null
+export type Modal = { kind: 'chat'; agent: AgentSpec } | { kind: 'settings'; tab?: string } | { kind: 'plugins' } | { kind: 'make-tool'; editId?: string } | null
 
 interface Toast {
   id: number
@@ -53,7 +53,9 @@ export interface State {
   openTools: string[]
   activeTool: string | null
   /** A plugin waiting for the user to agree to its permissions, and what to do after. */
-  consent: { pluginId: string; thenOpen: boolean } | null
+  consent: { pluginId: string; thenOpen: boolean; madeBy?: string } | null
+  /** How many times each tool was reinstalled this run: its window reloads on a change. */
+  pluginReload: Record<string, number>
   modal: Modal
   toasts: Toast[]
   set: (patch: Partial<State>) => void
@@ -92,6 +94,7 @@ export const useStore = create<State>((set, get) => ({
   openTools: [],
   activeTool: null,
   consent: null,
+  pluginReload: {},
   modal: null,
   toasts: [],
   set: (patch) => set(patch),
@@ -178,6 +181,22 @@ export function applyEvent(e: MainEvent): void {
     case 'plugins':
       s.set({ plugins: e.plugins, brokenPlugins: e.broken })
       break
+    case 'plugin-installed': {
+      // the plugins event (with the new tool) has just arrived; a tool already allowed everything it asks for just reloads
+      const p = s.plugins.find((x) => x.manifest.id === e.id)
+      if (!p) break
+      if (p.enabled && !p.pending.length) {
+        s.set({
+          pluginReload: { ...s.pluginReload, [e.id]: (s.pluginReload[e.id] ?? 0) + 1 },
+          openTools: s.openTools.includes(e.id) ? s.openTools : [...s.openTools, e.id],
+          activeTool: e.id,
+          panel: null,
+          ide: s.ide === 'open' ? 'hidden' : s.ide
+        })
+        s.toast('info', `${p.manifest.name} was updated`)
+      } else s.set({ consent: { pluginId: e.id, thenOpen: true, madeBy: e.chatId } })
+      break
+    }
     case 'tables-changed':
       s.set({ tablesChanged: { id: e.id, n: (s.tablesChanged?.n ?? 0) + 1 } })
       break

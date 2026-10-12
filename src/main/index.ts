@@ -77,10 +77,40 @@ const cipher = {
     blob.startsWith('plain:') ? Buffer.from(blob.slice(6), 'base64').toString() : safeStorage.decryptString(Buffer.from(blob, 'base64'))
 }
 
+/**
+ * Loads a page in a hidden window for a couple of seconds and returns the errors it reports: an
+ * uncaught exception, a console error, a file that would not load. A tool a chat made goes through
+ * this before it installs. The page has no host there, so its calls to Multimine reach nothing.
+ */
+async function loadTest(url: string): Promise<string[]> {
+  const errors: string[] = []
+  const w = new BrowserWindow({ show: false, width: 1100, height: 760, webPreferences: { sandbox: true, contextIsolation: true } })
+  // older Electron passes the details as arguments, newer as fields on the event
+  w.webContents.on('console-message', (e: any, lvl?: number, msg?: string, line?: number, source?: string) => {
+    const level = e.level ?? lvl
+    if (level !== 'error' && level !== 3) return
+    const message = String(e.message ?? msg ?? '')
+    const at = Number(e.lineNumber ?? line ?? 0)
+    const file = String(e.sourceId ?? source ?? '').split('/').pop()
+    errors.push(`${message}${at && file ? ` (${file}:${at})` : ''}`.slice(0, 400))
+  })
+  w.webContents.on('did-fail-load', (_e, code, desc, failed) => errors.push(`${failed.split('/').pop() || 'the page'} did not load: ${desc} (${code})`))
+  try {
+    await Promise.race([w.loadURL(url), new Promise((_, no) => setTimeout(() => no(new Error('the page took over 10 seconds to load')), 10_000))])
+    await new Promise((r) => setTimeout(r, 2000))
+  } catch (e) {
+    if (!errors.length) errors.push((e as Error).message)
+  } finally {
+    w.destroy()
+  }
+  return [...new Set(errors)].slice(0, 12)
+}
+
 const mm = new MultimineApp({
   userDataDir: app.getPath('userData'),
   cipher,
   emit,
+  loadTest,
   mockDelayMs: process.env.MULTIMINE_MOCK_DELAY ? Number(process.env.MULTIMINE_MOCK_DELAY) : undefined,
   skipDetect: process.env.MULTIMINE_FORCE_MOCK === '1'
 })
@@ -128,7 +158,13 @@ app.whenReady().then(async () => {
     return net.fetch(pathToFileURL(path).toString())
   })
 
-  protocol.handle('mmplugin', (req) => servePlugin(req.url, (id) => mm.plugins.find(id, mm.project?.dir)))
+  protocol.handle('mmplugin', (req) =>
+    servePlugin(
+      req.url,
+      (id) => mm.plugins.find(id, mm.project?.dir),
+      (id) => mm.draftPlugin(id)
+    )
+  )
 
   const handlers: Record<string, (...args: any[]) => Promise<unknown>> = {
     pluginPickAndInstall: async () => {

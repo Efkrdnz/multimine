@@ -4,6 +4,7 @@ import type { Question } from '@shared/types'
 import type { AgentEvent, ProviderAdapter, TurnRequest } from './types'
 import { hardStop, readOnlyCommand } from './guard'
 import { projectInstructions } from './projectDoc'
+import { inToolDrafts } from '../chat/workspace'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -191,6 +192,8 @@ export class ClaudeCliProvider implements ProviderAdapter {
         return ok ? { behavior: 'allow', updatedInput: input } : { behavior: 'deny', message: `The user did not allow: ${stop ?? cmd}` }
       }
       if (disallowed.includes(name)) return { behavior: 'deny', message: `This agent's permissions (${agent.permissions}) do not allow ${name}.` }
+      // a tool the chat is making: its draft folder holds nothing that runs until the user allows it
+      if (agent.permissions === 'write' && ['Write', 'Edit', 'MultiEdit'].includes(name) && typeof input.file_path === 'string' && inToolDrafts(req.cwd, input.file_path)) return { behavior: 'allow', updatedInput: input }
       if (READ_TOOLS.includes(name)) return { behavior: 'allow', updatedInput: input }
       const detail = String(input.file_path ?? input.url ?? input.path ?? JSON.stringify(input).slice(0, 400))
       return (await r.approveAction(`${name.replace(/^mcp__/, '')} ${detail}`.slice(0, 90), JSON.stringify(input, null, 2).slice(0, 1500)))

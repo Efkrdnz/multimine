@@ -17,6 +17,16 @@ export function insideProject(root: string, p: string): string {
   return full
 }
 
+/**
+ * A file in the project's tool drafts (`.multimine/tool-drafts/`), where a chat writes a tool it is
+ * making. Writing there needs no approval: nothing in it runs until the tool is checked, installed
+ * and allowed by the user.
+ */
+export function inToolDrafts(root: string, p: string): boolean {
+  const rel = relative(resolve(root, '.multimine', 'tool-drafts'), resolve(root, p))
+  return !!rel && !rel.startsWith('..') && !isAbsolute(rel)
+}
+
 export async function walk(root: string, dir: string, depth: number, out: string[], limit: number): Promise<void> {
   if (out.length >= limit) return
   let entries
@@ -116,7 +126,7 @@ export function workspaceTools(
       shape: { path: z.string(), content: z.string() },
       handler: async (a) => {
         const full = insideProject(root, String(a.path))
-        if (!(await approveAction(`write ${a.path}`, String(a.content).slice(0, 1500)))) return { text: 'The user did not allow this write.', isError: true }
+        if (!inToolDrafts(root, full) && !(await approveAction(`write ${a.path}`, String(a.content).slice(0, 1500)))) return { text: 'The user did not allow this write.', isError: true }
         await mkdir(dirname(full), { recursive: true })
         await writeFile(full, String(a.content), 'utf8')
         return { text: `Wrote ${a.path}` }
@@ -128,7 +138,7 @@ export function workspaceTools(
       shape: { path: z.string(), old_string: z.string(), new_string: z.string(), replace_all: z.boolean().optional() },
       handler: async (a) => {
         const full = insideProject(root, String(a.path))
-        if (!(await approveAction(`edit ${a.path}`, `- ${String(a.old_string).slice(0, 700)}\n+ ${String(a.new_string).slice(0, 700)}`))) return { text: 'The user did not allow this edit.', isError: true }
+        if (!inToolDrafts(root, full) && !(await approveAction(`edit ${a.path}`, `- ${String(a.old_string).slice(0, 700)}\n+ ${String(a.new_string).slice(0, 700)}`))) return { text: 'The user did not allow this edit.', isError: true }
         const text = await readFile(full, 'utf8')
         const old = String(a.old_string)
         const count = text.split(old).length - 1

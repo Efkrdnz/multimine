@@ -28,6 +28,8 @@ function ToolFrame({ plugin, active }: { plugin: PluginInfo; active: boolean }) 
     s.set({ openTools: s.openTools.filter((t) => t !== plugin.manifest.id), activeTool: s.activeTool === plugin.manifest.id ? null : s.activeTool })
   }, [plugin.manifest.id])
   const Native = NATIVE[plugin.manifest.id]
+  // a chat changed the tool: its page loads again
+  const reload = useStore((s) => s.pluginReload[plugin.manifest.id] ?? 0)
 
   return (
     <div
@@ -52,7 +54,7 @@ function ToolFrame({ plugin, active }: { plugin: PluginInfo; active: boolean }) 
             <Native plugin={plugin} />
           </Suspense>
         ) : (
-          <PluginHost plugin={plugin} onTitle={setTitle} onClose={close} />
+          <PluginHost key={reload} plugin={plugin} onTitle={setTitle} onClose={close} />
         )}
       </div>
     </div>

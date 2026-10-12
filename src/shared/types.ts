@@ -150,8 +150,8 @@ export interface ChatMessage {
   streaming?: boolean
   error?: string
   usage?: Usage
-  /** A slash command the user typed (`/table ...`): the text stays as typed, the turn gets the command's prompt. */
-  command?: 'table'
+  /** A slash command the user typed (`/table ...`, `/plugin ...`): the text stays as typed, the turn gets the command's prompt. */
+  command?: 'table' | 'plugin'
   /** A table a chat saved, shown as a card in the chat. */
   table?: TableCard
   /** The files this reply's turn changed, with the snapshots to diff or undo them. */
@@ -473,6 +473,8 @@ export type MainEvent =
   /** A table was saved by a chat: the Tables tool reloads it. */
   | { type: 'tables-changed'; id: string }
   | { type: 'toast'; level: 'info' | 'error'; text: string }
+  /** A chat installed (or updated) a tool it made: the window asks the user to allow it, then opens it. */
+  | { type: 'plugin-installed'; id: string; chatId: string; update: boolean }
   /** The run button's process started, stopped, or found a problem. */
   | { type: 'run'; state: RunState }
   /** New lines of the running game's output; `reset` starts a new run's log. */

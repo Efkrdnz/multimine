@@ -1,4 +1,4 @@
-import { FolderOpen, Plus, Trash2 } from 'lucide-react'
+import { FolderOpen, Plus, Trash2, Wand2 } from 'lucide-react'
 import { PERMISSION_TEXT } from '@shared/pluginText'
 import { api, useStore } from '../state/store'
 import { Modal } from '../panels/Modal'
@@ -13,6 +13,9 @@ export function ManagePlugins() {
       <div className="scroll-thin max-h-[72vh] space-y-3 overflow-y-auto p-5" data-testid="manage-plugins">
         <div className="flex items-center gap-3 text-xs text-indigo-200/70">
           <span className="flex-1">A plugin is a folder with a plugin.json: a page that runs walled off from the app, reaching it only through the permissions you grant. See docs/plugins.md.</span>
+          <button className="btn shrink-0" onClick={() => useStore.getState().set({ modal: { kind: 'make-tool' } })} data-testid="tool-make">
+            <Wand2 size={14} /> Make one
+          </button>
           <button
             className="btn btn-primary shrink-0"
             onClick={() =>
@@ -46,6 +49,9 @@ export function ManagePlugins() {
                     />
                     Enabled
                   </label>
+                  <button className="btn btn-ghost !p-1.5" title="Change it with AI: say what should change and a chat edits and reinstalls it" onClick={() => useStore.getState().set({ modal: { kind: 'make-tool', editId: p.manifest.id } })} data-testid={`tool-change-${p.manifest.id}`}>
+                    <Wand2 size={14} />
+                  </button>
                   <button className="btn btn-ghost !p-1.5" title="Open folder" onClick={() => void api().openPath(p.dir)}>
                     <FolderOpen size={14} />
                   </button>
@@ -83,7 +89,7 @@ export function ManagePlugins() {
             {b.errors.join('; ')}
           </div>
         ))}
-        <div className="text-[11px] text-indigo-300/60">Writing your own? See docs/plugins.md - a plugin is a folder with plugin.json and a web page.</div>
+        <div className="text-[11px] text-indigo-300/60">Writing your own? See docs/plugins.md - a plugin is a folder with plugin.json and a web page. Or describe it and a chat makes it: Make one, or type /plugin in any chat.</div>
       </div>
     </Modal>
   )

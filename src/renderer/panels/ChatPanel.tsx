@@ -207,7 +207,10 @@ function EmptyChat({ agent }: { agent: AgentSpec }) {
 }
 
 /** The slash commands the composer offers. */
-const COMMANDS = [{ cmd: '/table', hint: 'make or change a table from a description - linked to the code, kept in the Tables tool' }]
+const COMMANDS = [
+  { cmd: '/table', hint: 'make or change a table from a description - linked to the code, kept in the Tables tool' },
+  { cmd: '/plugin', hint: 'make a tool from a description - the chat writes it, checks it and installs it under Tools' }
+]
 
 /** What this chat is waiting on the user for, answered right here. */
 function InlinePrompts({ agentId }: { agentId: string }) {

@@ -11,6 +11,7 @@ import { Toasts } from './panels/Toasts'
 import { ToolWindows } from './tools/ToolWindow'
 import { ConsentDialog } from './tools/ConsentDialog'
 import { ManagePlugins } from './tools/ManagePlugins'
+import { MakeTool } from './tools/MakeTool'
 import { Shell } from './shell/Shell'
 
 // the code window carries Monaco and xterm: loaded the first time it is opened, not at start-up
@@ -58,6 +59,7 @@ export function App() {
       {modal?.kind === 'chat' && <ChatSettings key={modal.agent.id} agent={modal.agent} />}
       {modal?.kind === 'settings' && <SettingsModal initialTab={modal.tab} />}
       {modal?.kind === 'plugins' && <ManagePlugins />}
+      {modal?.kind === 'make-tool' && <MakeTool key={modal.editId ?? 'new'} editId={modal.editId} />}
       <ConsentDialog />
       <Toasts />
     </div>

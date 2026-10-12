@@ -11,6 +11,8 @@ import { cellText, parseTable, type Table } from '@shared/tables/model'
 import { contextSection, tableCommandPrompt } from '@shared/tables/prompt'
 import { TableStore } from '../store/tables'
 import { Checkpoints } from './checkpoints'
+import { parsePluginCommand, pluginChatName, pluginMakerPrompt } from '@shared/pluginMaker'
+import pluginGuide from '../../../docs/plugins.md?raw'
 import type { AppConfig } from '../store/appConfig'
 import type { ProjectStore } from '../store/project'
 import type { ChatStore } from '../store/chats'
@@ -40,8 +42,28 @@ export interface EngineDeps {
   planLimits?: PlanLimits
   /** Snapshot the project around every turn so its changes can be listed and undone (default on). */
   checkpoints?: boolean
+  /** Tools chats make: the plugins there are, and installing one a chat has written. */
+  plugins?: MadeTools
   /** The URL of a chat's endpoint on the local MCP bus (set once the bus server is up). */
   busUrl?: (chatId: string) => string | undefined
+}
+
+/** What a chat that makes a tool can do with the app's plugins. */
+export interface MadeTools {
+  /** Every plugin there is (built in and installed), so a new one picks a free id. */
+  list(): Promise<{ id: string; name: string }[]>
+  /** Checks, load-tests and installs the tool a chat wrote in the project's tool drafts. */
+  install(id: string, chatId: string): Promise<InstallResult>
+}
+
+export interface InstallResult {
+  installed: boolean
+  name?: string
+  version?: string
+  permissions?: string[]
+  update?: boolean
+  errors: string[]
+  warnings: string[]
 }
 
 export interface TurnResult {
@@ -344,7 +366,7 @@ export class Engine {
     // the incoming message is shown at once, even while the chat is still busy with an earlier turn
     const chat = this.d.project.get(agentId)
     // `/table ...` (typed, or sent by the Tables tool) stays in the chat as written; its turn gets the table instructions
-    const command = /^\/table(\s|$)/.test(body.trimStart()) ? ('table' as const) : undefined
+    const command = /^\/table(\s|$)/.test(body.trimStart()) ? ('table' as const) : /^\/plugin(\s|$)/.test(body.trimStart()) ? ('plugin' as const) : undefined
     const prompt = from === 'user' || command ? body : toolPrompt(from.replace(/^tool:/, ''), body)
     const userMsg: ChatMessage = { id: newId('u'), agentId, role: 'user', from, text: prompt, ts: Date.now(), ...(command ? { command } : {}) }
     if (chat) {
@@ -366,7 +388,7 @@ export class Engine {
     if (opts.temp !== undefined) return Promise.resolve(opts.temp)
     if (opts.quick) return Promise.resolve(downshift(chat, 'light', eco))
     // building a table reads code and writes careful JSON: never a light job
-    if (eco.enabled && eco.autoRate && from === 'user' && !/^\/table(\s|$)/.test(body.trimStart())) return this.rate(chat, body).then((r) => downshift(chat, r, eco))
+    if (eco.enabled && eco.autoRate && from === 'user' && !/^\/(table|plugin)(\s|$)/.test(body.trimStart())) return this.rate(chat, body).then((r) => downshift(chat, r, eco))
     return Promise.resolve(null)
   }
 
@@ -417,7 +439,7 @@ export class Engine {
     // only the first message names it: the one just sent is already in the chat
     if ((this.chats[agentId] ?? []).filter((m) => m.role === 'user').length > 1) return
     const first = body.split('\n').find((l) => l.trim())?.trim().replace(/^#+\s*/, '') ?? ''
-    const name = clipTo(/^\/table(\s|$)/.test(first) ? `Table: ${first.replace(/^\/table\s*/, '')}` : first, 48)
+    const name = clipTo(/^\/table(\s|$)/.test(first) ? `Table: ${first.replace(/^\/table\s*/, '')}` : /^\/plugin(\s|$)/.test(first) ? pluginChatName(first) : first, 48)
     if (!name) return
     const next = { ...chat, name }
     this.d.project.set(next)
@@ -494,7 +516,12 @@ export class Engine {
     const agent: AgentSpec = temp ? { ...own, model: temp.model, effort: temp.effort } : own
     if (temp) this.temps.set(agentId, temp)
     else this.temps.delete(agentId)
-    const asked = userMsg.command === 'table' ? tableCommandPrompt(userMsg.text.trimStart().replace(/^\/table\s*/, ''), await this.tables.list()) : userMsg.text
+    const asked =
+      userMsg.command === 'table'
+        ? tableCommandPrompt(userMsg.text.trimStart().replace(/^\/table\s*/, ''), await this.tables.list())
+        : userMsg.command === 'plugin'
+          ? await this.makerPrompt(userMsg.text)
+          : userMsg.text
     const undone = this.undoNotes.get(agentId)
     this.undoNotes.delete(agentId)
     const prompt = undone?.length ? `${undoNote(undone)}\n\n${asked}` : asked
@@ -609,6 +636,13 @@ export class Engine {
       this.setStatus(agentId, error && !/^Stopped/.test(error) ? 'error' : 'idle')
     }
     return { text: reply.text, error }
+  }
+
+  /** The prompt for `/plugin ...`: make (or change) a tool, following the plugin guide. */
+  private async makerPrompt(body: string): Promise<string> {
+    const all = (await this.d.plugins?.list().catch(() => [])) ?? []
+    const req = parsePluginCommand(body, (id) => all.find((p) => p.id === id)?.name)
+    return pluginMakerPrompt(req, all.map((p) => p.id).filter((id) => id !== req.editing?.id), pluginGuide)
   }
 
   /** What a turn changed, from the snapshot before it to one taken now; null when it changed nothing. */
@@ -1058,6 +1092,25 @@ export class Engine {
           if (!a.id) return text(all.length ? all.map((t) => `${t.id}: ${t.name} (${t.rows.length} rows; ${t.columns.map((c) => c.label).join(', ')})${t.context ? ' - context' : ''}`).join('\n') : 'No tables yet.')
           const t = all.find((x) => x.id === String(a.id))
           return t ? text(JSON.stringify(t)) : text(`No table ${a.id}. Tables: ${all.map((x) => x.id).join(', ') || 'none'}.`, true)
+        }
+      },
+      {
+        name: 'install_plugin',
+        description:
+          'Install the Multimine tool (plugin) you wrote in .multimine/tool-drafts/<id>/. It checks the manifest and files, that the code asks for every permission it uses, that the scripts parse, and loads the page once to catch errors; it reports what to fix, or installs it and asks the user to allow it.',
+        shape: { id: z.string().describe('The plugin id: the folder name under .multimine/tool-drafts/') },
+        handler: async (a) => {
+          if (!this.d.plugins) return text('Making tools is not available here.', true)
+          if (agent.permissions !== 'write') return text('This chat is read only: it cannot install tools.', true)
+          try {
+            const r = await this.d.plugins.install(String(a.id ?? '').trim(), me)
+            const warn = r.warnings.length ? `\nWorth fixing (it installed anyway):\n${r.warnings.map((w) => `- ${w}`).join('\n')}` : ''
+            if (!r.installed) return text(`Not installed. Fix these and call install_plugin again:\n${r.errors.map((e) => `- ${e}`).join('\n')}${warn}`, true)
+            const asks = r.permissions?.length ? `It asks to: ${r.permissions.join(', ')}.` : 'It asks for no permissions.'
+            return text(`${r.update ? 'Updated' : 'Installed'} "${r.name}" v${r.version}. ${asks} The user is asked to allow it and it opens beside the chat.${warn}`)
+          } catch (e) {
+            return text((e as Error).message, true)
+          }
         }
       },
       {

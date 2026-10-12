@@ -16,6 +16,25 @@ plugin**, or drop it into a project's `.multimine/plugins/` (project plugins nev
 user enables them). The smallest working example is
 [`examples/plugins/hello`](../examples/plugins/hello).
 
+## Or have a chat make it
+
+Describe the tool and a chat writes it: the wand by "Tools" in the sidebar (or **Make one** in
+Manage), or `/plugin <what it should do>` in any chat. The chat is given this guide, writes the
+plugin into the project's `.multimine/tool-drafts/<id>/` (writing there asks nothing: it does not
+run until it is installed and allowed), and calls `install_plugin`. That checks it before anything
+runs:
+
+- the manifest, and the files it names (the entry page, the icon, every script the page loads);
+- that the page loads the SDK, and asks for every permission its code calls (`multimine.files.write`
+  needs `project:write`, `fetch` needs `network`, and so on); asking for more than it uses is flagged;
+- that its scripts parse;
+- that the page loads without errors, in a hidden window where it can reach nothing.
+
+Anything wrong goes back to the chat, which fixes it and tries again. Once it passes, it is
+installed for every project and the user is asked to allow what it needs; then it opens. To change
+it, use the wand on it in Manage (or `/plugin change <id>: ...`): a chat edits it and reinstalls it,
+and its window reloads.
+
 ## plugin.json
 
 ```json
@@ -64,7 +83,8 @@ message when a permission is missing.
 
 ```html
 <script src="mmplugin://sdk/multimine.js"></script>
-<script>
+<script type="module">
+  // a module script, so it can await at the top level
   const info = await multimine.info()                 // { pluginId, apiVersion: 2, project }
   const chats = await multimine.chats.list()          // [{ id, name, provider, model, mcp, busy, active }]
   const { chatId } = await multimine.send('active', 'Hello!')  // to the chat on screen
@@ -123,8 +143,8 @@ Plugins written for API 1 keep working:
   call, so a revoke takes effect immediately.
 - A chat your plugin messages runs with that chat's own permissions: Supervised chats still ask the
   user before every edit and command, and pushing or deleting work always asks.
-- An MCP server runs as a normal local process (like any MCP server the user adds); its tools reach
-  only the chats the user switches it on for.
+- An MCP server runs as a normal local process (like any MCP server the user adds), and the consent
+  dialog says so, with its command; its tools reach only the chats the user switches it on for.
 
 ## The built-in tools
 

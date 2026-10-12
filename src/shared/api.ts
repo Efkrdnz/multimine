@@ -72,6 +72,8 @@ export interface Api {
   pluginRevoke(id: string, perm: PluginPermission): Promise<void>
   pluginRemove(id: string): Promise<void>
   pluginCall(id: string, method: string, args: unknown[]): Promise<unknown>
+  /** Has a chat ('new', 'active' or an id) make a tool from a description, or change the tool `editId`; resolves to the chat. */
+  pluginMake(request: string, to: string, editId?: string): Promise<string>
 
   /** The run button: its saved command, the one Multimine suggests for this project, the current run and its output. */
   runInfo(): Promise<{ command: string | null; suggested: string | null; state: RunState; lines: string[] }>
@@ -100,7 +102,7 @@ export const API_METHODS: ApiMethod[] = [
   'ghInfo', 'ghList', 'ghCreatePr',
   'ideList', 'ideFind', 'ideGrep', 'ideRead', 'ideWrite', 'ideOpenExternal',
   'terminalAvailable', 'terminalOpen', 'terminalWrite', 'terminalResize', 'terminalClose',
-  'pluginList', 'pluginPickAndInstall', 'pluginInstall', 'pluginSetEnabled', 'pluginRevoke', 'pluginRemove', 'pluginCall',
+  'pluginList', 'pluginPickAndInstall', 'pluginInstall', 'pluginSetEnabled', 'pluginRevoke', 'pluginRemove', 'pluginCall', 'pluginMake',
   'runInfo', 'runStart', 'runStop', 'runSend',
   'testNotification', 'openPath', 'mediaUrl'
 ]

@@ -7,7 +7,9 @@ export function PluginIcon({ plugin, size = 58 }: { plugin: PluginInfo; size?: n
   const radius = size * 0.26
   if ('file' in icon)
     return <img src={`mmplugin://${plugin.manifest.id}/${icon.file}`} width={size} height={size} style={{ borderRadius: radius }} className="object-cover shadow-[0_8px_22px_-6px_rgba(0,0,0,0.7)]" draggable={false} />
-  const Glyph = (icons as Record<string, typeof Puzzle>)[icon.glyph] ?? Puzzle
+  // "dice-5" as lucide.dev writes it, or "Dice5" as the library exports it
+  const name = icon.glyph.includes('-') || /^[a-z]/.test(icon.glyph) ? icon.glyph.replace(/(^|-)([a-z0-9])/g, (_, __, c: string) => c.toUpperCase()) : icon.glyph
+  const Glyph = (icons as Record<string, typeof Puzzle>)[name] ?? Puzzle
   return (
     <div
       className="relative flex items-center justify-center overflow-hidden shadow-[0_8px_22px_-6px_rgba(0,0,0,0.75)]"

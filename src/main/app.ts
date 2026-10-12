@@ -25,6 +25,13 @@ import { readJson, writeJson } from './store/fsx'
 import type { TerminalKind } from '@shared/types'
 import { crashPrompt } from '@shared/run/crash'
 import { Runner, suggestCommand } from './run/runner'
+import { checkPlugin } from './plugins/check'
+import { validateManifest } from './plugins/manifest'
+import { DRAFTS, pluginChatName, pluginCommand } from '@shared/pluginMaker'
+import type { InstallResult } from './chat/engine'
+import type { PluginInfo } from '@shared/types'
+import { existsSync } from 'node:fs'
+import { cp } from 'node:fs/promises'
 
 export interface AppOptions {
   userDataDir: string
@@ -36,6 +43,8 @@ export interface AppOptions {
   providerOverrides?: Partial<Record<ProviderKind, ProviderAdapter>>
   /** Skip CLI detection when choosing what a first chat runs on (tests). */
   skipDetect?: boolean
+  /** Loads a page in a hidden window and returns the errors it reports (a tool a chat made, before it installs). */
+  loadTest?: (url: string) => Promise<string[]>
 }
 
 /** The main-process side of the API: owns settings, the open project, the engine and the bus server. */
@@ -148,7 +157,11 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
       providers: this.providers,
       emit: this.o.emit,
       hub: this.hub,
-      busUrl: (id) => this.bus.url(id)
+      busUrl: (id) => this.bus.url(id),
+      plugins: {
+        list: async () => (await this.plugins.list(project.dir)).map((p) => ({ id: p.manifest.id, name: p.manifest.name })),
+        install: (id, chatId) => this.installMadeTool(id, chatId)
+      }
     })
     await this.engine.open()
     await this.startWatching(project.dir)
@@ -337,6 +350,76 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     const p = await this.plugins.find(id, this.project?.dir)
     if (!p) throw new Error(`No plugin ${id}`)
     return callPlugin(this.pluginCtx, p, method, Array.isArray(args) ? args : [])
+  }
+
+  // ---------------------------------------------------------------- tools chats make
+
+  /** A tool's draft folder in the project: where a chat writes it. */
+  private draftDir(id: string): string {
+    if (!/^[a-z0-9][a-z0-9-]{1,39}$/.test(id)) throw new Error(`"${id}" is not a plugin id: 2-40 lowercase letters, digits or dashes`)
+    return join(this.need().project.dir, DRAFTS, id)
+  }
+
+  /** A draft as a plugin with nothing granted, for the hidden load test (mmplugin://draft--<id>/). */
+  async draftPlugin(id: string): Promise<PluginInfo | undefined> {
+    if (!this.project) return undefined
+    let dir: string
+    try {
+      dir = this.draftDir(id)
+    } catch {
+      return undefined
+    }
+    const res = validateManifest(await readJson<unknown>(join(dir, 'plugin.json'), null))
+    if (!res.ok) return undefined
+    return { manifest: res.manifest, source: 'project', native: false, dir, enabled: true, granted: [], pending: [] }
+  }
+
+  /**
+   * Installs a tool a chat wrote: checked (manifest, files, permissions against the calls it makes,
+   * scripts), loaded once in a hidden window to catch errors, then copied into the user's plugins.
+   * The window is told, and asks the user to allow it before it runs.
+   */
+  async installMadeTool(id: string, chatId: string): Promise<InstallResult> {
+    const { project } = this.need()
+    const dir = this.draftDir(id)
+    if (!existsSync(join(dir, 'plugin.json'))) return { installed: false, errors: [`there is no ${DRAFTS}/${id}/plugin.json: write the tool's files there first`], warnings: [] }
+    const check = await checkPlugin(dir, id)
+    if (check.errors.length || !check.manifest) return { installed: false, errors: check.errors, warnings: check.warnings }
+    const m = check.manifest
+    const pageErrors = this.o.loadTest ? await this.o.loadTest(`mmplugin://draft--${id}/${m.entry ?? 'index.html'}?mmhost=check`) : []
+    if (pageErrors.length) return { installed: false, errors: pageErrors.map((e) => `when the page loaded it reported: ${e}`), warnings: check.warnings }
+    const before = await this.plugins.find(id, project.dir)
+    await this.plugins.install(dir)
+    await this.pluginsChanged()
+    const update = before?.source === 'user'
+    this.o.emit({ type: 'plugin-installed', id, chatId, update })
+    return { installed: true, name: m.name, version: m.version, permissions: m.permissions, update, errors: [], warnings: check.warnings }
+  }
+
+  /**
+   * Has a chat make a tool (or change one: its installed files are copied into the drafts first,
+   * unless the draft there is already that version). `to` is 'new', 'active' or a chat id.
+   * Resolves to the chat doing it.
+   */
+  async pluginMake(request: string, to: string, editId?: string): Promise<string> {
+    const { project, engine } = this.need()
+    if (!request.trim()) throw new Error('Say what the tool should do.')
+    if (editId) {
+      const p = await this.plugins.find(editId, project.dir)
+      if (!p || p.native) throw new Error(`No tool ${editId} to change.`)
+      const dir = this.draftDir(editId)
+      const draft = await readJson<{ version?: string } | null>(join(dir, 'plugin.json'), null)
+      if (draft?.version !== p.manifest.version) await cp(p.dir, dir, { recursive: true, force: true, filter: (src) => !/[\\/](\.git|node_modules)([\\/]|$)/.test(src) })
+    }
+    const body = pluginCommand(request, editId)
+    let id = to === 'active' ? this.activeChat : to === 'new' ? null : to
+    if (!id || !project.get(id)) id = (await engine.createChat({ name: pluginChatName(body).slice(0, 48) })).id
+    this.activeChat = id
+    void engine
+      .send(id, body, 'user')
+      .then((r) => this.reportError(id!, r.error))
+      .catch((e) => this.reportError(id!, String((e as Error).message ?? e)))
+    return id
   }
 
   // ---------------------------------------------------------------- IDE

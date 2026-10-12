@@ -6,7 +6,7 @@ import { projectPaths, type ProjectPaths } from './paths'
 import { readText, writeAtomic } from './fsx'
 
 /** What Multimine keeps out of the repository: chat logs, generated media and turn snapshots are the user's own. */
-const IGNORED = ['chats/', 'media/', 'history.git/']
+const IGNORED = ['chats/', 'media/', 'history.git/', 'tool-drafts/']
 
 /** One opened project folder: its `multimine.md` and its chats. */
 export class ProjectStore {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BookOpen, Code2, Eraser, FolderOpen, GitBranch, Image, LayoutGrid, Leaf, Play, RotateCcw, Search, Settings, SlidersHorizontal, Square, SquarePen, SquareTerminal, Trash2, Upload } from 'lucide-react'
+import { BookOpen, Code2, Eraser, FolderOpen, GitBranch, Image, LayoutGrid, Leaf, Play, Wand2, RotateCcw, Search, Settings, SlidersHorizontal, Square, SquarePen, SquareTerminal, Trash2, Upload } from 'lucide-react'
 import { modelLabel } from '@shared/catalog'
 import { PROVIDER_COLOR, PROVIDER_NAME } from '@shared/chat'
 import type { AgentSpec, AgentStatus } from '@shared/types'
@@ -47,9 +47,11 @@ export function Shell() {
   const tool = useStore((s) => s.activeTool)
   const chats = useStore((s) => s.project?.agents ?? [])
   const id = focused && chats.some((a) => a.id === focused) ? focused : chats[0]?.id
-  // the chat on screen is where a tool's messages to 'active' go: main hears about it whenever it changes
+  // the chat on screen is where a tool's messages to 'active' go: main hears about it whenever it changes.
+  // A chat just created can be focused before the project listing it arrives: keep it focused then
+  // (the first chat shows meanwhile); a deleted one is replaced when the project changes.
   useEffect(() => {
-    if (id && id !== focused) useStore.getState().set({ focused: id })
+    if (id && !focused) useStore.getState().set({ focused: id })
     void api().setActiveChat(id ?? null)
   }, [id, focused])
   return (
@@ -108,6 +110,9 @@ function Sidebar({ current }: { current?: string }) {
         ))}
         <div className="mb-1 mt-4 flex items-center px-2">
           <span className="label !mb-0 flex-1">Tools</span>
+          <button className="mr-0.5 rounded p-0.5 text-indigo-300/70 hover:bg-white/10 hover:text-fuchsia-200" title="Make a tool: describe it and a chat builds and installs it" onClick={() => set({ modal: { kind: 'make-tool' } })} data-testid="make-tool-open">
+            <Wand2 size={12} />
+          </button>
           <button className="rounded p-0.5 text-indigo-300/70 hover:bg-white/10 hover:text-white" title="Manage tools and plugins" onClick={() => set({ modal: { kind: 'plugins' } })} data-testid="manage-tools">
             <LayoutGrid size={12} />
           </button>

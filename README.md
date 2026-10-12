@@ -164,6 +164,13 @@ permissions you granted. It can list your chats, send one a message or start a n
 write project files, show media, and bring an MCP server of tools for your chats. The four tools
 above are built the same way and hold no privileges a plugin could not have.
 
+**Or describe one.** The wand by Tools in the sidebar (or `/plugin <what it should do>` in any chat)
+has a chat build the tool as a plugin, following the plugin guide. Multimine checks it before it
+installs - the manifest and files, that it asks for every permission its code uses, that its
+scripts parse, and that the page loads without errors - and sends anything wrong back to the chat
+to fix. Then you allow what it needs and it opens under Tools, for every project. The wand on a tool
+in Manage changes it the same way.
+
 See [`docs/plugins.md`](docs/plugins.md) and [`examples/plugins/hello`](examples/plugins/hello).
 
 ## Running it from source

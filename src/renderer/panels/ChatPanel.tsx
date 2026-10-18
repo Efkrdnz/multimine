@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Boxes, Check, PenTool, Send, Square, Table2, Workflow, Zap } from 'lucide-react'
+import { Boxes, Check, ImagePlus, PenTool, Send, Square, Table2, Workflow, Zap } from 'lucide-react'
 import { modelLabel, needsKey } from '@shared/catalog'
 import { PROVIDER_NAME, providerLocked } from '@shared/chat'
 import { downshift } from '@shared/economy'
@@ -12,6 +12,8 @@ import { MessageView } from './MessageView'
 import { PromptCard } from './PromptCard'
 import { ProviderPicker, chooseProvider, cliNote, loadClis } from './ProviderPicker'
 import { ProviderMark, providerTint } from './ProviderMark'
+import { AttachTray, pastedName, prepareImage, type Pending } from './Attachments'
+import { newId } from '@shared/ids'
 
 /** How much a chat may do without asking, as the composer offers it. */
 type Access = 'read' | 'supervised' | 'full'
@@ -233,6 +235,10 @@ export function ChatPanel({ agentId }: { agentId: string }) {
   const settings = useStore((s) => s.settings)
   const [draft, setDraft] = useState('')
   const [quick, setQuick] = useState(false)
+  // images about to go with the message: pasted, dropped or picked
+  const [images, setImages] = useState<Pending[]>([])
+  const [dragging, setDragging] = useState(false)
+  const picker = useRef<HTMLInputElement>(null)
   const end = useRef<HTMLDivElement>(null)
   const busy = st?.status === 'thinking' || st?.status === 'working' || st?.status === 'waiting' || messages.at(-1)?.streaming
 
@@ -245,15 +251,64 @@ export function ChatPanel({ agentId }: { agentId: string }) {
   const commands = /^\/\w*$/.test(draft) ? COMMANDS.filter((c) => c.cmd.startsWith(draft)) : []
   // Quick runs one message on the provider's light tier; it is offered only where that is cheaper
   const light = settings ? downshift(agent, 'light', settings.economy) : null
+  const attach = (files: File[], pasted = false) => {
+    const pics = files.filter((f) => f.type.startsWith('image/'))
+    if (files.length > pics.length) useStore.getState().toast('error', 'Only images can be attached for now.')
+    const room = 10 - images.length
+    if (pics.length > room) useStore.getState().toast('error', 'At most 10 images per message.')
+    for (const f of pics.slice(0, Math.max(0, room))) {
+      const id = newId('att')
+      const name = pasted ? pastedName(f) : f.name || 'image.png'
+      setImages((all) => [...all, { id, name }])
+      prepareImage(f, name)
+        .then((ready) => setImages((all) => all.map((x) => (x.id === id ? { ...x, ...ready } : x))))
+        .catch((e) => setImages((all) => all.map((x) => (x.id === id ? { ...x, error: `${name}: ${(e as Error).message || 'could not be read'}` } : x))))
+    }
+  }
+  const remove = (id: string) =>
+    setImages((all) => {
+      const gone = all.find((x) => x.id === id)
+      if (gone?.url) URL.revokeObjectURL(gone.url)
+      return all.filter((x) => x.id !== id)
+    })
+  const reading = images.some((x) => !x.data && !x.error)
   const send = () => {
     const text = draft.trim()
-    if (!text) return
+    const ready = images.filter((x) => x.data && x.mime)
+    if ((!text && !ready.length) || reading) return
     setDraft('')
-    void api().send(agentId, text, { quick: quick && !!light })
+    setImages([])
+    void api()
+      .send(agentId, text, { quick: quick && !!light, images: ready.map(({ name, mime, data, w, h }) => ({ name, mime: mime!, data: data!, w, h })) })
+      .catch((e) => useStore.getState().toast('error', String((e as Error).message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')))
+      .finally(() => ready.forEach((x) => x.url && URL.revokeObjectURL(x.url)))
     setQuick(false)
   }
   return (
-    <div className="flex h-full min-w-0 flex-1 flex-col" data-chat-panel={agentId} data-testid={`chat-${agentId}`}>
+    <div
+      className="relative flex h-full min-w-0 flex-1 flex-col"
+      data-chat-panel={agentId}
+      data-testid={`chat-${agentId}`}
+      onDragOver={(e) => {
+        if (![...e.dataTransfer.items].some((i) => i.kind === 'file')) return
+        e.preventDefault()
+        setDragging(true)
+      }}
+      onDragLeave={(e) => e.currentTarget === e.target && setDragging(false)}
+      onDrop={(e) => {
+        if (!e.dataTransfer.files.length) return
+        e.preventDefault()
+        setDragging(false)
+        attach([...e.dataTransfer.files])
+      }}
+    >
+      {dragging && (
+        <div className="fade-in pointer-events-none absolute inset-3 z-30 flex items-center justify-center rounded-2xl border-2 border-dashed border-violet-400/70 bg-violet-950/50 backdrop-blur-sm" onDragLeave={() => setDragging(false)}>
+          <div className="flex items-center gap-2 font-display text-lg font-bold text-violet-100">
+            <ImagePlus size={22} /> Drop images to attach
+          </div>
+        </div>
+      )}
       <div className="scroll-thin flex-1 overflow-y-auto px-4 select-text">
         <div className="mx-auto max-w-[820px] pt-4">
           {messages.length === 0 && <EmptyChat agent={agent} />}
@@ -279,13 +334,37 @@ export function ChatPanel({ agentId }: { agentId: string }) {
             ))}
           </div>
         )}
-        <div className={`composer flex items-end gap-2 rounded-2xl border bg-black/40 p-2 focus-within:border-violet-400/60 ${quick && light ? 'border-amber-400/50' : 'border-white/10'}`}>
+        <div className={`composer rounded-2xl border bg-black/40 p-2 focus-within:border-violet-400/60 ${quick && light ? 'border-amber-400/50' : 'border-white/10'}`}>
+          <AttachTray items={images} onRemove={remove} />
+          <div className="flex items-end gap-2">
+          <input
+            ref={picker}
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/webp,image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              attach([...(e.target.files ?? [])])
+              e.target.value = ''
+            }}
+            data-testid="chat-attach-input"
+          />
+          <button className="btn btn-ghost !p-2 text-indigo-300/70" title="Attach images (or paste or drop them here)" onClick={() => picker.current?.click()} data-testid="chat-attach">
+            <ImagePlus size={15} />
+          </button>
           <textarea
             className="scroll-thin max-h-48 min-h-[2.4rem] flex-1 resize-none bg-transparent px-1.5 py-1 text-sm outline-none"
             placeholder={quick && light ? `Quick: this message runs on ${modelLabel(settings?.catalog ?? {}, agent.provider, light.model)}...` : messages.length ? 'Reply...' : 'Ask about the project, or tell it what to build...'}
             value={draft}
             rows={Math.min(8, draft.split('\n').length)}
             onChange={(e) => setDraft(e.target.value)}
+            onPaste={(e) => {
+              // a screenshot on the clipboard becomes an attachment; text pastes as usual
+              const files = [...e.clipboardData.items].filter((i) => i.kind === 'file' && i.type.startsWith('image/')).map((i) => i.getAsFile()).filter((f): f is File => !!f)
+              if (!files.length) return
+              e.preventDefault()
+              attach(files, true)
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Tab' && commands.length) {
                 e.preventDefault()
@@ -314,9 +393,10 @@ export function ChatPanel({ agentId }: { agentId: string }) {
               <Square size={15} />
             </button>
           ) : null}
-          <button className={`btn btn-primary !p-2 ${draft.trim() ? 'send-ready' : 'opacity-60'}`} title="Send (Enter)" onClick={send} data-testid="chat-send">
+          <button className={`btn btn-primary !p-2 ${(draft.trim() || images.length) && !reading ? 'send-ready' : 'opacity-60'}`} title={reading ? 'Reading the images...' : 'Send (Enter)'} onClick={send} data-testid="chat-send">
             <Send size={15} />
           </button>
+          </div>
         </div>
         <ComposerBar agent={agent} />
       </div>

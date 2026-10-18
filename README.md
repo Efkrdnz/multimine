@@ -48,6 +48,11 @@ Opening Multimine again while it is running brings the open window forward.
 - **Access, in the composer.** **Read only**, **Supervised** (asks before every edit and command)
   or **Full access**. Pushing, publishing and destroying history always ask, whatever the setting.
   Questions, plans and permissions are answered right in the chat.
+- **Images.** Paste a screenshot into the message box, drop images on the chat, or use the image
+  button: a broken HUD, a texture that came out wrong, a mockup to build. Claude, ChatGPT and the API
+  models see them (where the model takes images; the Mock does not); big ones are scaled to 2048
+  pixels first. They are saved in `.multimine/media/attachments/`, and the prompt names the file, so
+  you can say "use this as the icon".
 - **`multimine.md`** at the project root is given to every chat, like `CLAUDE.md` or `AGENTS.md`.
   Fill in its "How to verify" section with your project's exact commands.
 - **Every turn's changes, and Undo.** Under each reply that changed files: which ones, with lines

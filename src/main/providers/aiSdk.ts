@@ -91,7 +91,9 @@ export class AiSdkProvider implements ProviderAdapter {
       yield { type: 'error', message: (e as Error).message }
       return
     }
-    const messages: ModelMessage[] = [...req.history.map((h) => ({ role: h.role, content: h.text }) as ModelMessage), { role: 'user', content: req.prompt }]
+    // attached images go with the message as image parts (the model has to see images for them to count)
+    const content = req.images?.length ? [{ type: 'text' as const, text: req.prompt }, ...req.images.map((i) => ({ type: 'image' as const, image: i.data, mediaType: i.mime }))] : req.prompt
+    const messages: ModelMessage[] = [...req.history.map((h) => ({ role: h.role, content: h.text }) as ModelMessage), { role: 'user', content }]
     const tools = toAiTools(req.tools)
     const { providerOptions, maxOutputTokens } = effortOptions(agent.provider, agent.effort)
     const result = streamText({

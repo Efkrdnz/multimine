@@ -631,6 +631,64 @@ test('Multimine runs end to end on the mock provider', async () => {
   await shot(page, '24e-run-sent')
   await page.getByTestId(`chat-row-${tester.id}`).click()
 
+  // images: one picked with the attach button, a big screenshot pasted (it is scaled down), one taken
+  // off again; sent, they show in the message, the provider gets them, and one opens full size
+  const png = (w: number, h: number, color: string) =>
+    page.evaluate(
+      async ([w, h, color]) => {
+        const c = new (globalThis as any).OffscreenCanvas(w as number, h as number)
+        const g = c.getContext('2d')!
+        g.fillStyle = color as string
+        g.fillRect(0, 0, w as number, h as number)
+        g.fillStyle = '#fff'
+        g.font = `${Math.round((h as number) / 5)}px sans-serif`
+        g.fillText('HUD', (w as number) / 10, (h as number) / 2)
+        const b = await c.convertToBlob({ type: 'image/png' })
+        return [...new Uint8Array(await b.arrayBuffer())]
+      },
+      [w, h, color]
+    )
+  await panel.getByTestId('chat-attach-input').setInputFiles({ name: 'fireball-hud.png', mimeType: 'image/png', buffer: Buffer.from(await png(320, 200, '#7c3aed')) })
+  await expect(panel.getByTestId('attach-thumb')).toHaveCount(1)
+  const paste = (w: number, h: number, color: string) =>
+    input.evaluate(
+      async (el, [w, h, color]) => {
+        const c = new (globalThis as any).OffscreenCanvas(w as number, h as number)
+        const g = c.getContext('2d')!
+        g.fillStyle = color as string
+        g.fillRect(0, 0, w as number, h as number)
+        const dt = new (globalThis as any).DataTransfer()
+        dt.items.add(new (globalThis as any).File([await c.convertToBlob({ type: 'image/png' })], 'image.png', { type: 'image/png' }))
+        el.dispatchEvent(new (globalThis as any).ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+      },
+      [w, h, color]
+    )
+  await paste(3000, 1200, '#0891b2')
+  await paste(64, 64, '#ef4444')
+  await expect(panel.getByTestId('attach-thumb')).toHaveCount(3)
+  await expect(panel.getByTestId('attach-thumb').locator('img')).toHaveCount(3, { timeout: 10_000 })
+  await panel.getByTestId('attach-thumb').nth(2).hover()
+  await panel.getByTestId('attach-remove').nth(2).click()
+  await expect(panel.getByTestId('attach-thumb')).toHaveCount(2)
+  await input.fill('Why does the HUD look like this?')
+  await page.waitForTimeout(300)
+  await shot(page, '24f-attach-tray')
+  await input.press('Enter')
+  await expect(panel.getByTestId('message-images').last().locator('img')).toHaveCount(2, { timeout: 10_000 })
+  await expect(panel).toContainText('I got 2 images (image/png, image/png)', { timeout: 15_000 })
+  await expect(panel.getByTestId('attach-tray')).toHaveCount(0)
+  const attachDir = join(project, '.multimine', 'media', 'attachments')
+  expect(readdirSync(attachDir).filter((f) => f.endsWith('.png'))).toHaveLength(2)
+  // the pasted screenshot was scaled to 2048 on its long side before it was sent
+  expect(chatText()).toContain('"w":2048,"h":819')
+  expect(chatText()).toContain('"name":"fireball-hud.png"')
+  await panel.getByTestId('message-images').last().locator('button').first().click()
+  await expect(page.getByTestId('image-lightbox').locator('img')).toBeVisible()
+  await page.waitForTimeout(300)
+  await shot(page, '24g-image-lightbox')
+  await page.keyboard.press('Escape')
+  await shot(page, '24h-image-message')
+
   // rename the chat in the header
   await page.getByTestId('chat-name').click()
   await page.getByTestId('chat-name-input').fill('Loop guard demo')

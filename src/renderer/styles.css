@@ -347,11 +347,11 @@ a:focus-visible {
   animation: msg-in 0.26s var(--ease-out);
 }
 
-/* a toast springs up from the bottom edge */
+/* a toast drops in under the header, clear of the message box */
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translateY(14px) scale(0.96);
+    transform: translateY(-12px) scale(0.96);
   }
   to {
     opacity: 1;

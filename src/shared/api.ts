@@ -1,4 +1,4 @@
-import type { AgentSpec, RunState, AppSettings, CliStatus, GhItem, GitCommit, GitStatus, IdeEntry, IdeHit, MainEvent, McpServerConfig, ModelEntry, PlanWindow, PluginInfo, PluginManifest, PluginPermission, ProjectInfo, ProviderKind, TerminalInfo, TerminalKind } from './types'
+import type { AgentSpec, ImageUpload, RunState, AppSettings, CliStatus, GhItem, GitCommit, GitStatus, IdeEntry, IdeHit, MainEvent, McpServerConfig, ModelEntry, PlanWindow, PluginInfo, PluginManifest, PluginPermission, ProjectInfo, ProviderKind, TerminalInfo, TerminalKind } from './types'
 
 /** Everything the renderer can ask of the main process. One method, one IPC channel. */
 export interface Api {
@@ -16,8 +16,8 @@ export interface Api {
   /** The chat on screen: where a tool's messages to 'active' go. */
   setActiveChat(id: string | null): Promise<void>
 
-  /** `quick`: this message runs on the light tier of the chat's provider. */
-  send(agentId: string, text: string, opts?: { quick?: boolean }): Promise<void>
+  /** `quick`: this message runs on the light tier of the chat's provider. `images`: attached images (at most 10). */
+  send(agentId: string, text: string, opts?: { quick?: boolean; images?: ImageUpload[] }): Promise<void>
   stop(agentId: string): Promise<void>
   retry(agentId: string): Promise<void>
   /** A new conversation in the same chat: the messages stay, the agent starts clean with a short recap. */

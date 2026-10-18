@@ -8,6 +8,7 @@ import { api, useStore } from '../state/store'
 import { MediaView } from './MediaView'
 import { TableCardView } from './TableCardView'
 import { TurnChanges } from './TurnChanges'
+import { AttachmentGrid } from './Attachments'
 import { useNow } from '../state/useNow'
 import { describeTool, duration, elapsed, workSummary } from '@shared/activity'
 import { blocks, type Block } from '@shared/segments'
@@ -239,7 +240,8 @@ function MessageBody({ m, last }: { m: ChatMessage; last: boolean }) {
       <div className={`my-3 flex ${sender ? 'justify-start' : 'justify-end'}`}>
         <div className={`max-w-[88%] rounded-2xl px-3.5 py-2 ${sender ? 'border border-dashed border-violet-300/30 bg-violet-950/40' : 'bg-gradient-to-br from-indigo-600/70 to-violet-700/70'}`}>
           {sender && <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-violet-200">from {sender}</div>}
-          {m.command ? (
+          {m.attachments?.length ? <AttachmentGrid items={m.attachments} /> : null}
+          {!m.text.trim() ? null : m.command ? (
             <div className="whitespace-pre-wrap text-sm">
               <span className="mr-1.5 rounded bg-black/30 px-1.5 py-px font-mono text-[11px] text-violet-100">/{m.command}</span>
               {m.text.trimStart().replace(/^\/(table|plugin)\s*/, '')}

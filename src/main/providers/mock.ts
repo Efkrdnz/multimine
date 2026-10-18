@@ -44,6 +44,7 @@ export const defaultMockScript: MockScript = (req) => {
       text:
         `**${req.agent.name}** here (mock provider - no AI attached).\n\n` +
         `You said: _${first.slice(0, 160)}_\n\n` +
+        (req.images?.length ? `I got ${req.images.length} image${req.images.length > 1 ? 's' : ''} (${req.images.map((i) => i.mime).join(', ')}), but a mock cannot look at them.\n\n` : '') +
         `Give me a real brain in this chat's settings (the sliders in the header): pick a provider (Claude or Codex subscription, or an API key) and a model. ` +
         `Tools I could use right now: ${req.tools.map((t) => `\`${t.name}\``).join(', ') || 'none'}.`
     }

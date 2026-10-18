@@ -31,6 +31,8 @@ export interface TurnRequest {
   system: string
   history: HistoryItem[]
   prompt: string
+  /** Images the user attached to this message: the file, its type and its bytes as base64. */
+  images?: { path: string; mime: string; data: string }[]
   cwd: string
   /** Provider session to continue (Claude session_id / Codex thread id). */
   resumeId?: string

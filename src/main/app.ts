@@ -26,6 +26,8 @@ import type { TerminalKind } from '@shared/types'
 import { crashPrompt } from '@shared/run/crash'
 import { Runner, suggestCommand } from './run/runner'
 import { checkPlugin } from './plugins/check'
+import { checkUploads } from './media/attachments'
+import type { ImageUpload } from '@shared/types'
 import { validateManifest } from './plugins/manifest'
 import { DRAFTS, pluginChatName, pluginCommand } from '@shared/pluginMaker'
 import type { InstallResult } from './chat/engine'
@@ -218,10 +220,14 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     this.activeChat = id
   }
 
-  async send(agentId: string, text: string, opts?: { quick?: boolean }): Promise<void> {
+  async send(agentId: string, text: string, opts?: { quick?: boolean; images?: ImageUpload[] }): Promise<void> {
     const { engine } = this.need()
+    const images = Array.isArray(opts?.images) ? opts.images : []
+    const bad = checkUploads(images)
+    if (bad) throw new Error(bad)
+    if (!text.trim() && !images.length) return
     void engine
-      .send(agentId, text, 'user', { quick: !!opts?.quick })
+      .send(agentId, text, 'user', { quick: !!opts?.quick, images })
       .then((r) => this.reportError(agentId, r.error))
       .catch((e) => this.reportError(agentId, String((e as Error).message ?? e)))
   }

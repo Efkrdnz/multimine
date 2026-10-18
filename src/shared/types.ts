@@ -156,6 +156,30 @@ export interface ChatMessage {
   table?: TableCard
   /** The files this reply's turn changed, with the snapshots to diff or undo them. */
   changes?: TurnChanges
+  /** Images the user attached to this message. */
+  attachments?: Attachment[]
+}
+
+/** An image attached to a message, saved in the project's `.multimine/media/attachments/`. */
+export interface Attachment {
+  /** Relative to the project. */
+  path: string
+  mime: string
+  /** The file's own name, or what a pasted image was called. */
+  name: string
+  bytes: number
+  w?: number
+  h?: number
+}
+
+/** An image the window sends with a message, before it is saved. */
+export interface ImageUpload {
+  name: string
+  mime: string
+  /** Base64, no data: prefix. */
+  data: string
+  w?: number
+  h?: number
 }
 
 /** A file one turn changed. */

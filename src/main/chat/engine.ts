@@ -6,11 +6,12 @@ import { z } from 'zod'
 import { newId } from '@shared/ids'
 import { DEFAULT_CHAT_NAME, MOCK_DEFAULTS, newChat, providerLocked } from '@shared/chat'
 import { CONCISE_RULES, RATE_SYSTEM, downshift, parseRating, type Difficulty, type TempModel } from '@shared/economy'
-import type { AgentSpec, AgentStatus, ChatMessage, FallbackHop, InboxItem, MainEvent, MediaItem, ProviderKind, Question, TableCard, Usage } from '@shared/types'
+import type { AgentSpec, AgentStatus, ChatMessage, ImageUpload, FallbackHop, InboxItem, MainEvent, MediaItem, ProviderKind, Question, TableCard, Usage } from '@shared/types'
 import { cellText, parseTable, type Table } from '@shared/tables/model'
 import { contextSection, tableCommandPrompt } from '@shared/tables/prompt'
 import { TableStore } from '../store/tables'
 import { Checkpoints } from './checkpoints'
+import { attachmentNote, loadImages, stageUploads, type TurnImage } from '../media/attachments'
 import { parsePluginCommand, pluginChatName, pluginMakerPrompt } from '@shared/pluginMaker'
 import pluginGuide from '../../../docs/plugins.md?raw'
 import type { AppConfig } from '../store/appConfig'
@@ -76,6 +77,8 @@ export interface SendOptions {
   quick?: boolean
   /** Run this turn on exactly this cheaper model (tests). */
   temp?: TempModel | null
+  /** Images attached to the message. */
+  images?: ImageUpload[]
 }
 
 const text = (t: string, isError = false): ToolOutput => ({ text: t, isError })
@@ -143,6 +146,10 @@ export class Engine {
   private mediaStore: MediaStore
   /** Which other chats were working at some point during each running turn. */
   private overlaps = new Map<string, Set<string>>()
+  /** A message's images still being written: its turn waits for them. */
+  private writing = new Map<string, Promise<void>>()
+  /** The images of each running turn, for every provider it runs on. */
+  private turnImages = new Map<string, TurnImage[]>()
   /** What the user undid since a chat's last turn: told to it with its next message. */
   private undoNotes = new Map<string, string[]>()
   /** Snapshots around every turn, for the changes under a reply and Undo. */
@@ -368,7 +375,9 @@ export class Engine {
     // `/table ...` (typed, or sent by the Tables tool) stays in the chat as written; its turn gets the table instructions
     const command = /^\/table(\s|$)/.test(body.trimStart()) ? ('table' as const) : /^\/plugin(\s|$)/.test(body.trimStart()) ? ('plugin' as const) : undefined
     const prompt = from === 'user' || command ? body : toolPrompt(from.replace(/^tool:/, ''), body)
-    const userMsg: ChatMessage = { id: newId('u'), agentId, role: 'user', from, text: prompt, ts: Date.now(), ...(command ? { command } : {}) }
+    const staged = opts.images?.length ? stageUploads(this.d.project.dir, opts.images) : null
+    const userMsg: ChatMessage = { id: newId('u'), agentId, role: 'user', from, text: prompt, ts: Date.now(), ...(command ? { command } : {}), ...(staged?.attachments.length ? { attachments: staged.attachments } : {}) }
+    if (staged) this.writing.set(userMsg.id, staged.written.catch(() => undefined))
     if (chat) {
       this.upsert(userMsg, true)
       void this.persist(userMsg).catch(() => undefined)
@@ -470,9 +479,9 @@ export class Engine {
     const line = earlier.map((m) => m.fresh).lastIndexOf(true)
     return earlier
       .slice(line + 1)
-      .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.text.trim())
+      .filter((m) => (m.role === 'user' || m.role === 'assistant') && (m.text.trim() || m.attachments?.length))
       .slice(-40)
-      .map((m) => ({ role: m.role as 'user' | 'assistant', text: m.text }))
+      .map((m) => ({ role: m.role as 'user' | 'assistant', text: [m.text, attachmentNote(m.attachments)].filter(Boolean).join('\n\n') }))
   }
 
   private upsert(msg: ChatMessage, immediate = false): void {
@@ -524,7 +533,15 @@ export class Engine {
           : userMsg.text
     const undone = this.undoNotes.get(agentId)
     this.undoNotes.delete(agentId)
-    const prompt = undone?.length ? `${undoNote(undone)}\n\n${asked}` : asked
+    // the images go to the provider as images; the prompt also says where they are saved
+    const note = attachmentNote(userMsg.attachments)
+    const withNote = note ? `${asked.trim() || 'See the attached image.'}\n\n${note}` : asked
+    const prompt = undone?.length ? `${undoNote(undone)}\n\n${withNote}` : withNote
+    await this.writing.get(userMsg.id)
+    this.writing.delete(userMsg.id)
+    const images = await loadImages(this.d.project.dir, userMsg.attachments)
+    if (images.length) this.turnImages.set(agentId, images)
+    else this.turnImages.delete(agentId)
     const history = this.history(agentId, userMsg)
 
     // every turn running now overlaps this one, and this one each of them
@@ -617,6 +634,7 @@ export class Engine {
       this.lastBeat.delete(agentId)
       this.temps.delete(agentId)
       this.fallbacks.delete(agentId)
+      this.turnImages.delete(agentId)
     }
     if (ctl.signal.aborted && (!error || this.stopReasons.has(agentId))) error = this.stopReasons.get(agentId) ?? 'Stopped.'
     this.stopReasons.delete(agentId)
@@ -708,6 +726,7 @@ export class Engine {
       system: this.systemPrompt(agent, await this.tables.list()),
       history,
       prompt: finalPrompt,
+      images: this.turnImages.get(agentId),
       cwd: this.d.project.dir,
       resumeId,
       // the chat's own turns keep its process warm; a hop carrying a brief to another provider does not

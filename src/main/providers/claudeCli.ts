@@ -78,6 +78,12 @@ type QueryFn = typeof query
 /** How long a warm session waits for its next turn before its process is let go. */
 export const IDLE_MS = 20 * 60_000
 
+/** A turn's message as Claude Code takes it: the text, with the attached images first as image blocks. */
+export function userContent(req: Pick<TurnRequest, 'prompt' | 'images'>): string | Record<string, unknown>[] {
+  if (!req.images?.length) return req.prompt
+  return [...req.images.map((i) => ({ type: 'image', source: { type: 'base64', media_type: i.mime, data: i.data } })), { type: 'text', text: req.prompt }]
+}
+
 /** A queue read as an async iterable: the prompt of a live query, and the messages of one turn. */
 export class Channel<T> implements AsyncIterable<T> {
   private items: T[] = []
@@ -248,8 +254,14 @@ export class ClaudeCliProvider implements ProviderAdapter {
     const o = this.options(req, () => req)
     let stream
     try {
+      // with images the prompt goes in as one message of blocks; a plain string otherwise
+      const prompt = req.images?.length
+        ? (async function* () {
+            yield { type: 'user', message: { role: 'user', content: userContent(req) }, parent_tool_use_id: null } as SDKUserMessage
+          })()
+        : req.prompt
       stream = (this.o.query ?? query)({
-        prompt: req.prompt,
+        prompt,
         options: { ...o.fixed, resume: req.resumeId, canUseTool: o.canUseTool, abortController: abort, hooks: req.watch ? o.hooks : undefined }
       })
     } catch (e) {
@@ -300,7 +312,7 @@ export class ClaudeCliProvider implements ProviderAdapter {
       return
     }
     req.signal.addEventListener('abort', onAbort, { once: true })
-    live.input.push({ type: 'user', message: { role: 'user', content: req.prompt }, parent_tool_use_id: null } as SDKUserMessage)
+    live.input.push({ type: 'user', message: { role: 'user', content: userContent(req) }, parent_tool_use_id: null } as SDKUserMessage)
     let ended = false
     try {
       for await (const msg of out) {

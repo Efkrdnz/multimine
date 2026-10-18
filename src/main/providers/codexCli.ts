@@ -22,7 +22,7 @@ function mcpArgs(id: string, s: Pick<McpServerConfig, 'transport' | 'url' | 'com
 }
 
 /** The argument list for one `codex exec` turn. The prompt itself goes in on stdin (`-`). */
-export function codexArgs(req: Pick<TurnRequest, 'agent' | 'cwd' | 'resumeId' | 'busUrl' | 'externalMcp'>): string[] {
+export function codexArgs(req: Pick<TurnRequest, 'agent' | 'cwd' | 'resumeId' | 'busUrl' | 'externalMcp' | 'images'>): string[] {
   const { agent } = req
   const args = ['exec', '--json', '--skip-git-repo-check', '--cd', req.cwd]
   if (agent.model) args.push('-m', agent.model)
@@ -33,6 +33,8 @@ export function codexArgs(req: Pick<TurnRequest, 'agent' | 'cwd' | 'resumeId' | 
   if (req.busUrl) args.push(...mcpArgs('multimine', { transport: 'http', url: req.busUrl }))
   for (const s of req.externalMcp) args.push(...mcpArgs(s.id.replace(/[^a-zA-Z0-9_-]/g, '_'), s))
   if (req.resumeId) args.push('resume', req.resumeId)
+  // `--image=<file>` (not `--image <file>`), so the flag that takes several files cannot swallow the `-` after it
+  for (const i of req.images ?? []) args.push(`--image=${i.path}`)
   args.push('-')
   return args
 }

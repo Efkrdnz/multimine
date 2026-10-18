@@ -1,23 +1,24 @@
 /**
- * Terminal output arrives on the app-wide event stream; a terminal tab may mount a moment after its
- * first bytes do. Output is held per terminal until its tab attaches, then streamed straight in.
+ * Terminal output arrives on the app-wide event stream. Each terminal's recent output is kept (the
+ * last 200,000 characters), so a tab that mounts later - the code window reopened, or its project
+ * back on screen - replays it and carries on from there.
  */
-const buffers = new Map<string, string[]>()
+const history = new Map<string, { chunks: string[]; size: number }>()
 const sinks = new Map<string, (data: string) => void>()
+const KEEP = 200_000
 
 export function pushTerminalData(id: string, data: string): void {
-  const sink = sinks.get(id)
-  if (sink) return sink(data)
-  const b = buffers.get(id) ?? []
-  b.push(data)
-  if (b.length > 2000) b.splice(0, b.length - 2000)
-  buffers.set(id, b)
+  const h = history.get(id) ?? { chunks: [], size: 0 }
+  h.chunks.push(data)
+  h.size += data.length
+  while (h.size > KEEP && h.chunks.length > 1) h.size -= h.chunks.shift()!.length
+  history.set(id, h)
+  sinks.get(id)?.(data)
 }
 
 export function attachTerminal(id: string, sink: (data: string) => void): () => void {
   sinks.set(id, sink)
-  for (const d of buffers.get(id) ?? []) sink(d)
-  buffers.delete(id)
+  for (const d of history.get(id)?.chunks ?? []) sink(d)
   return () => {
     if (sinks.get(id) === sink) sinks.delete(id)
   }
@@ -25,5 +26,5 @@ export function attachTerminal(id: string, sink: (data: string) => void): () => 
 
 export function forgetTerminal(id: string): void {
   sinks.delete(id)
-  buffers.delete(id)
+  history.delete(id)
 }

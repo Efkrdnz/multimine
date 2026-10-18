@@ -130,6 +130,14 @@ update) go back to the chat that did the first one.
 
 ## Around the chat
 
+- **Project tabs.** Open another project folder in a new tab (the + at the top, or Ctrl+Tab between
+  them) and the first keeps going: its chats finish their turns, its game keeps running, its
+  terminals stay open. A tab shows a spinner while a chat works there, a count when one is waiting
+  for you, and a play mark while its game runs; a question or a crash in a tab you are not on still
+  raises a desktop notification, which brings that project up. Everything a project has - chats,
+  tables, tools' work, turn snapshots, run command - lives in its own `.multimine/`, so nothing mixes.
+  The tabs come back the next time Multimine starts.
+
 - **Code window:** a file tree with search, Monaco editor tabs that follow edits made elsewhere,
   **Open in IntelliJ / VS Code**, and terminals in the project folder, including one-click Claude
   Code and Codex terminals.

@@ -40,7 +40,7 @@ export class Terminals {
 
   constructor(private readonly emit: (e: MainEvent) => void) {}
 
-  async available(): Promise<{ ok: boolean; error?: string }> {
+  static async available(): Promise<{ ok: boolean; error?: string }> {
     return (await loadPty()) ? { ok: true } : { ok: false, error: loadError ?? 'unknown' }
   }
 

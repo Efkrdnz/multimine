@@ -213,6 +213,16 @@ export class Engine {
     void this.checkpoints?.snapshot('Project opened').catch(() => undefined)
   }
 
+  /** Everything the window shows of this project, sent again: it has just come on screen. */
+  publish(): void {
+    this.emitProject()
+    this.d.emit({ type: 'chat-reset', chats: this.chats })
+    this.d.emit({ type: 'inbox', items: this.inbox.items })
+    this.d.emit({ type: 'media', items: this.media })
+    this.d.emit({ type: 'usage', total: this.totals, byAgent: this.byAgent })
+    for (const id of this.status.keys()) this.emitStatus(id)
+  }
+
   private emitProject(): void {
     this.d.emit({ type: 'project', project: this.d.project.info() })
   }

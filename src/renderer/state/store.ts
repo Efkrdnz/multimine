@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { pushTerminalData } from '../ide/terminalBus'
-import type { AgentSpec, AgentStatus, AppSettings, CliStatus, PluginInfo, ChatMessage, InboxItem, MainEvent, MediaItem, ProjectInfo, RunState, Usage, PlanWindow } from '@shared/types'
+import type { AgentSpec, AgentStatus, AppSettings, CliStatus, PluginInfo, ChatMessage, InboxItem, MainEvent, MediaItem, ProjectInfo, ProjectTab, RunState, Usage, PlanWindow } from '@shared/types'
 
 export type Panel = 'media' | 'instructions' | 'git' | 'run' | null
 export type Modal = { kind: 'chat'; agent: AgentSpec } | { kind: 'settings'; tab?: string } | { kind: 'plugins' } | { kind: 'make-tool'; editId?: string } | null
@@ -16,6 +16,8 @@ export interface State {
   settings: AppSettings | null
   keyed: string[]
   project: ProjectInfo | null
+  /** The open projects, as tabs: the one on screen, and what the others are doing. */
+  projects: ProjectTab[]
   /** Every chat's messages, by chat id. */
   chats: Record<string, ChatMessage[]>
   status: Record<string, { status: AgentStatus; activity?: string; detail?: string; since?: number; quiet?: string; temp?: { model: string; effort: string; difficulty: string }; fallback?: { provider: string; model: string; reason: string } }>
@@ -71,6 +73,7 @@ export const useStore = create<State>((set, get) => ({
   settings: null,
   keyed: [],
   project: null,
+  projects: [],
   chats: {},
   status: {},
   health: {},
@@ -117,17 +120,44 @@ export function onMainEvent(l: Listener): () => void {
   return () => listeners.delete(l)
 }
 
+/** The chat each project had on screen, so coming back to a project comes back to it. */
+const lastFocus = new Map<string, string>()
+
+/** What belongs to the project on screen and is dropped when another one comes up (it sends its own). */
+const PER_PROJECT: Partial<State> = {
+  chats: {},
+  status: {},
+  inbox: [],
+  media: [],
+  run: null,
+  runLines: [],
+  runUnseen: false,
+  openTools: [],
+  activeTool: null,
+  panel: null,
+  ide: 'closed',
+  ideRequest: null,
+  tableRequest: null,
+  modal: null
+}
+
 export function applyEvent(e: MainEvent): void {
   const s = useStore.getState()
   switch (e.type) {
     case 'project': {
-      // the chat on screen stays while it exists; otherwise the most recent one comes up
+      const switched = (s.project?.dir ?? null) !== (e.project?.dir ?? null)
+      if (switched && s.project && s.focused) lastFocus.set(s.project.dir, s.focused)
+      // the chat on screen stays while it exists; a project coming back brings back its own; otherwise the most recent
       const ids = e.project?.agents.map((a) => a.id) ?? []
-      const focused = s.focused && ids.includes(s.focused) ? s.focused : (ids[0] ?? null)
-      s.set({ project: e.project, focused })
-      if (focused !== s.focused) void window.mm.api.setActiveChat(focused)
+      const prefer = switched ? (e.project ? lastFocus.get(e.project.dir) : undefined) : s.focused
+      const focused = prefer && ids.includes(prefer) ? prefer : (ids[0] ?? null)
+      s.set({ ...(switched ? PER_PROJECT : {}), project: e.project, focused })
+      if (focused !== s.focused || switched) void window.mm.api.setActiveChat(focused)
       break
     }
+    case 'projects':
+      s.set({ projects: e.projects })
+      break
     case 'chat-reset':
       s.set({ chats: e.chats })
       break
@@ -165,6 +195,11 @@ export function applyEvent(e: MainEvent): void {
       s.set({ ide: 'open', panel: null, activeTool: null, ideRequest: { path: e.path, line: e.line, n: (s.ideRequest?.n ?? 0) + 1 } })
       break
     case 'reveal': {
+      // a notification from a project in another tab: bring that project up first
+      if (e.dir && e.dir !== s.project?.dir) {
+        void window.mm.api.switchProject(e.dir).then(() => applyEvent({ ...e, dir: undefined })).catch(() => undefined)
+        break
+      }
       if (e.panel === 'run') {
         s.set({ panel: 'run', activeTool: null, ide: s.ide === 'open' ? 'hidden' : s.ide, runUnseen: false })
         break

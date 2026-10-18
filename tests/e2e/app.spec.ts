@@ -790,6 +790,37 @@ test('Multimine runs end to end on the mock provider', async () => {
   await shot(page, '28d-tool-made')
   await page.getByTestId('toolwin-spell-notes').getByTitle('Close', { exact: true }).click()
 
+  // project tabs: a second project opens beside the first, whose chat keeps working in the background
+  await page.getByTestId(`chat-row-${tester.id}`).click()
+  await say('/tool run_command {"command":"sleep 3 && echo background-done"}')
+  await expect(page.getByTestId(`activity-${tester.id}`)).toContainText('Running', { timeout: 10_000 })
+  const second = join(root, 'hud-test')
+  mkdirSync(second)
+  writeFileSync(join(second, 'project.godot'), '[application]\nconfig/name="HUD test"\n')
+  await page.evaluate((d) => (globalThis as any).mm.api.openProject(d), second)
+  await expect(page.getByTestId('project-tab-hud-test')).toHaveAttribute('data-active', '', { timeout: 10_000 })
+  await expect(page.getByTestId('sidebar-project')).toContainText('hud-test')
+  await expect(page.getByTestId(`chat-row-${tester.id}`)).toHaveCount(0)
+  // the first project's tab shows its chat still working
+  await expect(page.getByTestId('project-tab-my-mod').locator('.animate-spin')).toHaveCount(1)
+  await page.waitForTimeout(300)
+  await shot(page, '28e-project-tabs')
+  // it finishes while it is not on screen
+  await expect(page.getByTestId('project-tab-my-mod').locator('.animate-spin')).toHaveCount(0, { timeout: 15_000 })
+  await expect.poll(() => readFileSync(join(project, '.multimine', 'chats', tester.id, 'messages.jsonl'), 'utf8'), { timeout: 10_000 }).toContain('background-done')
+  // back to it: the chat it was on, with the work it did meanwhile
+  await page.getByTestId('project-tab-open-my-mod').click()
+  await expect(page.getByTestId('project-tab-my-mod')).toHaveAttribute('data-active', '')
+  await expect(page.locator(`[data-chat-panel="${tester.id}"]`)).toBeVisible({ timeout: 10_000 })
+  await expect(page.locator(`[data-chat-panel="${tester.id}"]`).getByTestId('work-block').last()).toContainText('Ran 1 command')
+  // Ctrl+Tab goes to the next tab; closing it leaves the first
+  await page.keyboard.press('Control+Tab')
+  await expect(page.getByTestId('project-tab-hud-test')).toHaveAttribute('data-active', '', { timeout: 10_000 })
+  await page.getByTestId('project-tab-close-hud-test').click()
+  await expect(page.getByTestId('project-tab-hud-test')).toHaveCount(0)
+  await expect(page.getByTestId('project-tab-my-mod')).toHaveAttribute('data-active', '')
+  await expect(page.getByTestId(`chat-row-${tester.id}`)).toBeVisible()
+
   // delete a chat from the sidebar: its folder goes
   await page.getByTestId(`chat-row-${tester.id}`).hover()
   await page.getByTestId(`chat-row-delete-${tester.id}`).click()

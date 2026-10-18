@@ -17,6 +17,8 @@ export interface Note {
   agentId?: string
   /** A panel to open instead: the run's, for a crash. */
   panel?: 'run'
+  /** The open project it is about, when that is not the one on screen. */
+  dir?: string
 }
 
 export interface NotifierDeps {
@@ -54,7 +56,7 @@ export class Notifier {
   constructor(private readonly d: NotifierDeps) {}
 
   /** Every event main sends the window passes through here too. */
-  handle(e: MainEvent): void {
+  handle(e: MainEvent, dir?: string): void {
     if (e.type === 'inbox') this.inbox(e.items)
     else if (e.type === 'status') this.status(e.agentId, e.status)
     // a usage window crossing 90%: worth hearing about before a chat stops mid-task
@@ -63,7 +65,7 @@ export class Notifier {
     else if (e.type === 'run' && e.state.status === 'exited' && !e.state.stopped && e.state.code !== 0 && e.state.startedAt && !this.runs.has(e.state.startedAt)) {
       this.runs.add(e.state.startedAt)
       const p = e.state.problems.find((x) => x.fatal)
-      if (this.allowed()) this.d.show({ title: 'The game crashed', body: clip((p && p.kind !== 'exit' ? p.title : (p?.title ?? 'It exited with an error')).replace(/\s+/g, ' '), 120), panel: 'run' })
+      if (this.allowed()) this.d.show({ title: 'The game crashed', body: clip((p && p.kind !== 'exit' ? p.title : (p?.title ?? 'It exited with an error')).replace(/\s+/g, ' '), 120), panel: 'run', ...(dir ? { dir } : {}) })
     }
   }
 

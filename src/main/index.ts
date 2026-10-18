@@ -55,7 +55,8 @@ function showNote(n: Note): boolean {
     if (win.isMinimized()) win.restore()
     win.show()
     win.focus()
-    emit({ type: 'reveal', itemId: n.itemId, agentId: n.agentId, panel: n.panel })
+    // a note from a project in the background brings that project on screen first
+    emit({ type: 'reveal', itemId: n.itemId, agentId: n.agentId, panel: n.panel, dir: n.dir ?? (n.agentId ? mm.dirOfChat(n.agentId) : undefined) })
   })
   note.on('close', () => live.delete(note))
   note.show()
@@ -68,7 +69,7 @@ const notifier = new Notifier({
   show: (n) => void showNote(n),
   isFocused: () => !!win && !win.isDestroyed() && win.isFocused() && !win.isMinimized(),
   settings: () => mm.config.settings.notifications,
-  agentName: (id) => mm.project?.get(id)?.name ?? id
+  agentName: (id) => mm.chatName(id)
 })
 
 const cipher = {
@@ -111,6 +112,8 @@ const mm = new MultimineApp({
   cipher,
   emit,
   loadTest,
+  // the projects in the background still notify: a question waiting, a turn done, the game crashing
+  background: (e, dir) => notifier.handle(e, dir),
   mockDelayMs: process.env.MULTIMINE_MOCK_DELAY ? Number(process.env.MULTIMINE_MOCK_DELAY) : undefined,
   skipDetect: process.env.MULTIMINE_FORCE_MOCK === '1'
 })
@@ -208,8 +211,9 @@ app.whenReady().then(async () => {
   }
 
   createWindow()
+  // the project tabs open last time come back, and a --project on the command line opens on top
   const dir = argProject()
-  if (dir) win!.webContents.once('did-finish-load', () => void mm.openProject(dir).catch((e) => emit({ type: 'toast', level: 'error', text: String(e) })))
+  win!.webContents.once('did-finish-load', () => void mm.restoreProjects(dir).catch((e) => emit({ type: 'toast', level: 'error', text: String(e) })))
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

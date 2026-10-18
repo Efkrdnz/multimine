@@ -46,7 +46,7 @@ it('a terminal runs a shell in the project root and streams its output', async (
     if (e.type === 'terminal-data') out.push(e.data)
     if (e.type === 'terminal-exit') exited = true
   })
-  expect((await terms.available()).ok).toBe(true)
+  expect((await Terminals.available()).ok).toBe(true)
   const dir = await mkdtemp(join(tmpdir(), 'mm-term-'))
   const info = await terms.open(dir, 'shell', 80, 24, 'Terminal')
   terms.write(info.id, 'echo "hello $((6*7))"; pwd\r')

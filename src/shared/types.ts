@@ -364,6 +364,9 @@ export interface AppSettings {
   catalog: Partial<Record<ProviderKind, ModelEntry[]>>
   mcpServers: McpServerConfig[]
   recentProjects: string[]
+  /** The project tabs open when Multimine last closed, and the one on screen. */
+  openProjects?: string[]
+  activeProject?: string
   claudePath?: string
   codexPath?: string
 }
@@ -460,6 +463,19 @@ export interface RunState {
   problems: Crash[]
 }
 
+/** An open project's tab: which one is on screen, and what its chats and run are doing meanwhile. */
+export interface ProjectTab {
+  dir: string
+  name: string
+  active: boolean
+  /** Chats working right now. */
+  busy: number
+  /** Questions and permissions waiting for the user. */
+  waiting: number
+  /** Its run button's game is running. */
+  running: boolean
+}
+
 export type MainEvent =
   | { type: 'project'; project: ProjectInfo | null }
   | { type: 'chat-reset'; chats: Record<string, ChatMessage[]> }
@@ -486,7 +502,9 @@ export type MainEvent =
   | { type: 'plugins'; plugins: PluginInfo[]; broken: { dir: string; errors: string[] }[] }
   | { type: 'inbox'; items: InboxItem[] }
   /** A notification was clicked: bring up what it was about. */
-  | { type: 'reveal'; itemId?: string; agentId?: string; panel?: 'run' }
+  | { type: 'reveal'; itemId?: string; agentId?: string; panel?: 'run'; dir?: string }
+  /** The open projects (tabs) changed: one opened, closed or came on screen, or what one is doing changed. */
+  | { type: 'projects'; projects: ProjectTab[] }
   | { type: 'media'; items: MediaItem[] }
   | { type: 'settings'; settings: AppSettings }
   | { type: 'usage'; total: Usage; byAgent?: Record<string, Usage> }

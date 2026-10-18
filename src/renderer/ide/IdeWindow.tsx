@@ -295,6 +295,15 @@ function TerminalPane() {
     void api()
       .terminalAvailable()
       .then((r) => setUnavailable(r.ok ? null : (r.error ?? 'The terminal is unavailable.')))
+    // terminals left running (the window was closed, or this project was in another tab) come back
+    void api()
+      .terminalList()
+      .then((list) => {
+        if (!list.length) return
+        setTerms((ts) => [...list.filter((t) => !ts.some((x) => x.id === t.id)), ...ts])
+        setActive((a) => a ?? list.at(-1)!.id)
+      })
+      .catch(() => undefined)
   }, [])
   useEffect(
     () =>

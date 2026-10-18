@@ -11,6 +11,7 @@ import { PluginIcon } from '../tools/PluginIcon'
 import { ProviderMark } from '../panels/ProviderMark'
 import { openTool } from '../tools/openTool'
 import { startRun } from '../panels/RunPanel'
+import { openProjectTab } from './ProjectTabs'
 
 type Panel = 'media' | 'instructions' | 'git'
 
@@ -33,6 +34,14 @@ export function Shell() {
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'n') {
         e.preventDefault()
         void startChat()
+      }
+      // Ctrl+Tab: the next project tab (Shift: the one before)
+      if (e.ctrlKey && e.key === 'Tab') {
+        e.preventDefault()
+        const { projects } = useStore.getState()
+        const i = projects.findIndex((p) => p.active)
+        const next = projects[(i + (e.shiftKey ? projects.length - 1 : 1)) % projects.length]
+        if (next && !next.active) void api().switchProject(next.dir)
       }
       if (e.key === 'F5') {
         e.preventDefault()
@@ -88,10 +97,7 @@ function Sidebar({ current }: { current?: string }) {
 
   return (
     <div className="flex w-[264px] shrink-0 flex-col border-r border-white/10 bg-black/30 backdrop-blur" data-testid="sidebar">
-      <div className="px-4 pb-2 pt-3">
-        <div className="glow-text font-display text-sm font-bold tracking-[0.25em]">MULTIMINE</div>
-      </div>
-      <button className="mx-3 flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-white/5" title={`${project.dir}\nOpen another project`} onClick={() => void api().pickProject().then((dir) => (dir ? api().openProject(dir) : undefined))} data-testid="sidebar-project">
+      <button className="mx-3 mt-3 flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-white/5" title={`${project.dir}\nOpen another project in a new tab`} onClick={() => void openProjectTab()} data-testid="sidebar-project">
         <FolderOpen size={14} className="shrink-0 text-indigo-300" />
         <span className="truncate font-semibold">{project.name}</span>
       </button>

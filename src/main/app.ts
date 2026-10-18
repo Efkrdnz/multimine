@@ -1,6 +1,6 @@
-import { join, basename } from 'node:path'
+import { join, basename, resolve } from 'node:path'
 import type { Api } from '@shared/api'
-import type { AgentSpec, AppSettings, MainEvent, McpServerConfig, PlanWindow, ProviderKind } from '@shared/types'
+import type { AgentSpec, AppSettings, MainEvent, McpServerConfig, PlanWindow, ProjectTab, ProviderKind } from '@shared/types'
 import { AppConfig, type Cipher } from './store/appConfig'
 import { ProjectStore } from './store/project'
 import { ChatStore } from './store/chats'
@@ -47,9 +47,24 @@ export interface AppOptions {
   skipDetect?: boolean
   /** Loads a page in a hidden window and returns the errors it reports (a tool a chat made, before it installs). */
   loadTest?: (url: string) => Promise<string[]>
+  /** An event from a project that is not on screen (for desktop notifications). */
+  background?: (e: MainEvent, dir: string) => void
 }
 
-/** The main-process side of the API: owns settings, the open project, the engine and the bus server. */
+/** One open project: its chats, run button, file watcher and terminals. */
+export interface Workspace {
+  dir: string
+  project: ProjectStore
+  engine: Engine
+  runner: Runner
+  terminals: Terminals
+  files: ProjectFiles
+  watcher: ProjectWatcher
+  /** Its chat on screen when it was last on screen. */
+  activeChat: string | null
+}
+
+/** The main-process side of the API: owns settings, the open projects, their engines and the bus server. */
 export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'mediaUrl' | 'ideOpenExternal' | 'pluginPickAndInstall' | 'testNotification'> {
   readonly config: AppConfig
   readonly hub = new McpHub()
@@ -57,28 +72,45 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
   readonly health: ProviderHealth
   readonly planLimits: PlanLimits
   readonly providers: ProviderRegistry
-  project: ProjectStore | null = null
-  engine: Engine | null = null
   private bus: BusServer
-  readonly terminals: Terminals
   readonly plugins: PluginRegistry
   private pluginCtx: PluginContext
-  private watcher: ProjectWatcher | null = null
-  private files: ProjectFiles | null = null
+  /** Every open project, in the order of their tabs; each keeps working while another is on screen. */
+  private spaces = new Map<string, Workspace>()
+  /** The project on screen: the API acts on it, and only its events reach the window. */
+  private current: Workspace | null = null
+  private tabsTimer: ReturnType<typeof setTimeout> | null = null
+
+  get project(): ProjectStore | null {
+    return this.current?.project ?? null
+  }
+  get engine(): Engine | null {
+    return this.current?.engine ?? null
+  }
+  /** The run button of the project on screen. */
+  get runner(): Runner | null {
+    return this.current?.runner ?? null
+  }
+  get terminals(): Terminals | null {
+    return this.current?.terminals ?? null
+  }
   /** The chat on screen: where a tool's 'active' messages go. */
-  private activeChat: string | null = null
-  /** The project's run button. */
-  runner: Runner | null = null
+  private get activeChat(): string | null {
+    return this.current?.activeChat ?? null
+  }
+  private set activeChat(id: string | null) {
+    if (this.current) this.current.activeChat = id
+  }
 
   constructor(private readonly o: AppOptions) {
     this.config = new AppConfig(o.userDataDir, o.cipher)
     this.providers = new ProviderRegistry(o.mockScript, o.mockDelayMs, o.providerOverrides)
+    // a chat in any open project calls back here, on screen or not
     this.bus = new BusServer((chatId) => {
-      const chat = this.project?.get(chatId)
-      if (!chat || !this.engine) return null
-      return { tools: this.engine.coordinationTools(chat) }
+      const ws = this.spaceOfChat(chatId)
+      const chat = ws?.project.get(chatId)
+      return ws && chat ? { tools: ws.engine.coordinationTools(chat) } : null
     })
-    this.terminals = new Terminals(o.emit)
     this.health = new ProviderHealth((h) => o.emit({ type: 'provider-health', health: h }))
     this.planLimits = new PlanLimits((windows, warning) => {
       o.emit({ type: 'plan-limits', windows, warning })
@@ -119,11 +151,11 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
   }
 
   async shutdown(): Promise<void> {
+    if (this.tabsTimer) clearTimeout(this.tabsTimer)
     this.providers.release()
-    this.terminals.closeAll()
-    await this.runner?.stop()
-    await this.watcher?.stop()
-    await this.engine?.close('Multimine closed.')
+    for (const ws of this.spaces.values()) await this.stopSpace(ws, 'Multimine closed.')
+    this.spaces.clear()
+    this.current = null
     await this.hub.closeAll()
     await this.bus.stop()
   }
@@ -138,38 +170,139 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
   }
 
   async init() {
-    return { settings: this.config.settings, keyed: this.config.keyedProviders(), project: this.project?.info() ?? null, planLimits: this.planLimits.list() }
+    return { settings: this.config.settings, keyed: this.config.keyedProviders(), project: this.project?.info() ?? null, projects: this.listProjects(), planLimits: this.planLimits.list() }
   }
 
+  // ---------------------------------------------------------------- open projects (tabs)
+
+  /**
+   * Where an open project's events go: the window, if it is on screen. A project in the background
+   * keeps its chats, run and terminals going; the window hears its terminals (a tab may be watching
+   * them later), its toasts (named) and tools it made, and its tab's badge follows its chats.
+   */
+  private route(ws: Workspace, e: MainEvent): void {
+    if (ws === this.current) this.o.emit(e)
+    else if (e.type === 'terminal-data' || e.type === 'terminal-exit' || e.type === 'plugin-installed') this.o.emit(e)
+    else if (e.type === 'toast') this.o.emit({ ...e, text: `${basename(ws.dir)}: ${e.text}` })
+    else this.o.background?.(e, ws.dir)
+    if (e.type === 'status' || e.type === 'inbox' || e.type === 'run') this.tabsSoon()
+  }
+
+  /** The open projects, as their tabs show them. */
+  listProjects(): ProjectTab[] {
+    return [...this.spaces.values()].map((ws) => ({
+      dir: ws.dir,
+      name: basename(ws.dir),
+      active: ws === this.current,
+      busy: ws.project.list().filter((c) => ws.engine.busy(c.id)).length,
+      waiting: ws.engine.inbox.pending().length,
+      running: ws.runner.state.status === 'running'
+    }))
+  }
+
+  private tabsSoon(now = false): void {
+    if (this.tabsTimer) clearTimeout(this.tabsTimer)
+    this.tabsTimer = null
+    const send = () => this.o.emit({ type: 'projects', projects: this.listProjects() })
+    if (now) send()
+    else this.tabsTimer = setTimeout(send, 120)
+  }
+
+  /** The open project a chat belongs to. */
+  spaceOfChat(chatId: string): Workspace | undefined {
+    for (const ws of this.spaces.values()) if (ws.project.get(chatId)) return ws
+    return undefined
+  }
+
+  /** A chat's name and project folder, whichever open project it is in (for notifications). */
+  chatName(chatId: string): string {
+    return this.spaceOfChat(chatId)?.project.get(chatId)?.name ?? chatId
+  }
+
+  dirOfChat(chatId: string): string | undefined {
+    return this.spaceOfChat(chatId)?.dir
+  }
+
+  private async saveTabs(): Promise<void> {
+    await this.config.update({ openProjects: [...this.spaces.keys()], activeProject: this.current?.dir })
+  }
+
+  /** Opens the projects that were open last time (those still there), and `extra` on top. */
+  async restoreProjects(extra?: string | null): Promise<void> {
+    const { openProjects = [], activeProject } = this.config.settings
+    for (const dir of openProjects) if (existsSync(dir) && dir !== extra) await this.openProject(dir).catch(() => undefined)
+    if (extra) await this.openProject(extra)
+    else if (activeProject && this.spaces.has(activeProject)) await this.switchProject(activeProject)
+  }
+
+  /**
+   * Opens a project in a new tab and puts it on screen; the projects already open keep running.
+   * One that is open already just comes on screen.
+   */
   async openProject(dir: string): Promise<void> {
-    const project = await ProjectStore.open(dir)
+    const key = resolve(dir)
+    if (this.spaces.has(key)) return this.switchProject(key)
+    const project = await ProjectStore.open(key)
     await this.detectDefaults()
-    await this.engine?.close('Another project was opened.')
-    await this.runner?.stop()
-    this.providers.release()
-    this.project = project
-    this.runner = new Runner(project.dir, this.o.emit)
-    this.activeChat = null
-    this.engine = new Engine({
+    const ws = { dir: key, project, activeChat: null } as Workspace
+    const emit = (e: MainEvent) => this.route(ws, e)
+    ws.runner = new Runner(key, emit)
+    ws.terminals = new Terminals(emit)
+    ws.files = new ProjectFiles(key)
+    ws.watcher = new ProjectWatcher()
+    ws.engine = new Engine({
       health: this.health,
       planLimits: this.planLimits,
       project,
       store: new ChatStore(project.paths),
       config: this.config,
       providers: this.providers,
-      emit: this.o.emit,
+      emit,
       hub: this.hub,
       busUrl: (id) => this.bus.url(id),
       plugins: {
-        list: async () => (await this.plugins.list(project.dir)).map((p) => ({ id: p.manifest.id, name: p.manifest.name })),
-        install: (id, chatId) => this.installMadeTool(id, chatId)
+        list: async () => (await this.plugins.list(key)).map((p) => ({ id: p.manifest.id, name: p.manifest.name })),
+        install: (id, chatId) => this.installMadeTool(id, chatId, ws)
       }
     })
-    await this.engine.open()
-    await this.startWatching(project.dir)
+    this.spaces.set(key, ws)
+    // on screen before it loads, so what it loads reaches the window
+    this.current = ws
+    await ws.engine.open()
+    ws.watcher.start(
+      key,
+      (path, kind) => this.route(ws, { type: 'file-changed', path, kind }),
+      () => ws.files.invalidate()
+    )
+    this.o.emit({ type: 'run', state: ws.runner.state })
+    this.o.emit({ type: 'run-output', lines: [], reset: true })
     await this.pluginsChanged()
-    await this.config.addRecent(dir)
+    await this.config.addRecent(key)
+    await this.saveTabs()
     this.o.emit({ type: 'settings', settings: this.config.settings })
+    this.tabsSoon(true)
+  }
+
+  /** Puts another open project on screen. Nothing stops: the one leaving keeps its chats and run going. */
+  async switchProject(dir: string): Promise<void> {
+    const ws = this.spaces.get(resolve(dir))
+    if (!ws) throw new Error(`${dir} is not open`)
+    if (ws === this.current) return
+    this.current = ws
+    ws.engine.publish()
+    this.o.emit({ type: 'run', state: { ...ws.runner.state, problems: [...ws.runner.state.problems] } })
+    this.o.emit({ type: 'run-output', lines: ws.runner.output(), reset: true })
+    await this.pluginsChanged()
+    await this.saveTabs()
+    this.tabsSoon(true)
+  }
+
+  private async stopSpace(ws: Workspace, reason: string): Promise<void> {
+    ws.terminals.closeAll()
+    await ws.runner.stop()
+    await ws.watcher.stop()
+    await ws.engine.close(reason)
+    for (const c of ws.project.list()) this.providers.release(`${c.id}|`)
   }
 
   /**
@@ -182,18 +315,26 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     if (claude.installed) await this.config.update({ chatDefaults: { ...this.config.settings.chatDefaults, provider: 'claude-cli', model: 'claude-opus-5-5', effort: 'high' } })
   }
 
-  async closeProject(): Promise<void> {
-    this.terminals.closeAll()
-    await this.runner?.stop()
-    this.runner = null
-    await this.watcher?.stop()
-    this.watcher = null
-    await this.engine?.close('The project was closed.')
-    this.providers.release()
-    this.project = null
-    this.engine = null
-    this.activeChat = null
-    this.emitProject()
+  /**
+   * Closes a project's tab (the one on screen by default): its chats, run and terminals stop. The
+   * last project used comes on screen, or the welcome screen when none is left.
+   */
+  async closeProject(dir?: string): Promise<void> {
+    const ws = dir ? this.spaces.get(resolve(dir)) : this.current
+    if (!ws) return
+    this.spaces.delete(ws.dir)
+    await this.stopSpace(ws, 'The project was closed.')
+    if (ws === this.current) {
+      this.current = null
+      const next = [...this.spaces.values()].at(-1)
+      if (next) await this.switchProject(next.dir)
+      else {
+        this.emitProject()
+        await this.pluginsChanged()
+      }
+    }
+    await this.saveTabs()
+    this.tabsSoon(true)
   }
 
   async saveMultimineMd(text: string): Promise<void> {
@@ -361,23 +502,26 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
   // ---------------------------------------------------------------- tools chats make
 
   /** A tool's draft folder in the project: where a chat writes it. */
-  private draftDir(id: string): string {
+  private draftDir(id: string, projectDir = this.need().project.dir): string {
     if (!/^[a-z0-9][a-z0-9-]{1,39}$/.test(id)) throw new Error(`"${id}" is not a plugin id: 2-40 lowercase letters, digits or dashes`)
-    return join(this.need().project.dir, DRAFTS, id)
+    return join(projectDir, DRAFTS, id)
   }
 
   /** A draft as a plugin with nothing granted, for the hidden load test (mmplugin://draft--<id>/). */
   async draftPlugin(id: string): Promise<PluginInfo | undefined> {
-    if (!this.project) return undefined
-    let dir: string
-    try {
-      dir = this.draftDir(id)
-    } catch {
-      return undefined
+    // the project on screen first, then any other open one (a chat in the background may be making it)
+    const order = [this.current, ...this.spaces.values()].filter((w): w is Workspace => !!w)
+    for (const ws of order) {
+      let dir: string
+      try {
+        dir = this.draftDir(id, ws.dir)
+      } catch {
+        return undefined
+      }
+      const res = validateManifest(await readJson<unknown>(join(dir, 'plugin.json'), null))
+      if (res.ok) return { manifest: res.manifest, source: 'project', native: false, dir, enabled: true, granted: [], pending: [] }
     }
-    const res = validateManifest(await readJson<unknown>(join(dir, 'plugin.json'), null))
-    if (!res.ok) return undefined
-    return { manifest: res.manifest, source: 'project', native: false, dir, enabled: true, granted: [], pending: [] }
+    return undefined
   }
 
   /**
@@ -385,9 +529,10 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
    * scripts), loaded once in a hidden window to catch errors, then copied into the user's plugins.
    * The window is told, and asks the user to allow it before it runs.
    */
-  async installMadeTool(id: string, chatId: string): Promise<InstallResult> {
-    const { project } = this.need()
-    const dir = this.draftDir(id)
+  async installMadeTool(id: string, chatId: string, ws: Workspace | null = this.current): Promise<InstallResult> {
+    if (!ws) throw new Error('No project is open')
+    const project = ws.project
+    const dir = this.draftDir(id, project.dir)
     if (!existsSync(join(dir, 'plugin.json'))) return { installed: false, errors: [`there is no ${DRAFTS}/${id}/plugin.json: write the tool's files there first`], warnings: [] }
     const check = await checkPlugin(dir, id)
     if (check.errors.length || !check.manifest) return { installed: false, errors: check.errors, warnings: check.warnings }
@@ -430,20 +575,14 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
 
   // ---------------------------------------------------------------- IDE
 
-  private async startWatching(dir: string): Promise<void> {
-    await this.watcher?.stop()
-    this.files = new ProjectFiles(dir)
-    this.watcher = new ProjectWatcher()
-    this.watcher.start(
-      dir,
-      (path, kind) => this.o.emit({ type: 'file-changed', path, kind }),
-      () => this.files?.invalidate()
-    )
-  }
-
   private ide(): ProjectFiles {
     this.need()
-    return this.files!
+    return this.current!.files
+  }
+
+  private term(): Terminals {
+    this.need()
+    return this.current!.terminals
   }
 
   ideList(dir: string) {
@@ -467,28 +606,33 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
   }
 
   async terminalAvailable() {
-    return this.terminals.available()
+    return Terminals.available()
+  }
+
+  /** The terminals of the project on screen (they keep running while another project is). */
+  async terminalList() {
+    return this.term().list()
   }
 
   /** A shell in the project root; for `claude`/`codex`, with that CLI started in it. */
   async terminalOpen(kind: TerminalKind, cols: number, rows: number) {
     const { project } = this.need()
-    if (kind === 'shell') return this.terminals.open(project.dir, kind, cols, rows, 'Terminal')
+    if (kind === 'shell') return this.term().open(project.dir, kind, cols, rows, 'Terminal')
     const label = kind === 'claude' ? 'Claude Code' : 'Codex'
     const startup = kind === 'claude' ? this.config.settings.claudePath || 'claude' : this.config.settings.codexPath || 'codex'
-    return this.terminals.open(project.dir, kind, cols, rows, label, shellQuote(startup))
+    return this.term().open(project.dir, kind, cols, rows, label, shellQuote(startup))
   }
 
   async terminalWrite(id: string, data: string) {
-    this.terminals.write(id, data)
+    this.current?.terminals.write(id, data)
   }
 
   async terminalResize(id: string, cols: number, rows: number) {
-    this.terminals.resize(id, cols, rows)
+    this.current?.terminals.resize(id, cols, rows)
   }
 
   async terminalClose(id: string) {
-    this.terminals.close(id)
+    this.current?.terminals.close(id)
   }
 
   // ---------------------------------------------------------------- the run button

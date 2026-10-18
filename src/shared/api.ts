@@ -1,11 +1,15 @@
-import type { AgentSpec, ImageUpload, RunState, AppSettings, CliStatus, GhItem, GitCommit, GitStatus, IdeEntry, IdeHit, MainEvent, McpServerConfig, ModelEntry, PlanWindow, PluginInfo, PluginManifest, PluginPermission, ProjectInfo, ProviderKind, TerminalInfo, TerminalKind } from './types'
+import type { AgentSpec, ImageUpload, ProjectTab, RunState, AppSettings, CliStatus, GhItem, GitCommit, GitStatus, IdeEntry, IdeHit, MainEvent, McpServerConfig, ModelEntry, PlanWindow, PluginInfo, PluginManifest, PluginPermission, ProjectInfo, ProviderKind, TerminalInfo, TerminalKind } from './types'
 
 /** Everything the renderer can ask of the main process. One method, one IPC channel. */
 export interface Api {
-  init(): Promise<{ settings: AppSettings; keyed: string[]; project: ProjectInfo | null; planLimits: PlanWindow[] }>
+  init(): Promise<{ settings: AppSettings; keyed: string[]; project: ProjectInfo | null; projects: ProjectTab[]; planLimits: PlanWindow[] }>
   pickProject(): Promise<string | null>
+  /** Opens a project in a new tab (or brings it on screen if it is open); the others keep running. */
   openProject(dir: string): Promise<void>
-  closeProject(): Promise<void>
+  /** Closes a project's tab, the one on screen by default; its chats and run stop. */
+  closeProject(dir?: string): Promise<void>
+  /** Puts another open project on screen; nothing stops. */
+  switchProject(dir: string): Promise<void>
   saveMultimineMd(text: string): Promise<void>
 
   /** A new chat on the defaults from Settings; `patch` wins over them. */
@@ -60,6 +64,8 @@ export interface Api {
   ideWrite(path: string, text: string): Promise<void>
   ideOpenExternal(path: string, app: 'idea' | 'code' | 'system'): Promise<void>
   terminalAvailable(): Promise<{ ok: boolean; error?: string }>
+  /** The terminals of the project on screen, still running from before. */
+  terminalList(): Promise<TerminalInfo[]>
   terminalOpen(kind: TerminalKind, cols: number, rows: number): Promise<TerminalInfo>
   terminalWrite(id: string, data: string): Promise<void>
   terminalResize(id: string, cols: number, rows: number): Promise<void>
@@ -93,7 +99,7 @@ export interface Api {
 export type ApiMethod = keyof Api
 
 export const API_METHODS: ApiMethod[] = [
-  'init', 'pickProject', 'openProject', 'closeProject', 'saveMultimineMd',
+  'init', 'pickProject', 'openProject', 'closeProject', 'switchProject', 'saveMultimineMd',
   'createChat', 'saveChat', 'deleteChat', 'setActiveChat',
   'send', 'stop', 'retry', 'clearChat', 'freshStart', 'turnDiff', 'turnUndo',
   'answer', 'decide',
@@ -101,7 +107,7 @@ export const API_METHODS: ApiMethod[] = [
   'gitStatus', 'gitInit', 'gitDiff', 'gitStage', 'gitUnstage', 'gitCommit', 'gitLog', 'gitShow', 'gitBranches', 'gitCheckout', 'gitPull', 'gitPush',
   'ghInfo', 'ghList', 'ghCreatePr',
   'ideList', 'ideFind', 'ideGrep', 'ideRead', 'ideWrite', 'ideOpenExternal',
-  'terminalAvailable', 'terminalOpen', 'terminalWrite', 'terminalResize', 'terminalClose',
+  'terminalAvailable', 'terminalList', 'terminalOpen', 'terminalWrite', 'terminalResize', 'terminalClose',
   'pluginList', 'pluginPickAndInstall', 'pluginInstall', 'pluginSetEnabled', 'pluginRevoke', 'pluginRemove', 'pluginCall', 'pluginMake',
   'runInfo', 'runStart', 'runStop', 'runSend',
   'testNotification', 'openPath', 'mediaUrl'

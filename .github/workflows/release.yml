@@ -23,8 +23,8 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -59,14 +59,17 @@ jobs:
             files: dist/*.dmg
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npm version ${{ needs.prepare.outputs.version }} --no-git-tag-version --allow-same-version
+      # the renderer bundle (with the code editor) is big: give Node room to build it on every runner
       - run: npm run build
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
       # unsigned builds: no code-signing certificate is configured
       - run: npx electron-builder ${{ matrix.target }} --publish never
         env:

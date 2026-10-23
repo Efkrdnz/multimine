@@ -10,6 +10,7 @@ const AssetBoard = lazy(() => import('./assets/AssetBoard').then((m) => ({ defau
 const LogicBoard = lazy(() => import('./logic/LogicBoard').then((m) => ({ default: m.LogicBoard })))
 const DataTables = lazy(() => import('./data/DataTables').then((m) => ({ default: m.DataTables })))
 const Tables = lazy(() => import('./tables/Tables').then((m) => ({ default: m.Tables })))
+const IdeaBook = lazy(() => import('./ideas/IdeaBook').then((m) => ({ default: m.IdeaBook })))
 
 /** Native (built-in) tools render as part of the app; everything they do still goes through the plugin API. */
 const NATIVE: Record<string, React.ComponentType<{ plugin: PluginInfo }>> = {
@@ -17,6 +18,7 @@ const NATIVE: Record<string, React.ComponentType<{ plugin: PluginInfo }>> = {
   'asset-board': AssetBoard,
   'data-tables': DataTables,
   tables: Tables,
+  'idea-book': IdeaBook,
   'logic-board': LogicBoard
 }
 

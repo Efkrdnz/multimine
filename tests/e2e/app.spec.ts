@@ -743,6 +743,60 @@ test('Multimine runs end to end on the mock provider', async () => {
   await page.waitForTimeout(300)
   await shot(page, '28-overview')
 
+  // the Idea Book: an idea written by hand, ideas a chat brainstorms (/idea) kept or dismissed, one
+  // checked off, one sent to a chat to work on, and side ideas switched on
+  await page.getByTestId('tool-idea-book').click()
+  const book = page.getByTestId('idea-book')
+  await expect(book).toContainText('No ideas yet')
+  await book.getByTestId('idea-input').fill('Arcane missiles that home in on the nearest enemy')
+  await book.getByTestId('idea-input').press('Enter')
+  await expect(book.getByTestId('idea-row')).toHaveCount(1)
+  // Brainstorm asks a new chat for ideas, as /idea does
+  const chatsBeforeIdeas = (await chats()).length
+  await book.getByTestId('idea-brainstorm').click()
+  await book.getByTestId('idea-brainstorm-topic').fill('fire spells')
+  await book.getByTestId('idea-brainstorm-go').click()
+  await expect.poll(async () => (await chats()).length, { timeout: 10_000 }).toBe(chatsBeforeIdeas + 1)
+  expect((await chats()).some((c) => c.name === 'Idea Book: fire spells')).toBe(true)
+  await page.getByTestId('toolwin-idea-book').getByTitle('Close', { exact: true }).click()
+  await page.getByTestId(`chat-row-${tester.id}`).click()
+  const iceIdeas = { ideas: [{ title: 'Ice lance', details: 'A piercing bolt that slows.', tags: ['spell'] }, { title: 'Frozen moat', details: 'A ring of ice around the caster.', tags: ['spell', 'aoe'] }] }
+  await say(`/idea ice spells\n/tool save_ideas ${JSON.stringify(iceIdeas)}\n/say Saved 2 ice spell ideas for you to review.`)
+  const ideaCard = panel.getByTestId('idea-card').last()
+  await expect(ideaCard).toContainText('2 ideas saved to the Idea Book', { timeout: 15_000 })
+  await expect(ideaCard).toContainText('Ice lance')
+  await page.waitForTimeout(300)
+  await shot(page, '28f-idea-card')
+  await ideaCard.getByTestId('idea-card-open').click()
+  await expect(book.getByTestId('idea-proposal')).toHaveCount(2)
+  await page.waitForTimeout(300)
+  await shot(page, '28g-idea-review')
+  await book.getByTestId('idea-proposal').filter({ hasText: 'Frozen moat' }).getByTestId('idea-dismiss').click()
+  await book.getByTestId('idea-proposal').filter({ hasText: 'Ice lance' }).getByTestId('idea-keep').click()
+  await expect(book.getByTestId('idea-proposal')).toHaveCount(0)
+  await expect(book.getByTestId('idea-row')).toHaveCount(2)
+  // checked off: it leaves the open list for the done one
+  await book.getByTestId('idea-row').filter({ hasText: 'Arcane missiles' }).getByTestId('idea-check').click()
+  await expect(book.getByTestId('idea-row')).toHaveCount(1)
+  await book.getByTestId('idea-filter-done').click()
+  await expect(book.getByTestId('idea-row')).toContainText('Arcane missiles')
+  await book.getByTestId('idea-filter-open').click()
+  // sent to a new chat to work on; the row then links to that chat
+  const iceRow = book.getByTestId('idea-row').filter({ hasText: 'Ice lance' })
+  await iceRow.hover()
+  await iceRow.getByTestId('idea-work').click()
+  await iceRow.getByTestId('idea-work-go').click()
+  await expect(iceRow.getByTestId('idea-work-chat')).toBeVisible({ timeout: 10_000 })
+  const worker = (await chats()).find((c) => c.name.startsWith('Idea Book:'))!
+  await expect.poll(() => readFileSync(join(project, '.multimine', 'chats', worker.id, 'messages.jsonl'), 'utf8'), { timeout: 10_000 }).toContain('# Idea: Ice lance')
+  await book.getByTestId('idea-side-toggle').click()
+  await expect.poll(() => JSON.parse(readFileSync(join(project, '.multimine', 'ideas.json'), 'utf8')).sideIdeas, { timeout: 5_000 }).toBe(true)
+  const ideaFile = JSON.parse(readFileSync(join(project, '.multimine', 'ideas.json'), 'utf8'))
+  expect(ideaFile.ideas.map((i: { title: string; status: string }) => `${i.title}:${i.status}`).sort()).toEqual(['Arcane missiles that home in on the nearest enemy:done', 'Ice lance:open'])
+  await page.waitForTimeout(300)
+  await shot(page, '28h-idea-book')
+  await page.getByTestId('toolwin-idea-book').getByTitle('Close', { exact: true }).click()
+
   // a tool made by describing it: a chat writes the plugin, the checks send its first try back (it
   // throws when the page loads), the fixed one installs, the user allows it, and it opens and works
   await page.getByTestId('make-tool-open').click()

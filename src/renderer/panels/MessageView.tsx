@@ -9,6 +9,7 @@ import { MediaView } from './MediaView'
 import { TableCardView } from './TableCardView'
 import { TurnChanges } from './TurnChanges'
 import { AttachmentGrid } from './Attachments'
+import { IdeaCardView } from './IdeaCardView'
 import { useNow } from '../state/useNow'
 import { describeTool, duration, elapsed, workSummary } from '@shared/activity'
 import { blocks, type Block } from '@shared/segments'
@@ -232,6 +233,7 @@ function MessageBody({ m, last }: { m: ChatMessage; last: boolean }) {
   const [thinkOpen, setThinkOpen] = useState(false)
   if (m.fresh) return <FreshLine m={m} />
   if (m.table) return <TableCardView card={m.table} />
+  if (m.ideas) return <IdeaCardView card={m.ideas} />
   if (m.role === 'system') return <div className="my-2 text-center text-[11px] italic text-indigo-300/70">{m.text}</div>
   if (m.role === 'user') {
     // a message a tool sent in (the UI Sketcher, a plugin) says where it came from
@@ -244,7 +246,7 @@ function MessageBody({ m, last }: { m: ChatMessage; last: boolean }) {
           {!m.text.trim() ? null : m.command ? (
             <div className="whitespace-pre-wrap text-sm">
               <span className="mr-1.5 rounded bg-black/30 px-1.5 py-px font-mono text-[11px] text-violet-100">/{m.command}</span>
-              {m.text.trimStart().replace(/^\/(table|plugin)\s*/, '')}
+              {m.text.trimStart().replace(/^\/(table|plugin|idea)\s*/, '')}
             </div>
           ) : sender ? (
             <Markdown text={m.text} />

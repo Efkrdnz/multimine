@@ -125,6 +125,12 @@ update) go back to the chat that did the first one.
   charts on demand, and **Context for chats** gives the table to every chat as a few compact lines,
   so it reads the numbers there instead of opening every class. No model is involved in reading or
   writing linked values.
+- **Idea Book.** The project's ideas, each checked off when it is done. Write your own, or have a
+  chat brainstorm: `/idea fire spells` in any chat (or **Brainstorm** in the book) and its ideas go
+  under **To review** for you to keep or dismiss, while its reply stays one sentence. **Work on it**
+  sends an idea to a chat to plan and build. **Side ideas from chats**, switched on per project,
+  has every chat save the extra ideas it has there instead of writing them in its replies; off,
+  chats are not told about it at all, so it costs nothing. Kept in `.multimine/ideas.json`.
 - **Data Files.** The project's JSON and CSV data (items, enemies, loot, levels) as a spreadsheet
   with typed columns, validation, stats and a chart. A save changes only the edited lines. **Ask a
   chat** sends the selected rows and a question to the chat on screen.

@@ -37,6 +37,16 @@ export const BUILTIN: PluginManifest[] = [
     permissions: ['team:read', 'agents:message', 'project:read', 'project:write']
   },
   {
+    id: 'idea-book',
+    name: 'Idea Book',
+    version: '1.0.0',
+    api: 2,
+    description: 'Your ideas for the project, checked off as they are done: written by you, or proposed by chats (/idea, or side ideas) for you to keep or dismiss. Any idea goes to a chat to work on.',
+    icon: { glyph: 'Lightbulb', gradient: ['#fbbf24', '#ec4899'] },
+    window: { width: 1100, height: 760 },
+    permissions: ['team:read', 'agents:message', 'project:read', 'project:write']
+  },
+  {
     id: 'data-tables',
     name: 'Data Files',
     version: '1.0.0',

@@ -46,6 +46,8 @@ export interface State {
   tableRequest: { id: string; n: number } | null
   /** The last table a chat saved, so the Tables tool reloads it. */
   tablesChanged: { id: string; n: number } | null
+  /** Bumped when a chat saves ideas, so the Idea Book reloads. */
+  ideasChanged: number
   /** The run button's current or last run, and its output. */
   run: RunState | null
   runLines: string[]
@@ -92,6 +94,7 @@ export const useStore = create<State>((set, get) => ({
   ideRequest: null,
   tableRequest: null,
   tablesChanged: null,
+  ideasChanged: 0,
   run: null,
   runLines: [],
   runUnseen: false,
@@ -238,6 +241,9 @@ export function applyEvent(e: MainEvent): void {
       } else s.set({ consent: { pluginId: e.id, thenOpen: true, madeBy: e.chatId } })
       break
     }
+    case 'ideas-changed':
+      s.set({ ideasChanged: s.ideasChanged + 1 })
+      break
     case 'tables-changed':
       s.set({ tablesChanged: { id: e.id, n: (s.tablesChanged?.n ?? 0) + 1 } })
       break

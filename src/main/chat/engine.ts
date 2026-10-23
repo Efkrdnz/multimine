@@ -10,6 +10,8 @@ import type { AgentSpec, AgentStatus, ChatMessage, ImageUpload, FallbackHop, Inb
 import { cellText, parseTable, type Table } from '@shared/tables/model'
 import { contextSection, tableCommandPrompt } from '@shared/tables/prompt'
 import { TableStore } from '../store/tables'
+import { IdeaStore } from '../store/ideas'
+import { SIDE_IDEAS_RULE, ideaCommandPrompt } from '@shared/ideas'
 import { Checkpoints } from './checkpoints'
 import { attachmentNote, loadImages, stageUploads, type TurnImage } from '../media/attachments'
 import { parsePluginCommand, pluginChatName, pluginMakerPrompt } from '@shared/pluginMaker'
@@ -162,11 +164,14 @@ export class Engine {
     this.health = d.health ?? new ProviderHealth((h) => d.emit({ type: 'provider-health', health: h }))
     this.inbox = new Inbox((items) => d.emit({ type: 'inbox', items }))
     this.tables = new TableStore(d.project.dir)
+    this.ideas = new IdeaStore(d.project.dir)
     this.checkpoints = d.checkpoints === false ? null : new Checkpoints(d.project.dir)
   }
 
   /** The project's tables, in `.multimine/tables/`. */
   readonly tables: TableStore
+  /** The project's Idea Book, in `.multimine/ideas.json`. */
+  readonly ideas: IdeaStore
 
   get project(): ProjectStore {
     return this.d.project
@@ -383,7 +388,7 @@ export class Engine {
     // the incoming message is shown at once, even while the chat is still busy with an earlier turn
     const chat = this.d.project.get(agentId)
     // `/table ...` (typed, or sent by the Tables tool) stays in the chat as written; its turn gets the table instructions
-    const command = /^\/table(\s|$)/.test(body.trimStart()) ? ('table' as const) : /^\/plugin(\s|$)/.test(body.trimStart()) ? ('plugin' as const) : undefined
+    const command = (/^\/(table|plugin|idea)(\s|$)/.exec(body.trimStart())?.[1] as ChatMessage['command']) ?? undefined
     const prompt = from === 'user' || command ? body : toolPrompt(from.replace(/^tool:/, ''), body)
     const staged = opts.images?.length ? stageUploads(this.d.project.dir, opts.images) : null
     const userMsg: ChatMessage = { id: newId('u'), agentId, role: 'user', from, text: prompt, ts: Date.now(), ...(command ? { command } : {}), ...(staged?.attachments.length ? { attachments: staged.attachments } : {}) }
@@ -407,7 +412,7 @@ export class Engine {
     if (opts.temp !== undefined) return Promise.resolve(opts.temp)
     if (opts.quick) return Promise.resolve(downshift(chat, 'light', eco))
     // building a table reads code and writes careful JSON: never a light job
-    if (eco.enabled && eco.autoRate && from === 'user' && !/^\/(table|plugin)(\s|$)/.test(body.trimStart())) return this.rate(chat, body).then((r) => downshift(chat, r, eco))
+    if (eco.enabled && eco.autoRate && from === 'user' && !/^\/(table|plugin|idea)(\s|$)/.test(body.trimStart())) return this.rate(chat, body).then((r) => downshift(chat, r, eco))
     return Promise.resolve(null)
   }
 
@@ -458,7 +463,10 @@ export class Engine {
     // only the first message names it: the one just sent is already in the chat
     if ((this.chats[agentId] ?? []).filter((m) => m.role === 'user').length > 1) return
     const first = body.split('\n').find((l) => l.trim())?.trim().replace(/^#+\s*/, '') ?? ''
-    const name = clipTo(/^\/table(\s|$)/.test(first) ? `Table: ${first.replace(/^\/table\s*/, '')}` : /^\/plugin(\s|$)/.test(first) ? pluginChatName(first) : first, 48)
+    const name = clipTo(
+      /^\/table(\s|$)/.test(first) ? `Table: ${first.replace(/^\/table\s*/, '')}` : /^\/plugin(\s|$)/.test(first) ? pluginChatName(first) : /^\/idea(\s|$)/.test(first) ? `Ideas: ${first.replace(/^\/idea\s*/, '') || 'what next'}` : first,
+      48
+    )
     if (!name) return
     const next = { ...chat, name }
     this.d.project.set(next)
@@ -540,7 +548,12 @@ export class Engine {
         ? tableCommandPrompt(userMsg.text.trimStart().replace(/^\/table\s*/, ''), await this.tables.list())
         : userMsg.command === 'plugin'
           ? await this.makerPrompt(userMsg.text)
-          : userMsg.text
+          : userMsg.command === 'idea'
+            ? ideaCommandPrompt(
+                userMsg.text.trimStart().replace(/^\/idea\s*/, ''),
+                (await this.ideas.read()).ideas.map((i) => i.title)
+              )
+            : userMsg.text
     const undone = this.undoNotes.get(agentId)
     this.undoNotes.delete(agentId)
     // the images go to the provider as images; the prompt also says where they are saved
@@ -733,7 +746,7 @@ export class Engine {
     let lastContext = 0
     const req: TurnRequest = {
       agent,
-      system: this.systemPrompt(agent, await this.tables.list()),
+      system: this.systemPrompt(agent, await this.tables.list(), await this.ideas.sideIdeas().catch(() => false)),
       history,
       prompt: finalPrompt,
       images: this.turnImages.get(agentId),
@@ -893,11 +906,27 @@ export class Engine {
     return Promise.all([run('git diff HEAD --stat'), run('git diff HEAD')]).then(([diffStat, diff]) => ({ diffStat: diffStat || undefined, diff: diff || undefined }))
   }
 
-  /** Every chat's system prompt: Multimine's own, the tables switched on as context, economy's rules. */
-  systemPrompt(agent: AgentSpec, tables: Table[] = []): string {
+  /**
+   * Every chat's system prompt: Multimine's own, the tables switched on as context, the side-ideas
+   * rule while that is on (a chat that cannot act adds nothing), economy's rules.
+   */
+  systemPrompt(agent: AgentSpec, tables: Table[] = [], sideIdeas = false): string {
     const eco = this.d.config.settings.economy
     const base = buildSystemPrompt({ agent, projectDir: this.d.project.dir, multimineMd: this.d.project.multimineMd })
-    return [base, contextSection(tables), eco.enabled && eco.concise ? CONCISE_RULES : ''].filter(Boolean).join('\n\n')
+    return [base, contextSection(tables), sideIdeas && agent.permissions !== 'chat' ? SIDE_IDEAS_RULE : '', eco.enabled && eco.concise ? CONCISE_RULES : ''].filter(Boolean).join('\n\n')
+  }
+
+  /** A chat's ideas, filed in the Idea Book for the user to review, with a card in the chat saying so. */
+  async saveIdeas(chatId: string, items: { title: string; details?: string; tags?: string[] }[]): Promise<{ saved: number; skipped: string[] }> {
+    const name = this.d.project.get(chatId)?.name ?? 'a chat'
+    const { saved, skipped } = await this.ideas.propose(items, name, chatId)
+    if (saved.length && this.d.project.get(chatId)) {
+      const msg: ChatMessage = { id: newId('n'), agentId: chatId, role: 'system', from: 'multimine', text: `${saved.length} idea${saved.length === 1 ? '' : 's'} saved to the Idea Book`, ts: Date.now(), ideas: { count: saved.length, titles: saved.map((i) => i.title).slice(0, 8) } }
+      this.upsert(msg, true)
+      await this.persist(msg)
+    }
+    if (saved.length) this.d.emit({ type: 'ideas-changed' })
+    return { saved: saved.length, skipped }
   }
 
   /**
@@ -946,7 +975,7 @@ export class Engine {
       id = undefined
     }
     if (!id) {
-      const name = body.split('\n').find((l) => l.trim() && !/^#+\s*$/.test(l))?.replace(/^#+\s*/, '').replace(/^\/table\s*/, '').trim()
+      const name = body.split('\n').find((l) => l.trim() && !/^#+\s*$/.test(l))?.replace(/^#+\s*/, '').replace(/^\/(table|plugin|idea)\s*/, '').trim()
       const mcp = (opts.mcp ?? []).filter((m) => this.d.config.settings.mcpServers.some((s) => s.id === m))
       const chat = await this.createChat({ name: clipTo(name ? `${toolName}: ${name}` : toolName, 48), mcp })
       // plan mode is Claude's: for any other provider there is nothing to switch on
@@ -1121,6 +1150,21 @@ export class Engine {
           if (!a.id) return text(all.length ? all.map((t) => `${t.id}: ${t.name} (${t.rows.length} rows; ${t.columns.map((c) => c.label).join(', ')})${t.context ? ' - context' : ''}`).join('\n') : 'No tables yet.')
           const t = all.find((x) => x.id === String(a.id))
           return t ? text(JSON.stringify(t)) : text(`No table ${a.id}. Tables: ${all.map((x) => x.id).join(', ') || 'none'}.`, true)
+        }
+      },
+      {
+        name: 'save_ideas',
+        description: "Save ideas to the project's Idea Book for the user to review later (they keep or dismiss each). Use it instead of listing ideas in your reply.",
+        shape: {
+          ideas: z
+            .array(z.object({ title: z.string().describe('Under 70 characters'), details: z.string().optional().describe('One to three sentences: what and why'), tags: z.array(z.string()).optional() }))
+            .min(1)
+            .max(12)
+        },
+        handler: async (a) => {
+          const items = (a.ideas as { title: string; details?: string; tags?: string[] }[]) ?? []
+          const r = await this.saveIdeas(me, items)
+          return text(`Saved ${r.saved} idea${r.saved === 1 ? '' : 's'} to the Idea Book for the user to review${r.skipped.length ? `; ${r.skipped.length} already there (${r.skipped.slice(0, 5).join('; ')})` : ''}. Do not list them in your reply.`)
         }
       },
       {

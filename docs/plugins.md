@@ -148,8 +148,8 @@ Plugins written for API 1 keep working:
 
 ## The built-in tools
 
-The UI Sketcher (`ui-sketcher`), the Asset Board (`asset-board`), Tables (`tables`), Data Files
-(`data-tables`) and the Logic Board (`logic-board`) ship with Multimine and are drawn as part of the app, but they hold no
+The UI Sketcher (`ui-sketcher`), the Asset Board (`asset-board`), Tables (`tables`), the Idea Book
+(`idea-book`), Data Files (`data-tables`) and the Logic Board (`logic-board`) ship with Multimine and are drawn as part of the app, but they hold no
 privileges of their own: each is listed as a plugin, its permissions can be revoked in **Manage**
 like any other, and every file it writes, message it sends and picture it shows goes through the
 same `pluginCall` handlers your plugin's `window.multimine` reaches. Anything they do, a plugin can do.

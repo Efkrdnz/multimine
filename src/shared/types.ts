@@ -151,9 +151,11 @@ export interface ChatMessage {
   error?: string
   usage?: Usage
   /** A slash command the user typed (`/table ...`, `/plugin ...`): the text stays as typed, the turn gets the command's prompt. */
-  command?: 'table' | 'plugin'
+  command?: 'table' | 'plugin' | 'idea'
   /** A table a chat saved, shown as a card in the chat. */
   table?: TableCard
+  /** Ideas a chat saved to the Idea Book for the user to review, shown as a card. */
+  ideas?: { count: number; titles: string[] }
   /** The files this reply's turn changed, with the snapshots to diff or undo them. */
   changes?: TurnChanges
   /** Images the user attached to this message. */
@@ -527,6 +529,8 @@ export type MainEvent =
   | { type: 'plan-limits'; windows: PlanWindow[]; warning?: string }
   /** Open a project file in the IDE window, at a line. */
   | { type: 'ide-open'; path: string; line?: number }
+  /** A chat saved ideas to the Idea Book: the tool reloads. */
+  | { type: 'ideas-changed' }
   /** A table was saved by a chat: the Tables tool reloads it. */
   | { type: 'tables-changed'; id: string }
   | { type: 'toast'; level: 'info' | 'error'; text: string }

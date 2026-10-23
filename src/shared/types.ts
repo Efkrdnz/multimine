@@ -476,6 +476,19 @@ export interface ProjectTab {
   running: boolean
 }
 
+/** Where the app's own update stands. */
+export interface UpdateState {
+  /** unsupported: running from source, or a Mac build (unsigned apps cannot replace themselves there). */
+  status: 'unsupported' | 'idle' | 'checking' | 'none' | 'available' | 'downloading' | 'ready' | 'error'
+  /** The version running now. */
+  current: string
+  /** The version found or downloaded. */
+  version?: string
+  percent?: number
+  error?: string
+  checkedAt?: number
+}
+
 export type MainEvent =
   | { type: 'project'; project: ProjectInfo | null }
   | { type: 'chat-reset'; chats: Record<string, ChatMessage[]> }
@@ -503,6 +516,8 @@ export type MainEvent =
   | { type: 'inbox'; items: InboxItem[] }
   /** A notification was clicked: bring up what it was about. */
   | { type: 'reveal'; itemId?: string; agentId?: string; panel?: 'run'; dir?: string }
+  /** The app's own update moved on: found, downloading, ready to install. */
+  | { type: 'update'; state: UpdateState }
   /** The open projects (tabs) changed: one opened, closed or came on screen, or what one is doing changed. */
   | { type: 'projects'; projects: ProjectTab[] }
   | { type: 'media'; items: MediaItem[] }

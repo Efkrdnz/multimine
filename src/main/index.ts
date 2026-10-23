@@ -7,6 +7,7 @@ import type { MainEvent } from '@shared/types'
 import { MultimineApp } from './app'
 import { Notifier, type Note } from './notify'
 import { servePlugin } from './plugins/protocol'
+import { Updater } from './updater'
 
 // Tests and portable installs can point the user-data folder elsewhere.
 if (process.env.MULTIMINE_USER_DATA) app.setPath('userData', resolve(process.env.MULTIMINE_USER_DATA))
@@ -107,6 +108,8 @@ async function loadTest(url: string): Promise<string[]> {
   return [...new Set(errors)].slice(0, 12)
 }
 
+const updater = new Updater((e) => emit(e))
+
 const mm = new MultimineApp({
   userDataDir: app.getPath('userData'),
   cipher,
@@ -170,6 +173,9 @@ app.whenReady().then(async () => {
   )
 
   const handlers: Record<string, (...args: any[]) => Promise<unknown>> = {
+    updateState: async () => updater.state,
+    updateCheck: () => updater.check(),
+    updateInstall: async () => updater.install(),
     pluginPickAndInstall: async () => {
       const r = await dialog.showOpenDialog(win!, { title: 'Choose a plugin folder (it holds plugin.json)', properties: ['openDirectory'] })
       return r.canceled ? null : mm.pluginInstall(r.filePaths[0])
@@ -211,6 +217,7 @@ app.whenReady().then(async () => {
   }
 
   createWindow()
+  updater.start()
   // the project tabs open last time come back, and a --project on the command line opens on top
   const dir = argProject()
   win!.webContents.once('did-finish-load', () => void mm.restoreProjects(dir).catch((e) => emit({ type: 'toast', level: 'error', text: String(e) })))

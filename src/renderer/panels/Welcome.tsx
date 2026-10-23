@@ -2,6 +2,7 @@ import { ChevronRight, FolderOpen } from 'lucide-react'
 import type { ProviderKind } from '@shared/types'
 import { EMPTY_LIST, api, useStore } from '../state/store'
 import { ProviderMark } from './ProviderMark'
+import { UpdatePill } from './UpdatePill'
 
 /** The app's gem (build/icon.svg without its tile), drawn small for the welcome screen. */
 function Gem({ size = 64 }: { size?: number }) {
@@ -59,6 +60,9 @@ export function Welcome() {
           {WORKS_WITH.map((p) => (
             <ProviderMark key={p} p={p} size={22} />
           ))}
+        </div>
+        <div className="mt-4 flex justify-center empty:hidden">
+          <UpdatePill />
         </div>
         <button className="btn btn-primary mx-auto mt-6 !px-5 !py-2.5 text-sm" onClick={() => void open()} data-testid="open-project">
           <FolderOpen size={16} /> Open project folder

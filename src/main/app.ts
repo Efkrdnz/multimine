@@ -65,7 +65,7 @@ export interface Workspace {
 }
 
 /** The main-process side of the API: owns settings, the open projects, their engines and the bus server. */
-export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'mediaUrl' | 'ideOpenExternal' | 'pluginPickAndInstall' | 'testNotification'> {
+export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'mediaUrl' | 'ideOpenExternal' | 'pluginPickAndInstall' | 'testNotification' | 'updateState' | 'updateCheck' | 'updateInstall'> {
   readonly config: AppConfig
   readonly hub = new McpHub()
   /** Which providers are out of usage right now: app-wide, so it survives switching projects. */

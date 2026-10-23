@@ -31,6 +31,10 @@ export function App() {
       .init()
       .then((r) => useStore.getState().set({ ready: true, settings: r.settings, keyed: r.keyed, project: r.project, projects: r.projects ?? [], planLimits: r.planLimits ?? [] }))
     void api()
+      .updateState()
+      .then((u) => useStore.getState().set({ update: u }))
+      .catch(() => undefined)
+    void api()
       .pluginList()
       .then((r) => useStore.getState().set({ plugins: r.plugins, brokenPlugins: r.broken }))
     return off

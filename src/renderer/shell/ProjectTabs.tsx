@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { FolderOpen, FolderPlus, Loader2, Play, Plus, X } from 'lucide-react'
 import type { ProjectTab } from '@shared/types'
 import { EMPTY_LIST, api, useStore } from '../state/store'
+import { UpdatePill } from '../panels/UpdatePill'
 
 const errorText = (e: unknown) => String((e as Error).message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
 
@@ -95,6 +96,9 @@ export function ProjectTabs() {
             ))}
           </div>
         )}
+      </div>
+      <div className="mb-1.5 ml-auto shrink-0 pl-3">
+        <UpdatePill />
       </div>
     </div>
   )

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { pushTerminalData } from '../ide/terminalBus'
-import type { AgentSpec, AgentStatus, AppSettings, CliStatus, PluginInfo, ChatMessage, InboxItem, MainEvent, MediaItem, ProjectInfo, ProjectTab, RunState, Usage, PlanWindow } from '@shared/types'
+import type { AgentSpec, AgentStatus, AppSettings, CliStatus, PluginInfo, ChatMessage, InboxItem, MainEvent, MediaItem, ProjectInfo, ProjectTab, RunState, UpdateState, Usage, PlanWindow } from '@shared/types'
 
 export type Panel = 'media' | 'instructions' | 'git' | 'run' | null
 export type Modal = { kind: 'chat'; agent: AgentSpec } | { kind: 'settings'; tab?: string } | { kind: 'plugins' } | { kind: 'make-tool'; editId?: string } | null
@@ -18,6 +18,8 @@ export interface State {
   project: ProjectInfo | null
   /** The open projects, as tabs: the one on screen, and what the others are doing. */
   projects: ProjectTab[]
+  /** Multimine's own update. */
+  update: UpdateState | null
   /** Every chat's messages, by chat id. */
   chats: Record<string, ChatMessage[]>
   status: Record<string, { status: AgentStatus; activity?: string; detail?: string; since?: number; quiet?: string; temp?: { model: string; effort: string; difficulty: string }; fallback?: { provider: string; model: string; reason: string } }>
@@ -74,6 +76,7 @@ export const useStore = create<State>((set, get) => ({
   keyed: [],
   project: null,
   projects: [],
+  update: null,
   chats: {},
   status: {},
   health: {},
@@ -157,6 +160,9 @@ export function applyEvent(e: MainEvent): void {
     }
     case 'projects':
       s.set({ projects: e.projects })
+      break
+    case 'update':
+      s.set({ update: e.state })
       break
     case 'chat-reset':
       s.set({ chats: e.chats })

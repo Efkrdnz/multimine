@@ -1,4 +1,4 @@
-import type { AgentSpec, ImageUpload, ProjectTab, RunState, AppSettings, CliStatus, GhItem, GitCommit, GitStatus, IdeEntry, IdeHit, MainEvent, McpServerConfig, ModelEntry, PlanWindow, PluginInfo, PluginManifest, PluginPermission, ProjectInfo, ProviderKind, TerminalInfo, TerminalKind } from './types'
+import type { AgentSpec, ImageUpload, ProjectTab, RunState, UpdateState, AppSettings, CliStatus, GhItem, GitCommit, GitStatus, IdeEntry, IdeHit, MainEvent, McpServerConfig, ModelEntry, PlanWindow, PluginInfo, PluginManifest, PluginPermission, ProjectInfo, ProviderKind, TerminalInfo, TerminalKind } from './types'
 
 /** Everything the renderer can ask of the main process. One method, one IPC channel. */
 export interface Api {
@@ -89,6 +89,11 @@ export interface Api {
   /** Sends a problem from the run to a chat ('active', 'new' or an id); resolves to the chat it went to. */
   runSend(problemId: string, to: string): Promise<string>
 
+  /** Where Multimine's own update stands; `updateCheck` looks now; `updateInstall` restarts on the downloaded version. */
+  updateState(): Promise<UpdateState>
+  updateCheck(): Promise<UpdateState>
+  updateInstall(): Promise<void>
+
   /** Shows a sample desktop notification; false when the system does not support them. */
   testNotification(): Promise<boolean>
 
@@ -110,6 +115,7 @@ export const API_METHODS: ApiMethod[] = [
   'terminalAvailable', 'terminalList', 'terminalOpen', 'terminalWrite', 'terminalResize', 'terminalClose',
   'pluginList', 'pluginPickAndInstall', 'pluginInstall', 'pluginSetEnabled', 'pluginRevoke', 'pluginRemove', 'pluginCall', 'pluginMake',
   'runInfo', 'runStart', 'runStop', 'runSend',
+  'updateState', 'updateCheck', 'updateInstall',
   'testNotification', 'openPath', 'mediaUrl'
 ]
 

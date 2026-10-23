@@ -17,8 +17,9 @@ chat with the line it broke on; every turn's file changes can be reviewed and un
 
 ## Install
 
-Download the latest build from [Releases](https://github.com/Efkrdnz/multimine/releases) (or the
-**Installers** run in the Actions tab):
+Download the latest build from [Releases](https://github.com/Efkrdnz/multimine/releases). Every
+push to the app's branch is tested, built and published there as a new version by the
+[Release workflow](.github/workflows/release.yml).
 
 - **Windows:** `Multimine-Setup-<version>.exe` installs Multimine for your user, lets you pick the
   folder, and adds it to the Start Menu and the desktop. Open it from either, like any app;
@@ -29,6 +30,12 @@ Download the latest build from [Releases](https://github.com/Efkrdnz/multimine/r
 
 The builds are not code-signed yet, so Windows SmartScreen says "Windows protected your PC": click
 **More info -> Run anyway**. On macOS, right-click the app and choose **Open** the first time.
+
+**It keeps itself up to date.** The installed app (Windows, and the Linux AppImage) looks for a new
+release when it starts and every few hours, downloads it in the background, and shows **Restart to
+update** at the top right; if you do not, it installs the next time you close Multimine. Your
+projects, chats, settings and keys are untouched. Settings -> General shows the version and has
+**Check now**. (A Mac build cannot replace itself while it is unsigned: download the new `.dmg`.)
 
 Opening Multimine again while it is running brings the open window forward.
 
@@ -199,7 +206,7 @@ npm run dist       # an installer for your OS in dist/ (electron-builder; unsign
 To get a real app from source instead of a terminal command, run `npm run dist:win` on Windows
 (`dist:mac`, `dist:linux` elsewhere): `dist/Multimine-Setup-<version>.exe` installs it with Start Menu
 and desktop shortcuts, and `dist/win-unpacked/Multimine.exe` runs as is. Each OS builds its own
-installer; the [Installers workflow](.github/workflows/installers.yml) builds all three on GitHub.
+installer; the [Release workflow](.github/workflows/release.yml) builds all three on GitHub.
 The app icon is `build/icon.svg` (rendered to `build/icon.png` and `build/icon.ico`).
 
 If npm asks about install scripts, approve esbuild once (`npm install-scripts approve esbuild`). The

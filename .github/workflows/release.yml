@@ -1,0 +1,106 @@
+name: Release
+
+# Every push to the app's branch becomes a new version: tested, built for Windows, Linux and macOS,
+# and published as a GitHub release. The installed app finds it, downloads it in the background and
+# installs it on the next restart. Run it by hand from the Actions tab too.
+on:
+  push:
+    branches: [claude/quirky-gates-ejena9, main, master]
+    paths-ignore: ['**.md', 'docs/**', '.github/ISSUE_TEMPLATE/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# one release at a time, in push order
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # a version that does not pass its tests is never released
+      - run: npm test
+      # major.minor from package.json, then the run number: every build is newer than the last
+      - id: version
+        run: echo "version=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')").${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${{ steps.version.outputs.version }}"
+          gh release create "v$V" --draft --target "${{ github.sha }}" --title "Multimine $V" \
+            --notes "$(printf 'Built from %s on %s.\n\n%s' "${{ github.sha }}" "${{ github.ref_name }}" "$(git log -1 --pretty=%B)")"
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: --win
+            files: dist/*.exe dist/*.exe.blockmap dist/latest.yml
+          - os: ubuntu-latest
+            target: --linux
+            files: dist/*.AppImage dist/latest-linux.yml
+          - os: macos-latest
+            target: --mac
+            files: dist/*.dmg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm version ${{ needs.prepare.outputs.version }} --no-git-tag-version --allow-same-version
+      - run: npm run build
+      # unsigned builds: no code-signing certificate is configured
+      - run: npx electron-builder ${{ matrix.target }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Attach to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "v${{ needs.prepare.outputs.version }}" ${{ matrix.files }} --clobber
+      - uses: actions/upload-artifact@v4
+        with:
+          name: multimine-${{ runner.os }}
+          path: dist/*.*
+          if-no-files-found: ignore
+
+  publish:
+    needs: [prepare, build]
+    # Windows is what the app updates from: publish when its files are there, even if another build failed
+    if: always() && needs.prepare.result == 'success'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      TAG: v${{ needs.prepare.outputs.version }}
+    steps:
+      - name: Publish
+        run: |
+          if ! gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name' | grep -qx 'latest.yml'; then
+            echo "The Windows build did not make it: not publishing $TAG."
+            gh release delete "$TAG" --repo "$REPO" --yes || true
+            exit 1
+          fi
+          gh release edit "$TAG" --repo "$REPO" --draft=false --latest
+      - name: Keep the last 15 releases
+        run: |
+          gh release list --repo "$REPO" --limit 100 --json tagName,isDraft --jq '.[] | select(.isDraft | not) | .tagName' \
+            | tail -n +16 | xargs -r -n1 gh release delete --repo "$REPO" --cleanup-tag --yes

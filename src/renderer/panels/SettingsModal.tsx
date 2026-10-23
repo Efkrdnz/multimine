@@ -8,6 +8,7 @@ import { api, useStore } from '../state/store'
 import { Modal } from './Modal'
 import { FallbackChain } from './FallbackChain'
 import { ProviderMark } from './ProviderMark'
+import { restartToUpdate } from './UpdatePill'
 
 const TABS = [
   ['general', 'General'],
@@ -133,12 +134,55 @@ function NewChats({ settings }: { settings: AppSettings }) {
   )
 }
 
+/** Which version this is, and its updates: found, downloading, ready to install, or checked just now. */
+function AppVersion() {
+  const u = useStore((s) => s.update)
+  const [checking, setChecking] = useState(false)
+  if (!u) return null
+  const line =
+    u.status === 'unsupported'
+      ? 'This copy does not update itself (it runs from source or a folder build). The installed app does.'
+      : u.status === 'checking' || checking
+        ? 'Looking for a new version...'
+        : u.status === 'downloading'
+          ? `Downloading ${u.version}: ${u.percent ?? 0}%`
+          : u.status === 'ready'
+            ? `${u.version} is ready: restart to use it (or it installs when you close Multimine).`
+            : u.status === 'error'
+              ? `Could not check: ${u.error}`
+              : u.status === 'none'
+                ? `Up to date${u.checkedAt ? ` (checked ${new Date(u.checkedAt).toLocaleTimeString()})` : ''}.`
+                : 'Checks for a new version at start and every few hours.'
+  return (
+    <section className="rounded-xl border border-white/10 bg-black/20 p-3" data-testid="app-version">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold">Multimine {u.current}</div>
+          <div className={`text-xs ${u.status === 'error' ? 'text-amber-200' : 'text-indigo-200/70'}`}>{line}</div>
+        </div>
+        {u.status === 'ready' ? (
+          <button className="btn btn-primary !py-1" onClick={() => void restartToUpdate()}>
+            Restart to update
+          </button>
+        ) : (
+          u.status !== 'unsupported' && (
+            <button className="btn !py-1" disabled={checking || u.status === 'downloading' || u.status === 'checking'} onClick={() => (setChecking(true), void api().updateCheck().finally(() => setChecking(false)))} data-testid="update-check">
+              Check now
+            </button>
+          )
+        )}
+      </div>
+    </section>
+  )
+}
+
 function General({ settings }: { settings: AppSettings }) {
   const eco = settings.economy
   const setEco = (patch: Partial<AppSettings['economy']>) => void api().updateSettings({ economy: { ...eco, ...patch } })
   const tierProviders = PROVIDERS.filter((p) => p !== 'mock')
   return (
     <div className="space-y-6">
+      <AppVersion />
       <NewChats settings={settings} />
       <section className="space-y-2">
         <div className="label">Economy mode</div>

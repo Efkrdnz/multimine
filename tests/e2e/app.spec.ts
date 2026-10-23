@@ -8,7 +8,7 @@ const shots = resolve(process.env.MULTIMINE_SHOTS ?? 'test-results/shots')
 mkdirSync(shots, { recursive: true })
 const shot = (page: Page, name: string) => page.screenshot({ path: join(shots, `${name}.png`) })
 
-type Chat = { id: string; name: string; provider: string; model: string; autoApprove: boolean; planMode: boolean; mcp: string[] }
+type Chat = { id: string; name: string; provider: string; model: string; autoApprove: boolean; planMode: boolean; coop: boolean; mcp: string[] }
 
 test('Multimine runs end to end on the mock provider', async () => {
   const root = mkdtempSync(join(tmpdir(), 'mm-e2e-'))
@@ -96,6 +96,23 @@ test('Multimine runs end to end on the mock provider', async () => {
   await expect.poll(() => chatFile(first.id).autoApprove, { timeout: 10_000 }).toBe(true)
   await panel.getByTestId('composer-access').selectOption('supervised')
   await expect.poll(() => chatFile(first.id).autoApprove, { timeout: 10_000 }).toBe(false)
+
+  // plan and coop: chat settings in the composer, or one message with /plan and /coop
+  await panel.getByTestId('composer-plan').click()
+  await expect.poll(() => chatFile(first.id).planMode, { timeout: 10_000 }).toBe(true)
+  await expect(panel.getByTestId('composer-plan')).toHaveText(/Plan on/)
+  await panel.getByTestId('composer-plan').click()
+  await expect.poll(() => chatFile(first.id).planMode, { timeout: 10_000 }).toBe(false)
+  await panel.getByTestId('composer-coop').click()
+  await expect.poll(() => chatFile(first.id).coop, { timeout: 10_000 }).toBe(true)
+  await panel.getByTestId('composer-coop').click()
+  await expect.poll(() => chatFile(first.id).coop, { timeout: 10_000 }).toBe(false)
+  await input.fill('/co')
+  await expect(panel.getByText('work on this message together')).toBeVisible()
+  await say('/coop Sketch the spell menu with me')
+  await expect(panel.getByTestId('message-modes').last()).toHaveText(/Coop/)
+  await expect(panel).toContainText('Sketch the spell menu with me')
+  await expect.poll(chatText, { timeout: 10_000 }).toContain('"modes":{"coop":true}')
 
   // Quick runs one message on the light tier of the chat's provider (or at least at a lower effort)
   await page.evaluate(async () => {
@@ -785,10 +802,16 @@ test('Multimine runs end to end on the mock provider', async () => {
   const iceRow = book.getByTestId('idea-row').filter({ hasText: 'Ice lance' })
   await iceRow.hover()
   await iceRow.getByTestId('idea-work').click()
+  // planned first: the chat hands in a plan to approve before it builds
+  await iceRow.getByTestId('idea-how-plan').click()
+  await expect(iceRow.getByTestId('idea-how-plan')).toHaveAttribute('aria-checked', 'true')
+  await page.waitForTimeout(300)
+  await shot(page, '28i-idea-work')
   await iceRow.getByTestId('idea-work-go').click()
   await expect(iceRow.getByTestId('idea-work-chat')).toBeVisible({ timeout: 10_000 })
   const worker = (await chats()).find((c) => c.name.startsWith('Idea Book:'))!
   await expect.poll(() => readFileSync(join(project, '.multimine', 'chats', worker.id, 'messages.jsonl'), 'utf8'), { timeout: 10_000 }).toContain('# Idea: Ice lance')
+  expect(readFileSync(join(project, '.multimine', 'chats', worker.id, 'messages.jsonl'), 'utf8')).toContain('"modes":{"plan":true}')
   await book.getByTestId('idea-side-toggle').click()
   await expect.poll(() => JSON.parse(readFileSync(join(project, '.multimine', 'ideas.json'), 'utf8')).sideIdeas, { timeout: 5_000 }).toBe(true)
   const ideaFile = JSON.parse(readFileSync(join(project, '.multimine', 'ideas.json'), 'utf8'))

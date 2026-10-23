@@ -32,7 +32,7 @@ export function ChatSettings({ agent }: { agent: AgentSpec }) {
   const pickProvider = (provider: AgentSpec['provider']) => {
     const list = settings?.catalog[provider] ?? DEFAULT_CATALOG[provider]
     const keep = list.some((m) => m.id === a.model)
-    patch({ provider, model: keep ? a.model : (list[0]?.id ?? ''), effort: clampEffort(provider, a.effort), planMode: provider === 'claude-cli' ? a.planMode : false })
+    patch({ provider, model: keep ? a.model : (list[0]?.id ?? ''), effort: clampEffort(provider, a.effort) })
   }
 
   const save = async () => {
@@ -139,8 +139,19 @@ export function ChatSettings({ agent }: { agent: AgentSpec }) {
                   <span className="block text-[11px] text-indigo-300/70">{a.autoApprove ? 'Never stops to ask; pushing and destructive commands still ask.' : 'Each command, edit or tool use pops up for you to allow.'}</span>
                 </span>
               </label>
-              <label className={`flex items-center gap-2 text-sm ${a.provider !== 'claude-cli' ? 'opacity-40' : ''}`}>
-                <input type="checkbox" disabled={a.provider !== 'claude-cli'} checked={a.planMode} onChange={(e) => patch({ planMode: e.target.checked })} /> Plan mode (Claude): plans and asks before acting
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" className="mt-1" checked={a.planMode} onChange={(e) => patch({ planMode: e.target.checked })} data-testid="agent-plan" />
+                <span>
+                  Plan mode
+                  <span className="block text-[11px] text-indigo-300/70">{a.provider === 'claude-cli' ? "Claude Code's own plan mode: it" : 'It looks (read only), then'} hands you a plan to approve before it changes anything. /plan does it for one message.</span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" className="mt-1" checked={a.coop} onChange={(e) => patch({ coop: e.target.checked })} data-testid="agent-coop" />
+                <span>
+                  Coop mode
+                  <span className="block text-[11px] text-indigo-300/70">Works on it with you: asks you questions in rounds about the goal, the trade-offs and your taste before and while it builds. /coop does it for one message.</span>
+                </span>
               </label>
             </div>
 

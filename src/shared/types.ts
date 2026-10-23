@@ -1,4 +1,5 @@
 import type { Crash } from './run/crash'
+import type { MessageModes } from './modes'
 // Everything that crosses the IPC boundary or lands on disk is described here.
 
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
@@ -37,8 +38,10 @@ export interface AgentSpec {
   permissions: Permission
   /** External MCP server ids this chat may use. */
   mcp: string[]
-  /** Claude CLI only: start every turn in plan mode. */
+  /** Every turn starts in plan mode: it plans and asks the user to approve before it changes anything. */
   planMode: boolean
+  /** Coop: it works with the user as a partner, asking them about everything that shapes the result. */
+  coop: boolean
   /** Where this chat continues when its provider is out of usage, in order. Empty: the default chain. */
   fallback: FallbackHop[]
   /** Switch onto a pay-per-use API key without asking first. */
@@ -152,6 +155,8 @@ export interface ChatMessage {
   usage?: Usage
   /** A slash command the user typed (`/table ...`, `/plugin ...`): the text stays as typed, the turn gets the command's prompt. */
   command?: 'table' | 'plugin' | 'idea'
+  /** `/plan`, `/coop` (or a tool asking for them): this message's own modes, over the chat's. */
+  modes?: MessageModes
   /** A table a chat saved, shown as a card in the chat. */
   table?: TableCard
   /** Ideas a chat saved to the Idea Book for the user to review, shown as a card. */

@@ -1,6 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { PLUGIN_API_VERSION, type AgentSpec, type MainEvent, type MediaItem, type PluginInfo, type PluginPermission } from '@shared/types'
+import type { MessageModes } from '@shared/modes'
 import { insideProject } from '../chat/workspace'
 import { list as listDir } from '../ide/fs'
 import { MediaStore } from '../media/capture'
@@ -38,7 +39,7 @@ export interface PluginContext {
    * Hands a message from a tool to a chat (an id, 'active' or 'new'), shown as coming from the
    * tool. A new chat may start with some of the user's MCP servers on. Returns the chat it went to.
    */
-  send(pluginId: string, pluginName: string, to: string, text: string, opts?: { mcp?: string[]; planMode?: boolean }): Promise<string>
+  send(pluginId: string, pluginName: string, to: string, text: string, opts?: { mcp?: string[]; modes?: MessageModes }): Promise<string>
   addMedia(item: MediaItem): Promise<void>
   media(): MediaItem[]
   emit(e: MainEvent): void
@@ -47,12 +48,16 @@ export interface PluginContext {
 
 export class PluginRefused extends Error {}
 
-/** A send's options, as far as they can be trusted: for a chat it starts, MCP server ids and plan mode. */
-function sendOptions(raw: unknown): { mcp?: string[]; planMode?: boolean } {
-  const o = raw && typeof raw === 'object' ? (raw as { mcp?: unknown; planMode?: unknown }) : {}
+/**
+ * A send's options, as far as they can be trusted: MCP server ids for a chat it starts, and plan or
+ * coop for the message (`planMode` is api 2's name for plan).
+ */
+function sendOptions(raw: unknown): { mcp?: string[]; modes?: MessageModes } {
+  const o = raw && typeof raw === 'object' ? (raw as { mcp?: unknown; plan?: unknown; planMode?: unknown; coop?: unknown }) : {}
+  const modes: MessageModes = { ...(o.plan === true || o.planMode === true ? { plan: true } : {}), ...(o.coop === true ? { coop: true } : {}) }
   return {
     ...(Array.isArray(o.mcp) ? { mcp: o.mcp.filter((m): m is string => typeof m === 'string').slice(0, 20) } : {}),
-    ...(o.planMode === true ? { planMode: true } : {})
+    ...(Object.keys(modes).length ? { modes } : {})
   }
 }
 

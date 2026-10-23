@@ -289,7 +289,7 @@ export function LogicBoard({ plugin }: { plugin: PluginInfo }) {
       const dir = boardDir(board)
       await call('files.write', `${dir}/board.json`, JSON.stringify(board, null, 2))
       await call('files.write', `${dir}/spec.md`, `${spec(board)}\n`)
-      const sent = await call<Sent>('task', dest, title, task, { planMode: planFirst })
+      const sent = await call<Sent>('task', dest, title, task, { plan: planFirst })
       await call('storage.set', `chat:${boardFolder(board)}`, sent.chatId)
       setTo(sent.chatId)
       await call('files.write', `${dir}/built.json`, JSON.stringify(board, null, 2))
@@ -389,7 +389,7 @@ export function LogicBoard({ plugin }: { plugin: PluginInfo }) {
               <ChatTarget chats={chats} value={to} onChange={setTo} testId="lb-to" className="!w-36" />
             </label>
             {to === 'new' && (
-              <label className="flex shrink-0 items-center gap-1 text-[11px] text-indigo-200/80" title="The new chat starts in plan mode (Claude): it plans first and asks you to approve before it changes anything">
+              <label className="flex shrink-0 items-center gap-1 text-[11px] text-indigo-200/80" title="It plans first and asks you to approve the plan before it changes anything">
                 <input type="checkbox" checked={planFirst} onChange={(e) => setPlanFirst(e.target.checked)} data-testid="lb-plan-first" /> Plan first
               </label>
             )}

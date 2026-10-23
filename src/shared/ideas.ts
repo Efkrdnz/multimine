@@ -86,9 +86,18 @@ export function ideaCommandPrompt(request: string, existing: string[]): string {
     .join('\n')
 }
 
-/** The message that sends an idea to a chat to work on. */
-export function workPrompt(idea: Pick<Idea, 'title' | 'details' | 'tags'>): string {
-  return [`# Idea: ${idea.title}`, '', idea.details ?? '', idea.tags?.length ? `Tags: ${idea.tags.join(', ')}` : '', '', 'Work on this idea from the Idea Book: plan it briefly, then build it. Ask if something about it is unclear.']
+/** How an idea is worked on: built right away, planned for the user to approve first, or worked out together. */
+export type WorkHow = 'build' | 'plan' | 'coop'
+
+const WORK_ASK: Record<WorkHow, string> = {
+  build: 'Work on this idea from the Idea Book: plan it briefly, then build it. Ask if something about it is unclear.',
+  plan: 'Work on this idea from the Idea Book: plan how to build it, for the user to approve.',
+  coop: 'Work on this idea from the Idea Book together with the user: work out what it should be with them, then build it.'
+}
+
+/** The message that sends an idea to a chat to work on (the plan and coop modes go with it as send options). */
+export function workPrompt(idea: Pick<Idea, 'title' | 'details' | 'tags'>, how: WorkHow = 'build'): string {
+  return [`# Idea: ${idea.title}`, '', idea.details ?? '', idea.tags?.length ? `Tags: ${idea.tags.join(', ')}` : '', '', WORK_ASK[how]]
     .filter((l, i, all) => l || (all[i - 1] ?? '') !== '')
     .join('\n')
     .trim()

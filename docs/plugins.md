@@ -90,7 +90,7 @@ message when a permission is missing.
   const { chatId } = await multimine.send('active', 'Hello!')  // to the chat on screen
   await multimine.send('new', '# Tidy the build\n\nDetails...') // starts a chat named after the first line
   await multimine.send(chatId, 'And one more thing')            // continues that chat's conversation
-  await multimine.task('new', 'Build the inventory', 'the brief', { planMode: true })
+  await multimine.task('new', 'Build the inventory', 'the brief', { plan: true })
   const text = await multimine.files.read('README.md') // 'base64' as a second argument for binary
   await multimine.files.write('notes/todo.md', '# Todo')
   await multimine.files.remove('notes/old.md')       // a file, never a folder
@@ -113,12 +113,14 @@ follow-ups to the same conversation.
 
 - `task(to, title, text)` is `send` with the title as the message's first line (`# title`).
 - A new chat is named after the first line of the message: `My Tool: Build the inventory`.
-- `options` apply only to a chat the call starts:
-  - `mcp`: MCP server ids it starts with switched on - only servers the user has set up in Settings
-    count, anything else is ignored. The Asset Board uses this to start a chat with its image and 3D
-    generators.
-  - `planMode: true`: it plans first and asks the user to approve before changing anything (Claude
-    chats; other providers ignore it).
+- `options` (the last argument of either):
+  - `plan: true`: for this message, the chat plans first and asks the user to approve the plan
+    before changing anything, on any provider (`planMode: true`, its old name, still works).
+  - `coop: true`: for this message, the chat works it out with the user, asking them questions in
+    rounds about everything that shapes the result.
+  - `mcp`, only for a chat the call starts: MCP server ids it starts with switched on - only servers
+    the user has set up in Settings count, anything else is ignored. The Asset Board uses this to
+    start a chat with its image and 3D generators.
 
 Pick a sensible default and let the user choose: the built-in tools default to a new chat for a
 build (so a long job does not clutter the conversation on screen) and send follow-ups back to the

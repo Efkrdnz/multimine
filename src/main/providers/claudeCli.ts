@@ -287,6 +287,8 @@ export class ClaudeCliProvider implements ProviderAdapter {
       this.close(s)
       s = undefined
     }
+    // a warm process left plan mode when its last plan was approved: a plan-mode turn goes back into it
+    if (s && req.agent.planMode) await Promise.resolve(s.q?.setPermissionMode?.('plan')).catch(() => undefined)
     if (!s) {
       try {
         s = this.open(key, req, draft)

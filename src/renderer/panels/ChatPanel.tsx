@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Boxes, Check, ImagePlus, PenTool, Send, Square, Table2, Workflow, Zap } from 'lucide-react'
+import { Boxes, Check, ImagePlus, ListChecks, PenTool, Send, Square, Table2, Users, Workflow, Zap } from 'lucide-react'
 import { modelLabel, needsKey } from '@shared/catalog'
 import { PROVIDER_NAME, providerLocked } from '@shared/chat'
 import { downshift } from '@shared/economy'
@@ -104,14 +104,30 @@ function ComposerBar({ agent }: { agent: AgentSpec }) {
           </select>
         </>
       )}
-      {agent.provider === 'claude-cli' && (
+      {agent.permissions !== 'chat' && (
         <>
           <Dot />
-          <button className={`${pick} ${agent.planMode ? '!text-sky-200' : ''}`} onClick={() => save({ planMode: !agent.planMode })} title="Plan mode: it plans and asks you to approve before it changes anything" data-testid="composer-plan">
-            {agent.planMode ? 'Plan mode on' : 'Plan mode off'}
+          <button
+            className={`${pick} inline-flex items-center gap-1 ${agent.planMode ? '!text-sky-200' : ''}`}
+            onClick={() => save({ planMode: !agent.planMode })}
+            title={`Plan mode${agent.planMode ? ' is on' : ''}: every message, it looks first and hands you a plan to approve before it changes anything. For one message only, start it with /plan.`}
+            aria-pressed={agent.planMode}
+            data-testid="composer-plan"
+          >
+            <ListChecks size={11} /> {agent.planMode ? 'Plan on' : 'Plan'}
           </button>
         </>
       )}
+      <Dot />
+      <button
+        className={`${pick} inline-flex items-center gap-1 ${agent.coop ? '!text-amber-200' : ''}`}
+        onClick={() => save({ coop: !agent.coop })}
+        title={`Coop mode${agent.coop ? ' is on' : ''}: it works on it with you, asking you questions in rounds about everything that shapes the result. For one message only, start it with /coop.`}
+        aria-pressed={agent.coop}
+        data-testid="composer-coop"
+      >
+        <Users size={11} /> {agent.coop ? 'Coop on' : 'Coop'}
+      </button>
       <ContextMeter agent={agent} />
     </div>
   )
@@ -212,7 +228,9 @@ function EmptyChat({ agent }: { agent: AgentSpec }) {
 const COMMANDS = [
   { cmd: '/table', hint: 'make or change a table from a description - linked to the code, kept in the Tables tool' },
   { cmd: '/plugin', hint: 'make a tool from a description - the chat writes it, checks it and installs it under Tools' },
-  { cmd: '/idea', hint: 'brainstorm ideas about something - they go to the Idea Book for you to keep or dismiss' }
+  { cmd: '/idea', hint: 'brainstorm ideas about something - they go to the Idea Book for you to keep or dismiss' },
+  { cmd: '/plan', hint: 'plan this message first - it hands you a plan to approve before it changes anything' },
+  { cmd: '/coop', hint: 'work on this message together - it asks you questions in rounds as it goes' }
 ]
 
 /** What this chat is waiting on the user for, answered right here. */

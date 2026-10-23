@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Check, ChevronRight, Lightbulb, MessageSquare, Plus, Search, Send, Sparkles, Trash2, X } from 'lucide-react'
+import { Check, ChevronRight, Hammer, Lightbulb, ListChecks, MessageSquare, Plus, Search, Send, Sparkles, Trash2, Users, X } from 'lucide-react'
 import type { PluginInfo } from '@shared/types'
 import { newId } from '@shared/ids'
-import { bookJson, EMPTY_BOOK, IDEAS_PATH, parseBook, workPrompt, type Idea, type IdeaBook as Book } from '@shared/ideas'
+import { bookJson, EMPTY_BOOK, IDEAS_PATH, parseBook, workPrompt, type Idea, type IdeaBook as Book, type WorkHow } from '@shared/ideas'
 import { useStore } from '../../state/store'
 import { errText, usePluginApi, type PluginCall } from '../pluginApi'
 import { ChatTarget, chatLabel, useChats, type ChatChoice, type Sent } from '../ChatTarget'
@@ -49,6 +49,35 @@ function SendTo({ chats, label, testId, onSend, onClose, children }: { chats: Ch
   )
 }
 
+const HOW: { id: WorkHow; label: string; icon: React.ReactNode; help: string }[] = [
+  { id: 'build', label: 'Build now', icon: <Hammer size={11} />, help: 'It plans briefly and builds it right away.' },
+  { id: 'plan', label: 'Plan first', icon: <ListChecks size={11} />, help: 'It looks, then hands you a plan to approve before it changes anything.' },
+  { id: 'coop', label: 'Coop', icon: <Users size={11} />, help: 'You work it out together: it asks you questions in rounds, then builds it.' }
+]
+
+/** How the idea is worked on, as three small toggles. */
+function HowPicker({ value, onChange }: { value: WorkHow; onChange: (h: WorkHow) => void }) {
+  return (
+    <div className="space-y-1">
+      <div className="flex gap-1 rounded-lg bg-black/25 p-0.5" role="radiogroup" data-testid="idea-how">
+        {HOW.map((h) => (
+          <button
+            key={h.id}
+            role="radio"
+            aria-checked={value === h.id}
+            className={`flex flex-1 items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[11px] ${value === h.id ? 'bg-indigo-500/40 text-white shadow' : 'text-indigo-200/70 hover:bg-white/5 hover:text-indigo-50'}`}
+            onClick={() => onChange(h.id)}
+            data-testid={`idea-how-${h.id}`}
+          >
+            {h.icon} {h.label}
+          </button>
+        ))}
+      </div>
+      <div className="text-[10.5px] text-indigo-300/70">{HOW.find((h) => h.id === value)?.help}</div>
+    </div>
+  )
+}
+
 /** One idea the chats proposed, waiting for a decision. */
 function Proposal({ idea, onKeep, onDismiss }: { idea: Idea; onKeep: () => void; onDismiss: () => void }) {
   return (
@@ -81,9 +110,10 @@ function Proposal({ idea, onKeep, onDismiss }: { idea: Idea; onKeep: () => void;
 }
 
 /** One idea in the book: check it off, open it to edit, send it to a chat. */
-function Row({ idea, chats, onChange, onRemove, onWork }: { idea: Idea; chats: ChatChoice[]; onChange: (patch: Partial<Idea>) => void; onRemove: () => void; onWork: (to: string) => void }) {
+function Row({ idea, chats, onChange, onRemove, onWork }: { idea: Idea; chats: ChatChoice[]; onChange: (patch: Partial<Idea>) => void; onRemove: () => void; onWork: (to: string, how: WorkHow) => void }) {
   const [open, setOpen] = useState(false)
   const [sending, setSending] = useState(false)
+  const [how, setHow] = useState<WorkHow>('build')
   const [title, setTitle] = useState(idea.title)
   const [details, setDetails] = useState(idea.details ?? '')
   const [tags, setTags] = useState((idea.tags ?? []).join(', '))
@@ -131,8 +161,9 @@ function Row({ idea, chats, onChange, onRemove, onWork }: { idea: Idea; chats: C
               <Send size={11} /> Work on it
             </button>
             {sending && (
-              <SendTo chats={chats} label="Send" testId="idea-work" onClose={() => setSending(false)} onSend={(to) => (setSending(false), onWork(to))}>
-                <div className="text-[11.5px] text-indigo-200/80">Send "{idea.title}" to a chat to plan and build it.</div>
+              <SendTo chats={chats} label="Send" testId="idea-work" onClose={() => setSending(false)} onSend={(to) => (setSending(false), onWork(to, how))}>
+                <div className="text-[11.5px] text-indigo-200/80">Send "{idea.title}" to a chat to work on.</div>
+                <HowPicker value={how} onChange={setHow} />
               </SendTo>
             )}
           </div>
@@ -198,9 +229,9 @@ export function IdeaBook({ plugin }: { plugin: PluginInfo }) {
     void mutate((b) => b.ideas.unshift({ id: newId('idea'), title, status: 'open', from: 'you', created: Date.now() }))
   }
 
-  const send = async (to: string, text: string, done: string): Promise<string | null> => {
+  const send = async (to: string, text: string, done: string, how: WorkHow = 'build'): Promise<string | null> => {
     try {
-      const sent = await call<Sent>('send', to, text)
+      const sent = await call<Sent>('send', to, text, how === 'build' ? undefined : { [how]: true })
       toast('info', `${done} - ${chatLabel(chats, to, sent)}`)
       return sent.chatId
     } catch (e) {
@@ -318,7 +349,7 @@ export function IdeaBook({ plugin }: { plugin: PluginInfo }) {
                     chats={chats}
                     onChange={(p) => patch(i.id, p)}
                     onRemove={() => window.confirm(`Delete "${i.title}"?`) && void mutate((b) => (b.ideas = b.ideas.filter((x) => x.id !== i.id)))}
-                    onWork={(to) => void send(to, workPrompt(i), `Sent "${i.title}"`).then((chatId) => chatId && patch(i.id, { workChatId: chatId }))}
+                    onWork={(to, how) => void send(to, workPrompt(i, how), `Sent "${i.title}"`, how).then((chatId) => chatId && patch(i.id, { workChatId: chatId }))}
                   />
                 ))}
               </div>

@@ -12,6 +12,7 @@ import { contextSection, tableCommandPrompt } from '@shared/tables/prompt'
 import { TableStore } from '../store/tables'
 import { IdeaStore } from '../store/ideas'
 import { SIDE_IDEAS_RULE, ideaCommandPrompt } from '@shared/ideas'
+import { COOP_RULES, PLAN_RULES, goAheadPrompt, parseModes, turnModes, type MessageModes, type TurnModes } from '@shared/modes'
 import { Checkpoints } from './checkpoints'
 import { attachmentNote, loadImages, stageUploads, type TurnImage } from '../media/attachments'
 import { parsePluginCommand, pluginChatName, pluginMakerPrompt } from '@shared/pluginMaker'
@@ -81,6 +82,8 @@ export interface SendOptions {
   temp?: TempModel | null
   /** Images attached to the message. */
   images?: ImageUpload[]
+  /** Plan or coop for this message only (`/plan` and `/coop` typed at its start do the same). */
+  modes?: MessageModes
 }
 
 const text = (t: string, isError = false): ToolOutput => ({ text: t, isError })
@@ -152,6 +155,10 @@ export class Engine {
   private writing = new Map<string, Promise<void>>()
   /** The images of each running turn, for every provider it runs on. */
   private turnImages = new Map<string, TurnImage[]>()
+  /** Chats planning this turn through present_plan (a provider without a plan mode of its own). */
+  private planning = new Set<string>()
+  /** Plans approved during the running turn: the go-ahead follows it. */
+  private approvedPlans = new Map<string, { note?: string }>()
   /** What the user undid since a chat's last turn: told to it with its next message. */
   private undoNotes = new Map<string, string[]>()
   /** Snapshots around every turn, for the changes under a reply and Undo. */
@@ -387,11 +394,25 @@ export class Engine {
   send(agentId: string, body: string, from = 'user', opts: SendOptions = {}): Promise<TurnResult> {
     // the incoming message is shown at once, even while the chat is still busy with an earlier turn
     const chat = this.d.project.get(agentId)
+    // `/plan` and `/coop` come off the message and stay with it as its modes
+    const parsed = parseModes(body)
+    body = parsed.text
+    const modes: MessageModes = { ...parsed.modes, ...opts.modes }
     // `/table ...` (typed, or sent by the Tables tool) stays in the chat as written; its turn gets the table instructions
     const command = (/^\/(table|plugin|idea)(\s|$)/.exec(body.trimStart())?.[1] as ChatMessage['command']) ?? undefined
     const prompt = from === 'user' || command ? body : toolPrompt(from.replace(/^tool:/, ''), body)
     const staged = opts.images?.length ? stageUploads(this.d.project.dir, opts.images) : null
-    const userMsg: ChatMessage = { id: newId('u'), agentId, role: 'user', from, text: prompt, ts: Date.now(), ...(command ? { command } : {}), ...(staged?.attachments.length ? { attachments: staged.attachments } : {}) }
+    const userMsg: ChatMessage = {
+      id: newId('u'),
+      agentId,
+      role: 'user',
+      from,
+      text: prompt,
+      ts: Date.now(),
+      ...(command ? { command } : {}),
+      ...(Object.keys(modes).length ? { modes } : {}),
+      ...(staged?.attachments.length ? { attachments: staged.attachments } : {})
+    }
     if (staged) this.writing.set(userMsg.id, staged.written.catch(() => undefined))
     if (chat) {
       this.upsert(userMsg, true)
@@ -400,7 +421,7 @@ export class Engine {
         .then(() => this.touch(agentId))
         .catch(() => undefined)
     }
-    return this.enqueue(agentId, userMsg, chat ? this.cheaperFor(chat, body, from, opts) : Promise.resolve(null))
+    return this.enqueue(agentId, userMsg, chat ? this.cheaperFor(chat, body, from, { ...opts, modes }) : Promise.resolve(null))
   }
 
   /**
@@ -411,8 +432,10 @@ export class Engine {
     const eco = this.d.config.settings.economy
     if (opts.temp !== undefined) return Promise.resolve(opts.temp)
     if (opts.quick) return Promise.resolve(downshift(chat, 'light', eco))
-    // building a table reads code and writes careful JSON: never a light job
-    if (eco.enabled && eco.autoRate && from === 'user' && !/^\/(table|plugin|idea)(\s|$)/.test(body.trimStart())) return this.rate(chat, body).then((r) => downshift(chat, r, eco))
+    // building a table reads code and writes careful JSON, and planning together is thinking: never a light job
+    const planning = opts.modes?.plan ?? chat.planMode
+    const together = opts.modes?.coop ?? chat.coop
+    if (eco.enabled && eco.autoRate && from === 'user' && !planning && !together && !/^\/(table|plugin|idea)(\s|$)/.test(body.trimStart())) return this.rate(chat, body).then((r) => downshift(chat, r, eco))
     return Promise.resolve(null)
   }
 
@@ -541,6 +564,7 @@ export class Engine {
     if (!own) return { text: '', error: `No chat ${agentId}` }
     // a cheaper turn runs on that model for this turn only; the chat's own settings are untouched
     const agent: AgentSpec = temp ? { ...own, model: temp.model, effort: temp.effort } : own
+    const modes = turnModes(own, userMsg)
     if (temp) this.temps.set(agentId, temp)
     else this.temps.delete(agentId)
     const asked =
@@ -599,7 +623,9 @@ export class Engine {
     try {
       for (;;) {
         const hop = hops[i]
-        const hopAgent: AgentSpec = { ...agent, provider: hop.provider, model: hop.model, effort: hop.effort }
+        const hopAgent = withModes({ ...agent, provider: hop.provider, model: hop.model, effort: hop.effort }, modes)
+        if (emulatesPlan(hopAgent, modes)) this.planning.add(agentId)
+        else this.planning.delete(agentId)
         if (i > 0) {
           const why = continuing ? `${this.label(hops[i - 1])} ran out` : `${this.label(hops[0])} is ${this.health.get(hops[0].provider)?.state === 'near' ? 'near its limit' : 'out of usage'}`
           this.fallbacks.set(agentId, { provider: hop.provider, model: hop.model, reason: why })
@@ -658,7 +684,10 @@ export class Engine {
       this.temps.delete(agentId)
       this.fallbacks.delete(agentId)
       this.turnImages.delete(agentId)
+      this.planning.delete(agentId)
     }
+    const approved = this.approvedPlans.get(agentId)
+    this.approvedPlans.delete(agentId)
     if (ctl.signal.aborted && (!error || this.stopReasons.has(agentId))) error = this.stopReasons.get(agentId) ?? 'Stopped.'
     this.stopReasons.delete(agentId)
     reply.streaming = false
@@ -675,8 +704,18 @@ export class Engine {
       this.upsert(reply, true)
       await this.persist(reply)
       this.setStatus(agentId, error && !/^Stopped/.test(error) ? 'error' : 'idle')
+      // a plan approved through present_plan: the go-ahead is the next message, out of plan mode
+      if (approved && !error) void this.goAhead(agentId, approved.note, modes).catch(() => undefined)
     }
     return { text: reply.text, error }
+  }
+
+  /** The message that follows a plan the user approved: carry it out, in the same coop mode as the plan. */
+  private goAhead(agentId: string, note: string | undefined, planned: TurnModes): Promise<TurnResult> {
+    const msg: ChatMessage = { id: newId('u'), agentId, role: 'user', from: 'user', text: goAheadPrompt(note), ts: Date.now(), modes: { plan: false, coop: planned.coop } }
+    this.upsert(msg, true)
+    void this.persist(msg).catch(() => undefined)
+    return this.enqueue(agentId, msg)
   }
 
   /** The prompt for `/plugin ...`: make (or change) a tool, following the plugin guide. */
@@ -908,12 +947,22 @@ export class Engine {
 
   /**
    * Every chat's system prompt: Multimine's own, the tables switched on as context, the side-ideas
-   * rule while that is on (a chat that cannot act adds nothing), economy's rules.
+   * rule while that is on (a chat that cannot act adds nothing), coop's and (where Multimine stands
+   * in for the provider's own) plan mode's rules for this turn, economy's rules.
    */
   systemPrompt(agent: AgentSpec, tables: Table[] = [], sideIdeas = false): string {
     const eco = this.d.config.settings.economy
     const base = buildSystemPrompt({ agent, projectDir: this.d.project.dir, multimineMd: this.d.project.multimineMd })
-    return [base, contextSection(tables), sideIdeas && agent.permissions !== 'chat' ? SIDE_IDEAS_RULE : '', eco.enabled && eco.concise ? CONCISE_RULES : ''].filter(Boolean).join('\n\n')
+    return [
+      base,
+      contextSection(tables),
+      sideIdeas && agent.permissions !== 'chat' ? SIDE_IDEAS_RULE : '',
+      agent.coop ? COOP_RULES : '',
+      this.planning.has(agent.id) ? PLAN_RULES : '',
+      eco.enabled && eco.concise ? CONCISE_RULES : ''
+    ]
+      .filter(Boolean)
+      .join('\n\n')
   }
 
   /** A chat's ideas, filed in the Idea Book for the user to review, with a card in the chat saying so. */
@@ -968,7 +1017,7 @@ export class Engine {
    * one on screen) or 'new'. A new chat can be started with MCP servers on (the Asset Board's
    * generators), but only servers the user has set up in Settings. Returns the chat it went to.
    */
-  async fromTool(toolName: string, to: string, body: string, active?: string, opts: { mcp?: string[]; planMode?: boolean } = {}): Promise<string> {
+  async fromTool(toolName: string, to: string, body: string, active?: string, opts: { mcp?: string[]; modes?: MessageModes } = {}): Promise<string> {
     let id = to === 'active' ? active : to === 'new' ? undefined : to
     if (id && !this.d.project.get(id)) {
       if (to !== 'active') throw new Error(`No chat ${to}`)
@@ -978,11 +1027,9 @@ export class Engine {
       const name = body.split('\n').find((l) => l.trim() && !/^#+\s*$/.test(l))?.replace(/^#+\s*/, '').replace(/^\/(table|plugin|idea)\s*/, '').trim()
       const mcp = (opts.mcp ?? []).filter((m) => this.d.config.settings.mcpServers.some((s) => s.id === m))
       const chat = await this.createChat({ name: clipTo(name ? `${toolName}: ${name}` : toolName, 48), mcp })
-      // plan mode is Claude's: for any other provider there is nothing to switch on
-      if (opts.planMode && chat.provider === 'claude-cli') await this.saveChat({ ...chat, planMode: true })
       id = chat.id
     }
-    void this.send(id, body, `tool:${toolName}`).catch(() => undefined)
+    void this.send(id, body, `tool:${toolName}`, opts.modes ? { modes: opts.modes } : {}).catch(() => undefined)
     return id
   }
 
@@ -1026,7 +1073,7 @@ export class Engine {
     const ctl = new AbortController()
     let out = ''
     for await (const ev of this.d.providers.get(agent.provider).run({
-      agent: { ...agent, planMode: false, permissions: agent.provider === 'claude-cli' ? 'chat' : agent.permissions },
+      agent: { ...agent, planMode: false, coop: false, permissions: agent.provider === 'claude-cli' ? 'chat' : agent.permissions },
       system,
       history: [],
       prompt,
@@ -1192,6 +1239,21 @@ export class Engine {
         shape: { questions: z.array(question).min(1).max(4) },
         handler: async (a) => text(formatAnswers(await this.askUser(me, a.questions as Question[])))
       },
+      ...(this.planning.has(me)
+        ? [
+            {
+              name: 'present_plan',
+              description: 'Plan mode: hand in your plan (markdown) for the user to approve. Blocks until they answer. Approved: stop, the go-ahead comes next. Not approved: revise it with their feedback and present it again.',
+              shape: { plan: z.string().describe('The goal, the steps, the files you will change, the risks, how you will check it works') },
+              handler: async (a: Record<string, unknown>) => {
+                const item = await this.requestApproval(me, `${this.d.project.get(me)?.name ?? agent.name}: approve this plan?`, String(a.plan ?? ''))
+                if (!item.approved) return text(`Not approved.${item.note ? ` The user says: ${item.note}` : ''} Revise the plan and call present_plan again.`, true)
+                this.approvedPlans.set(me, { note: item.note })
+                return text('APPROVED. Stop here and reply in one line; the go-ahead comes as the next message.')
+              }
+            } satisfies ToolDef
+          ]
+        : []),
       {
         name: 'request_permission',
         description:
@@ -1220,6 +1282,18 @@ export class Engine {
     ]
   }
 }
+
+/**
+ * A turn's agent in its modes. Claude plans in its own plan mode; any other provider (that can act at
+ * all) plans read-only, handing the plan in through present_plan.
+ */
+export function withModes(agent: AgentSpec, m: TurnModes): AgentSpec {
+  const native = agent.provider === 'claude-cli'
+  return { ...agent, planMode: m.plan && native, coop: m.coop, ...(emulatesPlan(agent, m) && agent.permissions === 'write' ? { permissions: 'read' as const } : {}) }
+}
+
+/** Whether Multimine stands in for the provider's plan mode this turn. */
+const emulatesPlan = (agent: AgentSpec, m: TurnModes) => m.plan && agent.provider !== 'claude-cli' && agent.permissions !== 'chat'
 
 const clipTo = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 

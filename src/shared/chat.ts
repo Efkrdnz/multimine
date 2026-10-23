@@ -10,7 +10,7 @@ export const MOCK_DEFAULTS: ChatDefaults = { provider: 'mock', model: 'mock', ef
 /** A new chat on the given defaults; `patch` wins over both. */
 export function newChat(id: string, defaults: ChatDefaults, patch: Partial<AgentSpec> = {}): AgentSpec {
   const now = Date.now()
-  return { id, name: DEFAULT_CHAT_NAME, ...defaults, mcp: [], planMode: false, fallback: [], fallbackPaidOk: false, created: now, updated: now, ...patch }
+  return { id, name: DEFAULT_CHAT_NAME, ...defaults, mcp: [], planMode: false, coop: false, fallback: [], fallbackPaidOk: false, created: now, updated: now, ...patch }
 }
 
 function pick<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -30,6 +30,7 @@ export function parseChat(id: string, raw: unknown): AgentSpec {
     permissions: pick<Permission>(m.permissions, PERMISSIONS, 'write'),
     mcp: Array.isArray(m.mcp) ? m.mcp.filter((x): x is string => typeof x === 'string') : [],
     planMode: m.planMode === true,
+    coop: m.coop === true,
     autoApprove: m.autoApprove === true,
     fallback: Array.isArray(m.fallback)
       ? m.fallback
@@ -81,8 +82,8 @@ export function providerLocked(messages: readonly ChatMessage[]): boolean {
 }
 
 /** The settings a chat moves to on another provider: its first model (or the default one), an effort it supports. */
-export function onProvider(chat: Pick<AgentSpec, 'effort' | 'planMode'>, provider: ProviderKind, catalog: Partial<Record<ProviderKind, ModelEntry[]>>, defaults?: ChatDefaults): Partial<AgentSpec> {
+export function onProvider(chat: Pick<AgentSpec, 'effort'>, provider: ProviderKind, catalog: Partial<Record<ProviderKind, ModelEntry[]>>, defaults?: ChatDefaults): Partial<AgentSpec> {
   const list = catalog[provider] ?? DEFAULT_CATALOG[provider]
   const model = defaults?.provider === provider ? defaults.model : (list[0]?.id ?? '')
-  return { provider, model, effort: clampEffort(provider, chat.effort), planMode: provider === 'claude-cli' ? chat.planMode : false }
+  return { provider, model, effort: clampEffort(provider, chat.effort) }
 }

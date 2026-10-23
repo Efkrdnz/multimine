@@ -55,6 +55,14 @@ Opening Multimine again while it is running brings the open window forward.
 - **Access, in the composer.** **Read only**, **Supervised** (asks before every edit and command)
   or **Full access**. Pushing, publishing and destroying history always ask, whatever the setting.
   Questions, plans and permissions are answered right in the chat.
+- **Plan and Coop.** Two switches in the composer, for every message in the chat, or for one message
+  with `/plan` or `/coop` at its start (both work together). **Plan**: the chat looks first and
+  hands you a plan to approve, or to send back with what to change, before it touches anything.
+  Claude uses Claude Code's own plan mode; ChatGPT and the API models plan read only, and once you
+  approve, Multimine tells them to go ahead. **Coop**: you work it out together. The chat asks
+  itself the crucial questions, answers what the code can answer, and asks you the rest in rounds
+  (the goal, who it is for, the trade-offs, your taste), with its recommendation first, before and
+  while it builds.
 - **Images.** Paste a screenshot into the message box, drop images on the chat, or use the image
   button: a broken HUD, a texture that came out wrong, a mockup to build. Claude, ChatGPT and the API
   models see them (where the model takes images; the Mock does not); big ones are scaled to 2048
@@ -128,7 +136,8 @@ update) go back to the chat that did the first one.
 - **Idea Book.** The project's ideas, each checked off when it is done. Write your own, or have a
   chat brainstorm: `/idea fire spells` in any chat (or **Brainstorm** in the book) and its ideas go
   under **To review** for you to keep or dismiss, while its reply stays one sentence. **Work on it**
-  sends an idea to a chat to plan and build. **Side ideas from chats**, switched on per project,
+  sends an idea to a chat: **Build now**, **Plan first** (you approve its plan) or **Coop** (you
+  work it out together). **Side ideas from chats**, switched on per project,
   has every chat save the extra ideas it has there instead of writing them in its replies; off,
   chats are not told about it at all, so it costs nothing. Kept in `.multimine/ideas.json`.
 - **Data Files.** The project's JSON and CSV data (items, enemies, loot, levels) as a spreadsheet

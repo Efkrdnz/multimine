@@ -9,12 +9,14 @@ import { Modal } from './Modal'
 import { FallbackChain } from './FallbackChain'
 import { ProviderMark } from './ProviderMark'
 import { restartToUpdate } from './UpdatePill'
+import { TuesdaySettings } from '../tuesday/TuesdaySettings'
 
 const TABS = [
   ['general', 'General'],
   ['providers', 'Providers & keys'],
   ['models', 'Models'],
-  ['mcp', 'MCP servers']
+  ['mcp', 'MCP servers'],
+  ['tuesday', 'Tuesday']
 ] as const
 type Tab = (typeof TABS)[number][0]
 
@@ -658,7 +660,7 @@ export function SettingsModal({ initialTab }: { initialTab?: string }) {
     <Modal title="Settings" onClose={() => useStore.getState().set({ modal: null })}>
       <div className="flex gap-1 border-b border-white/10 px-5 pt-2">
         {TABS.map(([k, label]) => (
-          <button key={k} className={`rounded-t-lg px-3 py-2 text-xs font-semibold ${tab === k ? 'bg-white/10 text-white' : 'text-indigo-300 hover:text-white'}`} onClick={() => setTab(k)}>
+          <button key={k} data-testid={`settings-tab-${k}`} className={`rounded-t-lg px-3 py-2 text-xs font-semibold ${tab === k ? 'bg-white/10 text-white' : 'text-indigo-300 hover:text-white'}`} onClick={() => setTab(k)}>
             {label}
           </button>
         ))}
@@ -668,6 +670,7 @@ export function SettingsModal({ initialTab }: { initialTab?: string }) {
         {tab === 'providers' && <Providers settings={settings} />}
         {tab === 'models' && <Models settings={settings} />}
         {tab === 'mcp' && <Mcp settings={settings} />}
+        {tab === 'tuesday' && <TuesdaySettings settings={settings} />}
       </div>
     </Modal>
   )

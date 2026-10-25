@@ -83,6 +83,29 @@ Opening Multimine again while it is running brings the open window forward.
 
 ![A chat paused by the loop guard](docs/screenshots/loop-guard.png)
 
+## Tuesday
+
+The orb in the bottom-right corner is **Tuesday**, the assistant above every chat in every open
+project. Click it (or press **Ctrl+Shift+Space**) and talk to it:
+
+- **"What's going on?"** It sees what each chat is doing in every open project, what finished and
+  what is waiting on you, and can read any chat's latest messages.
+- **"Get a chat on the boss fight, plan first."** It starts a chat (or messages one you name) with a
+  complete brief, in plan or coop mode when you want, and the message shows in that chat as from
+  Tuesday. It can stop a chat, run or stop the game, open a chat, a tool or another project for you,
+  and add to the Idea Book.
+- **Questions from chats.** When a chat asks something, or needs your OK, while you are looking
+  elsewhere, the orb says so and shows how many are waiting. They are all in Tuesday's panel, to
+  answer right there, or tell Tuesday the answer: it reads it back and sends it only after your yes.
+  Pushing, publishing and deleting history are never Tuesday's to allow: those wait for you.
+- **Its own brain.** Settings -> Tuesday picks the provider and model it runs on (your Claude or
+  ChatGPT plan, or any API key) and its name. A quick model is plenty: Tuesday reads and passes
+  messages on, and the chats do the heavy work on their own models. Its lines when a chat finishes
+  or asks cost nothing: no model is involved.
+
+Phone calls are next: call a number to talk to Tuesday while the PC is on, and get a call when a
+chat asks something while you are away.
+
 ## Run the game
 
 **▶ Run** in the header (or F5) starts your game: `./gradlew runClient` for a Minecraft mod,

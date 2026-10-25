@@ -898,6 +898,63 @@ test('Multimine runs end to end on the mock provider', async () => {
   await expect(page.getByTestId('project-tab-my-mod')).toHaveAttribute('data-active', '')
   await expect(page.getByTestId(`chat-row-${tester.id}`)).toBeVisible()
 
+  // Tuesday, in the corner: asked what is going on, it looks; it gives a new chat a job, and when
+  // that chat asks something while the user is elsewhere, the orb shows it and the question waits
+  // in Tuesday's panel, answered right there
+  const orb = page.getByTestId('tuesday-orb')
+  await expect(orb).toBeVisible()
+  await orb.click()
+  const tp = page.getByTestId('tuesday-panel')
+  await expect(tp).toContainText("Hi, I'm Tuesday.")
+  await page.waitForTimeout(300)
+  await shot(page, '29-tuesday')
+  await tp.getByTestId('tuesday-input').fill('/tool overview {}\n/say my-mod has one chat, and nothing is waiting.')
+  await tp.getByTestId('tuesday-send').click()
+  await expect(tp).toContainText('my-mod has one chat, and nothing is waiting.', { timeout: 15_000 })
+  const chatsBeforeTuesday = (await chats()).length
+  const biome = JSON.stringify({ questions: [{ question: 'Which biome should the dungeon be in?', options: [{ label: 'Desert' }, { label: 'Snow' }] }] })
+  await tp.getByTestId('tuesday-input').fill(`/tool send_to_chat ${JSON.stringify({ chat: 'new', message: `Dungeon\n/tool ask_user ${biome}\n/say Building it in the snow.` })}\n/say Started a chat on the dungeon.`)
+  await tp.getByTestId('tuesday-send').click()
+  await expect(tp).toContainText('Started a chat on the dungeon.', { timeout: 15_000 })
+  await expect.poll(async () => (await chats()).length, { timeout: 10_000 }).toBe(chatsBeforeTuesday + 1)
+  const dungeon = (await chats()).find((c) => c.name === 'Tuesday: Dungeon')!
+  expect(dungeon).toBeTruthy()
+  await expect(page.getByTestId('tuesday-badge')).toHaveText('1', { timeout: 15_000 })
+  await expect(tp.getByTestId('tuesday-waiting')).toContainText('Which biome should the dungeon be in?')
+  await expect(tp.getByTestId('tuesday-waiting-item')).toContainText('my-mod · Tuesday: Dungeon')
+  await page.waitForTimeout(300)
+  await shot(page, '29b-tuesday-waiting')
+  await tp.getByTestId('tuesday-waiting').getByRole('button', { name: /^Snow/ }).click()
+  await tp.getByTestId('inbox-submit').click()
+  await expect(page.getByTestId('tuesday-badge')).toHaveCount(0, { timeout: 15_000 })
+  await expect.poll(() => readFileSync(join(project, '.multimine', 'chats', dungeon.id, 'messages.jsonl'), 'utf8'), { timeout: 10_000 }).toContain('Building it in the snow.')
+  expect(readFileSync(join(project, '.multimine', 'chats', dungeon.id, 'messages.jsonl'), 'utf8')).toContain('"from":"tool:Tuesday"')
+  // its settings: the name and what it runs on
+  await tp.getByTestId('tuesday-settings').click()
+  await expect(page.getByTestId('tuesday-settings-tab')).toBeVisible()
+  await page.waitForTimeout(300)
+  await shot(page, '29c-tuesday-settings')
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('tuesday-settings-tab')).toHaveCount(0)
+  // closed, the orb says when a chat in the background finishes; the line opens that chat
+  await orb.click()
+  await expect(tp).toHaveCount(0)
+  await page.evaluate((m) => (globalThis as any).mm.api.tuesdaySend(m), `/tool send_to_chat ${JSON.stringify({ chat: dungeon.id, message: '/say Dungeon polished.' })}`)
+  const notice = page.getByTestId('tuesday-notice').filter({ hasText: 'Tuesday: Dungeon finished' })
+  await expect(notice).toBeVisible({ timeout: 15_000 })
+  // the question was answered, so its line is gone
+  await expect(page.getByTestId('tuesday-notice').filter({ hasText: 'asks' })).toHaveCount(0)
+  await page.waitForTimeout(300)
+  await shot(page, '29d-tuesday-notice')
+  await notice.click()
+  await expect(page.locator(`[data-chat-panel="${dungeon.id}"]`)).toBeVisible({ timeout: 10_000 })
+  await expect(page.locator(`[data-chat-panel="${dungeon.id}"]`)).toContainText('Dungeon polished.')
+  // Ctrl+Shift+Space opens it from anywhere, Esc closes it
+  await page.keyboard.press('Control+Shift+Space')
+  await expect(tp).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(tp).toHaveCount(0)
+
   // delete a chat from the sidebar: its folder goes
   await page.getByTestId(`chat-row-${tester.id}`).hover()
   await page.getByTestId(`chat-row-delete-${tester.id}`).click()

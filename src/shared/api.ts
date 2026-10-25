@@ -1,4 +1,4 @@
-import type { AgentSpec, ImageUpload, ProjectTab, RunState, UpdateState, AppSettings, CliStatus, GhItem, GitCommit, GitStatus, IdeEntry, IdeHit, MainEvent, McpServerConfig, ModelEntry, PlanWindow, PluginInfo, PluginManifest, PluginPermission, ProjectInfo, ProviderKind, TerminalInfo, TerminalKind } from './types'
+import type { AgentSpec, AgentStatus, ChatMessage, WaitingItem, ImageUpload, ProjectTab, RunState, UpdateState, AppSettings, CliStatus, GhItem, GitCommit, GitStatus, IdeEntry, IdeHit, MainEvent, McpServerConfig, ModelEntry, PlanWindow, PluginInfo, PluginManifest, PluginPermission, ProjectInfo, ProviderKind, TerminalInfo, TerminalKind } from './types'
 
 /** Everything the renderer can ask of the main process. One method, one IPC channel. */
 export interface Api {
@@ -32,8 +32,17 @@ export interface Api {
   /** Puts back the files a reply's turn changed; files changed since come back as conflicts unless `force`. */
   turnUndo(agentId: string, messageId: string, force?: boolean): Promise<{ undone: boolean; conflicts: string[] }>
 
+  /** Answers a question waiting in any open project (or Tuesday's own). */
   answer(id: string, answers: Record<string, string>, note?: string): Promise<void>
   decide(id: string, approved: boolean, note?: string, always?: boolean): Promise<void>
+
+  /** Tuesday: its conversation, what it is doing, the chat it runs as, and everything waiting on the user. */
+  tuesdayInit(): Promise<{ messages: ChatMessage[]; status: AgentStatus; activity?: string; detail?: string; spec: AgentSpec; waiting: WaitingItem[] }>
+  tuesdaySend(text: string): Promise<void>
+  tuesdayStop(): Promise<void>
+  /** A new conversation with Tuesday: the messages stay, it starts clean with a short recap. */
+  tuesdayFresh(): Promise<boolean>
+  tuesdayClear(): Promise<void>
 
   updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>
   setKey(provider: string, key: string | null): Promise<string[]>
@@ -108,6 +117,7 @@ export const API_METHODS: ApiMethod[] = [
   'createChat', 'saveChat', 'deleteChat', 'setActiveChat',
   'send', 'stop', 'retry', 'clearChat', 'freshStart', 'turnDiff', 'turnUndo',
   'answer', 'decide',
+  'tuesdayInit', 'tuesdaySend', 'tuesdayStop', 'tuesdayFresh', 'tuesdayClear',
   'updateSettings', 'setKey', 'detectClis', 'refreshModels', 'testMcp',
   'gitStatus', 'gitInit', 'gitDiff', 'gitStage', 'gitUnstage', 'gitCommit', 'gitLog', 'gitShow', 'gitBranches', 'gitCheckout', 'gitPull', 'gitPush',
   'ghInfo', 'ghList', 'ghCreatePr',

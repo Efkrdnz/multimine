@@ -250,6 +250,8 @@ export interface InboxItem {
   note?: string
   /** A quick allow/deny for one action (a command, a push), shown as a balloon over the agent. */
   permission?: boolean
+  /** Pushing, publishing, destroying history: only the user can allow it, never Tuesday on their behalf. */
+  hardStop?: boolean
   /** Offers a third answer, "always", remembered for the asking chat (e.g. paid fallbacks). */
   alwaysLabel?: string
   always?: boolean
@@ -376,6 +378,39 @@ export interface AppSettings {
   activeProject?: string
   claudePath?: string
   codexPath?: string
+  tuesday: TuesdaySettings
+}
+
+/**
+ * Tuesday: the assistant above every chat and project. It runs on the provider and model chosen
+ * here; any left out follow the new-chat defaults.
+ */
+export interface TuesdaySettings {
+  enabled: boolean
+  name: string
+  provider?: ProviderKind
+  model?: string
+  effort?: Effort
+}
+
+/** Something a chat in any open project (or Tuesday) is waiting on the user for, with where it is. */
+export interface WaitingItem {
+  item: InboxItem
+  /** The project it is in; null when Tuesday itself asks. */
+  dir: string | null
+  project: string
+  chat: string
+}
+
+/** A line from Tuesday by the orb: a chat finished, failed or asks something. */
+export interface TuesdayNotice {
+  id: number
+  kind: 'ask' | 'done' | 'error'
+  text: string
+  dir: string
+  chatId: string
+  /** What an 'ask' is about: the line goes once it is answered. */
+  itemId?: string
 }
 
 export interface ProjectInfo {
@@ -545,3 +580,12 @@ export type MainEvent =
   | { type: 'run'; state: RunState }
   /** New lines of the running game's output; `reset` starts a new run's log. */
   | { type: 'run-output'; lines: string[]; reset?: boolean }
+  /** Tuesday's conversation: one message changed, or all of it. */
+  | { type: 'tuesday-upsert'; message: ChatMessage }
+  | { type: 'tuesday-reset'; messages: ChatMessage[] }
+  | { type: 'tuesday-status'; status: AgentStatus; activity?: string; detail?: string }
+  /** Everything waiting on the user, in every open project. */
+  | { type: 'tuesday-waiting'; items: WaitingItem[] }
+  | { type: 'tuesday-notice'; notice: TuesdayNotice }
+  /** Tuesday put something on screen: a chat or a tool of the project now on screen. */
+  | { type: 'tuesday-show'; chatId?: string; tool?: string }

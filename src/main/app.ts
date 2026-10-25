@@ -1,6 +1,7 @@
 import { join, basename, resolve } from 'node:path'
 import type { Api } from '@shared/api'
-import type { AgentSpec, AppSettings, MainEvent, McpServerConfig, PlanWindow, ProjectTab, ProviderKind } from '@shared/types'
+import type { AgentSpec, AgentStatus, AppSettings, ChatMessage, MainEvent, McpServerConfig, PlanWindow, ProjectTab, ProviderKind, TuesdayNotice, WaitingItem } from '@shared/types'
+import { Tuesday, TUESDAY_ID } from './tuesday/tuesday'
 import { AppConfig, type Cipher } from './store/appConfig'
 import { ProjectStore } from './store/project'
 import { ChatStore } from './store/chats'
@@ -80,6 +81,12 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
   /** The project on screen: the API acts on it, and only its events reach the window. */
   private current: Workspace | null = null
   private tabsTimer: ReturnType<typeof setTimeout> | null = null
+  /** The assistant above every chat and project. */
+  readonly tuesday: Tuesday
+  /** What Tuesday has already told the user about: questions it announced, each chat's last status. */
+  private announced = new Set<string>()
+  private lastStatus = new Map<string, AgentStatus>()
+  private noticeId = 0
 
   get project(): ProjectStore | null {
     return this.current?.project ?? null
@@ -107,6 +114,7 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     this.providers = new ProviderRegistry(o.mockScript, o.mockDelayMs, o.providerOverrides)
     // a chat in any open project calls back here, on screen or not
     this.bus = new BusServer((chatId) => {
+      if (chatId === TUESDAY_ID) return { tools: this.tuesday.tools() }
       const ws = this.spaceOfChat(chatId)
       const chat = ws?.project.get(chatId)
       return ws && chat ? { tools: ws.engine.coordinationTools(chat) } : null
@@ -141,6 +149,28 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
       emit: o.emit,
       storageDir: join(o.userDataDir, 'plugin-data')
     }
+    this.tuesday = new Tuesday({
+      dir: join(o.userDataDir, 'tuesday'),
+      config: this.config,
+      providers: this.providers,
+      health: this.health,
+      planLimits: this.planLimits,
+      hub: this.hub,
+      busUrl: (id) => this.bus.url(id),
+      emit: o.emit,
+      inboxChanged: () => this.tabsSoon(),
+      host: {
+        spaces: () => [...this.spaces.values()],
+        current: () => this.current,
+        show: async (dir, target) => {
+          await this.switchProject(dir)
+          if (target.chatId) this.activeChat = target.chatId
+          o.emit({ type: 'tuesday-show', ...target })
+        },
+        toolList: async (dir) => (await this.plugins.discover(dir)).plugins.map((p) => ({ id: p.manifest.id, name: p.manifest.name })),
+        notify: (ws, e) => this.route(ws, e)
+      }
+    })
   }
 
   async start(): Promise<void> {
@@ -148,6 +178,7 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     const saved = await readJson<PlanWindow[]>(join(this.o.userDataDir, 'plan-limits.json'), [])
     if (Array.isArray(saved)) this.planLimits.restore(saved)
     await this.bus.start()
+    await this.tuesday.start()
   }
 
   async shutdown(): Promise<void> {
@@ -156,6 +187,7 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     for (const ws of this.spaces.values()) await this.stopSpace(ws, 'Multimine closed.')
     this.spaces.clear()
     this.current = null
+    await this.tuesday.stop()
     await this.hub.closeAll()
     await this.bus.stop()
   }
@@ -186,6 +218,43 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     else if (e.type === 'toast') this.o.emit({ ...e, text: `${basename(ws.dir)}: ${e.text}` })
     else this.o.background?.(e, ws.dir)
     if (e.type === 'status' || e.type === 'inbox' || e.type === 'run') this.tabsSoon()
+    if (e.type === 'status' || e.type === 'inbox') this.announce(ws, e)
+  }
+
+  /**
+   * Tuesday's word by the orb when a chat finishes, fails or asks something - unless the user is
+   * looking at that very chat. No model is involved: it costs nothing.
+   */
+  private announce(ws: Workspace, e: MainEvent): void {
+    if (!this.config.settings.tuesday.enabled) return
+    const watching = (chatId: string) => ws === this.current && ws.activeChat === chatId
+    const say = (kind: TuesdayNotice['kind'], chatId: string, text: string, itemId?: string) => {
+      if (!watching(chatId)) this.o.emit({ type: 'tuesday-notice', notice: { id: ++this.noticeId, kind, text, dir: ws.dir, chatId, ...(itemId ? { itemId } : {}) } })
+    }
+    const name = (id: string) => ws.project.get(id)?.name ?? 'A chat'
+    if (e.type === 'inbox') {
+      for (const item of e.items) {
+        if (item.status !== 'pending' || this.announced.has(item.id)) continue
+        this.announced.add(item.id)
+        say('ask', item.askedBy, item.kind === 'question' ? `${name(item.askedBy)} asks: ${item.title}` : `${name(item.askedBy)} needs your OK: ${item.title}`, item.id)
+      }
+      return
+    }
+    if (e.type !== 'status') return
+    const before = this.lastStatus.get(e.agentId)
+    this.lastStatus.set(e.agentId, e.status)
+    if (before && before !== 'idle' && before !== 'error' && e.status === 'idle') say('done', e.agentId, `${name(e.agentId)} finished`)
+    else if (e.status === 'error' && before !== 'error') say('error', e.agentId, `${name(e.agentId)} stopped on an error`)
+  }
+
+  /** Everything waiting on the user: every open project's chats, then Tuesday's own. */
+  waiting(): WaitingItem[] {
+    const out: WaitingItem[] = []
+    for (const ws of this.spaces.values())
+      for (const item of ws.engine.inbox.pending()) out.push({ item, dir: ws.dir, project: basename(ws.dir), chat: ws.project.get(item.askedBy)?.name ?? item.askedBy })
+    const name = this.tuesday.spec().name
+    for (const item of this.tuesday.pending()) out.push({ item, dir: null, project: name, chat: name })
+    return out
   }
 
   /** The open projects, as their tabs show them. */
@@ -203,7 +272,10 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
   private tabsSoon(now = false): void {
     if (this.tabsTimer) clearTimeout(this.tabsTimer)
     this.tabsTimer = null
-    const send = () => this.o.emit({ type: 'projects', projects: this.listProjects() })
+    const send = () => {
+      this.o.emit({ type: 'projects', projects: this.listProjects() })
+      this.o.emit({ type: 'tuesday-waiting', items: this.waiting() })
+    }
     if (now) send()
     else this.tabsTimer = setTimeout(send, 120)
   }
@@ -406,12 +478,45 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     return this.need().engine.undoTurn(agentId, messageId, !!force)
   }
 
+  /** The inbox an item waits in: any open project's, or Tuesday's own (the waiting list shows them all). */
+  private inboxOf(id: string) {
+    for (const ws of this.spaces.values()) if (ws.engine.inbox.get(id)) return ws.engine.inbox
+    if (this.tuesday.engine?.inbox.get(id)) return this.tuesday.engine.inbox
+    throw new Error('That question is no longer waiting.')
+  }
+
   async answer(id: string, answers: Record<string, string>, note?: string): Promise<void> {
-    this.need().engine.inbox.answer(id, answers, note)
+    this.inboxOf(id).answer(id, answers, note)
   }
 
   async decide(id: string, approved: boolean, note?: string, always?: boolean): Promise<void> {
-    this.need().engine.inbox.decide(id, approved, note, always)
+    this.inboxOf(id).decide(id, approved, note, always)
+  }
+
+  // ---------------------------------------------------------------- Tuesday
+
+  async tuesdayInit(): Promise<{ messages: ChatMessage[]; status: AgentStatus; activity?: string; detail?: string; spec: AgentSpec; waiting: WaitingItem[] }> {
+    return { ...this.tuesday.state(), waiting: this.waiting() }
+  }
+
+  async tuesdaySend(text: string): Promise<void> {
+    if (!text.trim()) return
+    void this.tuesday
+      .send(text)
+      .then((r) => r.error && r.error !== 'Stopped.' && this.o.emit({ type: 'toast', level: 'error', text: `${this.tuesday.spec().name}: ${r.error.slice(0, 300)}` }))
+      .catch((e) => this.o.emit({ type: 'toast', level: 'error', text: String((e as Error).message ?? e) }))
+  }
+
+  async tuesdayStop(): Promise<void> {
+    this.tuesday.stopTurn()
+  }
+
+  async tuesdayFresh(): Promise<boolean> {
+    return this.tuesday.freshStart()
+  }
+
+  async tuesdayClear(): Promise<void> {
+    await this.tuesday.clear()
   }
 
   async updateSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
@@ -419,6 +524,7 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     // once the user picks new-chat defaults, start-up detection leaves them alone
     const settings = await this.config.update(patch.chatDefaults ? { ...patch, chatDefaultsChosen: true } : patch)
     if (patch.mcpServers) for (const s of before) await this.hub.drop(s.id)
+    if (patch.tuesday || patch.chatDefaults) await this.tuesday.applySettings().catch(() => undefined)
     this.o.emit({ type: 'settings', settings })
     return settings
   }

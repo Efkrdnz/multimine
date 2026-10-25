@@ -14,6 +14,7 @@ import { ManagePlugins } from './tools/ManagePlugins'
 import { MakeTool } from './tools/MakeTool'
 import { Shell } from './shell/Shell'
 import { ProjectTabs } from './shell/ProjectTabs'
+import { Tuesday } from './tuesday/Tuesday'
 
 // the code window carries Monaco and xterm: loaded the first time it is opened, not at start-up
 const IdeWindow = lazy(() => import('./ide/IdeWindow').then((m) => ({ default: m.IdeWindow })))
@@ -24,6 +25,7 @@ export function App() {
   const panel = useStore((s) => s.panel)
   const modal = useStore((s) => s.modal)
   const ide = useStore((s) => s.ide)
+  const settings = useStore((s) => s.settings)
 
   useEffect(() => {
     const off = window.mm.onEvent(applyEvent)
@@ -69,6 +71,7 @@ export function App() {
       {modal?.kind === 'plugins' && <ManagePlugins />}
       {modal?.kind === 'make-tool' && <MakeTool key={modal.editId ?? 'new'} editId={modal.editId} />}
       <ConsentDialog />
+      {ready && settings?.tuesday.enabled !== false && <Tuesday />}
       <Toasts />
       </div>
     </div>

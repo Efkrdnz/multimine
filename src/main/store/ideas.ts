@@ -35,8 +35,11 @@ export class IdeaStore {
     return next
   }
 
-  /** A chat's ideas, filed for the user to review; ones already in the book are skipped. */
-  propose(items: { title: string; details?: string; tags?: string[] }[], from: string, chatId?: string): Promise<{ saved: Idea[]; skipped: string[] }> {
+  /**
+   * A chat's ideas, filed for the user to review (or, `status` open, straight into the book: ideas
+   * the user gave through Tuesday); ones already in the book are skipped.
+   */
+  propose(items: { title: string; details?: string; tags?: string[] }[], from: string, chatId?: string, status: 'proposed' | 'open' = 'proposed'): Promise<{ saved: Idea[]; skipped: string[] }> {
     return this.change((book) => {
       const saved: Idea[] = []
       const skipped: string[] = []
@@ -49,7 +52,7 @@ export class IdeaStore {
         }
         const details = String(it.details ?? '').trim().slice(0, 4000)
         const tags = (it.tags ?? []).map((t) => String(t).trim().toLowerCase().slice(0, 24)).filter(Boolean).slice(0, 6)
-        saved.push({ id: newId('idea'), title, ...(details ? { details } : {}), ...(tags.length ? { tags } : {}), status: 'proposed', from, ...(chatId ? { chatId } : {}), created: Date.now() })
+        saved.push({ id: newId('idea'), title, ...(details ? { details } : {}), ...(tags.length ? { tags } : {}), status, from, ...(chatId ? { chatId } : {}), created: Date.now() })
       }
       book.ideas.push(...saved)
       return { saved, skipped }

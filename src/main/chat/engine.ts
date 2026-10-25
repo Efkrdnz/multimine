@@ -50,6 +50,11 @@ export interface EngineDeps {
   plugins?: MadeTools
   /** The URL of a chat's endpoint on the local MCP bus (set once the bus server is up). */
   busUrl?: (chatId: string) => string | undefined
+  /** In place of the tools every chat gets, and of Multimine's system prompt (Tuesday has its own). */
+  tools?: (agent: AgentSpec) => ToolDef[]
+  system?: (agent: AgentSpec) => string
+  /** Adds to each turn's prompt as it goes out, not to the conversation (Tuesday's look at the workspace). */
+  decorate?: (agentId: string, prompt: string) => string | Promise<string>
 }
 
 /** What a chat that makes a tool can do with the app's plugins. */
@@ -387,6 +392,12 @@ export class Engine {
     return this.turns.has(agentId)
   }
 
+  /** What a chat is doing now, as the sidebar shows it. */
+  activityOf(agentId: string): { status: AgentStatus; activity?: string; detail?: string; since?: number } {
+    const act = this.acts.get(agentId)
+    return { status: this.status.get(agentId) ?? 'idle', activity: act?.activity, detail: act?.detail, since: act?.since }
+  }
+
   /**
    * Queues a turn. Turns of one chat never overlap; different chats run in parallel. `from` is
    * 'user', or the tool that sent it (`tool:<name>`), shown in the chat as where it came from.
@@ -583,7 +594,8 @@ export class Engine {
     // the images go to the provider as images; the prompt also says where they are saved
     const note = attachmentNote(userMsg.attachments)
     const withNote = note ? `${asked.trim() || 'See the attached image.'}\n\n${note}` : asked
-    const prompt = undone?.length ? `${undoNote(undone)}\n\n${withNote}` : withNote
+    const told = undone?.length ? `${undoNote(undone)}\n\n${withNote}` : withNote
+    const prompt = this.d.decorate ? await this.d.decorate(agentId, told) : told
     await this.writing.get(userMsg.id)
     this.writing.delete(userMsg.id)
     const images = await loadImages(this.d.project.dir, userMsg.attachments)
@@ -952,7 +964,7 @@ export class Engine {
    */
   systemPrompt(agent: AgentSpec, tables: Table[] = [], sideIdeas = false): string {
     const eco = this.d.config.settings.economy
-    const base = buildSystemPrompt({ agent, projectDir: this.d.project.dir, multimineMd: this.d.project.multimineMd })
+    const base = this.d.system ? this.d.system(agent) : buildSystemPrompt({ agent, projectDir: this.d.project.dir, multimineMd: this.d.project.multimineMd })
     return [
       base,
       contextSection(tables),
@@ -1063,7 +1075,7 @@ export class Engine {
     const prev = this.status.get(askedBy)
     this.setStatus(askedBy, 'waiting', `allow ${title}?`)
     const note = always ? 'This always needs you, even with auto-approve on.' : 'This chat is Supervised: it asks before every edit and command.'
-    const item = await this.inbox.approval(askedBy, title, `\`\`\`\n${detail}\n\`\`\`\n\n${note}`, true)
+    const item = await this.inbox.approval(askedBy, title, `\`\`\`\n${detail}\n\`\`\`\n\n${note}`, true, undefined, always)
     this.setStatus(askedBy, prev && prev !== 'waiting' ? prev : 'working')
     return !!item.approved
   }
@@ -1139,6 +1151,7 @@ export class Engine {
 
   /** The tools Multimine gives every chat on top of its provider's own. */
   coordinationTools(agent: AgentSpec): ToolDef[] {
+    if (this.d.tools) return this.d.tools(agent)
     const me = agent.id
     const question = z.object({
       question: z.string(),

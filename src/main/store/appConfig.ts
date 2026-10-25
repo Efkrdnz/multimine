@@ -17,7 +17,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   baseUrls: { compatible: 'http://localhost:11434/v1', openrouter: 'https://openrouter.ai/api/v1' },
   catalog: { ...DEFAULT_CATALOG },
   mcpServers: [],
-  recentProjects: []
+  recentProjects: [],
+  tuesday: { enabled: true, name: 'Tuesday' }
 }
 
 /** Encrypts secrets at rest. Electron's safeStorage in the app; a passthrough in tests. */
@@ -47,7 +48,8 @@ export class AppConfig {
       notifications: { ...DEFAULT_NOTIFICATIONS, ...(saved.notifications ?? {}) },
       economy: { ...DEFAULT_SETTINGS.economy, ...(saved.economy ?? {}), tiers: { ...DEFAULT_TIERS, ...(saved.economy?.tiers ?? {}) } },
       catalog: { ...DEFAULT_CATALOG, ...(saved.catalog ?? {}) },
-      baseUrls: { ...DEFAULT_SETTINGS.baseUrls, ...(saved.baseUrls ?? {}) }
+      baseUrls: { ...DEFAULT_SETTINGS.baseUrls, ...(saved.baseUrls ?? {}) },
+      tuesday: { ...DEFAULT_SETTINGS.tuesday, ...(saved.tuesday ?? {}) }
     }
     this.keys = await readJson(join(this.dir, 'keys.json'), {})
   }

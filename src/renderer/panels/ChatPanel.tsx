@@ -341,7 +341,8 @@ export function ChatPanel({ agentId }: { agentId: string }) {
       <div className="mx-auto w-full max-w-[860px]">
         <InlinePrompts agentId={agentId} />
       </div>
-      <div className="relative mx-auto w-full max-w-[860px] p-3">
+      {/* clear of Tuesday's orb in the corner, on a narrow window */}
+      <div className="relative mx-auto w-full p-3" style={{ maxWidth: 'min(860px, calc(100% - 2 * var(--tuesday-clear, 0px)))' }}>
         {commands.length > 0 && (
           <div className="glass menu-pop absolute bottom-full left-3 right-3 z-20 mb-1 rounded-xl p-1" style={{ background: 'rgb(10 12 28 / 0.97)' }} data-testid="slash-menu">
             {commands.map((c) => (

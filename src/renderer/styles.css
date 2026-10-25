@@ -389,6 +389,50 @@ a:focus-visible {
   animation: spin-slow 2.6s linear infinite;
 }
 
+/* Tuesday's orb: a ring of colour turning around a breathing core, faster while it works */
+.tuesday-orb {
+  position: relative;
+  border-radius: 9999px;
+  transition: transform 0.22s var(--ease-spring), box-shadow 0.3s var(--ease-out);
+  box-shadow: 0 0 22px rgb(56 189 248 / 0.35), 0 8px 24px rgb(0 0 0 / 0.5);
+}
+.tuesday-orb:hover {
+  transform: scale(1.07);
+  box-shadow: 0 0 30px rgb(56 189 248 / 0.55), 0 8px 24px rgb(0 0 0 / 0.5);
+}
+.tuesday-orb .ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: conic-gradient(from 0deg, #22d3ee, #818cf8, #e879f9, #f472b6, #22d3ee);
+  -webkit-mask: radial-gradient(circle, transparent 62%, #000 64%);
+  mask: radial-gradient(circle, transparent 62%, #000 64%);
+  animation: spin-slow 7s linear infinite;
+}
+.tuesday-orb .core {
+  position: absolute;
+  inset: 7px;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 34% 30%, #ffffff 0, #a5f3fc 14%, #6366f1 52%, #1e1b4b 100%);
+  animation: tuesday-breathe 4.2s ease-in-out infinite;
+}
+.tuesday-orb[data-busy] .ring {
+  animation-duration: 1.4s;
+}
+.tuesday-orb[data-busy] .core {
+  animation-duration: 1.6s;
+}
+@keyframes tuesday-breathe {
+  50% {
+    transform: scale(0.9);
+    filter: brightness(1.25);
+  }
+}
+.tuesday-panel {
+  transform-origin: bottom right;
+  animation: menu-pop 0.2s var(--ease-out);
+}
+
 /* provider tiles lift a little under the pointer */
 .provider-mark {
   transition: transform 0.22s var(--ease-spring), box-shadow 0.22s var(--ease-out);

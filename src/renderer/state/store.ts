@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { pushTerminalData } from '../ide/terminalBus'
-import type { AgentSpec, AgentStatus, AppSettings, CliStatus, PluginInfo, ChatMessage, InboxItem, MainEvent, MediaItem, ProjectInfo, ProjectTab, RunState, UpdateState, Usage, PlanWindow } from '@shared/types'
+import type { AgentSpec, AgentStatus, AppSettings, CliStatus, PluginInfo, ChatMessage, InboxItem, MainEvent, MediaItem, ProjectInfo, ProjectTab, RunState, UpdateState, Usage, PlanWindow, TuesdayNotice, WaitingItem } from '@shared/types'
+import { openTool } from '../tools/openTool'
 
 export type Panel = 'media' | 'instructions' | 'git' | 'run' | null
 export type Modal = { kind: 'chat'; agent: AgentSpec } | { kind: 'settings'; tab?: string } | { kind: 'plugins' } | { kind: 'make-tool'; editId?: string } | null
@@ -64,6 +65,15 @@ export interface State {
   pluginReload: Record<string, number>
   modal: Modal
   toasts: Toast[]
+  /** Tuesday: its panel, its conversation, what it is doing and the chat it runs as. */
+  tuesdayOpen: boolean
+  tuesdayMessages: ChatMessage[]
+  tuesdayStatus: { status: AgentStatus; activity?: string; detail?: string }
+  tuesdaySpec: AgentSpec | null
+  /** Everything waiting on the user, in every open project (the orb's badge). */
+  waiting: WaitingItem[]
+  /** Tuesday's lines by the orb: a chat finished, failed or asks. */
+  notices: TuesdayNotice[]
   set: (patch: Partial<State>) => void
   /** Puts a chat on screen (closing any tool in front of it). */
   openChat: (id: string) => void
@@ -106,6 +116,12 @@ export const useStore = create<State>((set, get) => ({
   pluginReload: {},
   modal: null,
   toasts: [],
+  tuesdayOpen: false,
+  tuesdayMessages: [],
+  tuesdayStatus: { status: 'idle' },
+  tuesdaySpec: null,
+  waiting: [],
+  notices: [],
   set: (patch) => set(patch),
   openChat: (id) => {
     set({ focused: id, activeTool: null })
@@ -264,6 +280,39 @@ export function applyEvent(e: MainEvent): void {
     case 'provider-health':
       s.set({ health: e.health })
       break
+    case 'tuesday-upsert': {
+      const list = [...s.tuesdayMessages]
+      const i = list.findIndex((m) => m.id === e.message.id)
+      if (i >= 0) list[i] = e.message
+      else list.push(e.message)
+      s.set({ tuesdayMessages: list })
+      break
+    }
+    case 'tuesday-reset':
+      s.set({ tuesdayMessages: e.messages })
+      break
+    case 'tuesday-status':
+      s.set({ tuesdayStatus: { status: e.status, activity: e.activity, detail: e.detail } })
+      break
+    case 'tuesday-waiting': {
+      // a question answered (anywhere) takes its line by the orb with it
+      const open = new Set(e.items.map((w) => w.item.id))
+      s.set({ waiting: e.items, notices: s.notices.filter((n) => !n.itemId || open.has(n.itemId)) })
+      break
+    }
+    case 'tuesday-notice': {
+      // a few at a time, each gone after a while
+      s.set({ notices: [...s.notices.filter((n) => !(n.chatId === e.notice.chatId && n.kind === e.notice.kind)), e.notice].slice(-3) })
+      setTimeout(() => useStore.getState().set({ notices: useStore.getState().notices.filter((n) => n.id !== e.notice.id) }), e.notice.kind === 'ask' ? 15_000 : 7000)
+      break
+    }
+    case 'tuesday-show': {
+      // the project is already on screen (Tuesday switched to it first)
+      if (e.chatId && s.project?.agents.some((a) => a.id === e.chatId)) s.openChat(e.chatId)
+      const p = e.tool ? s.plugins.find((x) => x.manifest.id === e.tool) : undefined
+      if (p) openTool(p)
+      break
+    }
   }
   for (const l of listeners) l(e)
 }

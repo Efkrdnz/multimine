@@ -63,10 +63,11 @@ export class TelegramApi {
     return this.call('getUpdates', { offset, timeout, allowed_updates: ['message', 'callback_query'] }, signal)
   }
 
-  sendMessage(chatId: number, text: string, o: { buttons?: Buttons; silent?: boolean } = {}): Promise<TgMessage> {
+  sendMessage(chatId: number, text: string, o: { buttons?: Buttons; silent?: boolean; html?: boolean } = {}): Promise<TgMessage> {
     return this.call('sendMessage', {
       chat_id: chatId,
       text: text.slice(0, 4096),
+      ...(o.html ? { parse_mode: 'HTML' } : {}),
       disable_notification: !!o.silent,
       link_preview_options: { is_disabled: true },
       ...(o.buttons ? { reply_markup: { inline_keyboard: o.buttons.map((row) => row.map((b) => ({ text: b.text, callback_data: b.data }))) } } : {})
@@ -98,6 +99,42 @@ export class TelegramApi {
     const res = await this.fetcher(`${this.base}/file/bot${this.token}/${f.file_path}`)
     if (!res.ok) throw new Error(`Could not download the voice note (HTTP ${res.status}).`)
     return Buffer.from(await res.arrayBuffer())
+  }
+
+  private async upload(method: string, form: FormData): Promise<TgMessage> {
+    const res = await this.fetcher(`${this.base}/bot${this.token}/${method}`, { method: 'POST', body: form }).catch((e: Error & { cause?: { code?: string } }) => {
+      throw new Error(`Could not reach Telegram${e.cause?.code ? ` (${e.cause.code})` : ''}. Is this computer online?`)
+    })
+    const r = (await res.json().catch(() => ({}))) as { ok?: boolean; result?: TgMessage; description?: string }
+    if (!r.ok) throw new Error(`Telegram: ${r.description ?? `HTTP ${res.status}`}`)
+    return r.result as TgMessage
+  }
+
+  /** A picture (at most 10 MB), with an optional caption. */
+  sendPhoto(chatId: number, image: Buffer, name: string, caption?: string): Promise<TgMessage> {
+    const form = new FormData()
+    form.append('chat_id', String(chatId))
+    if (caption) form.append('caption', caption.slice(0, 1024))
+    form.append('photo', new Blob([new Uint8Array(image)]), name)
+    return this.upload('sendPhoto', form)
+  }
+
+  /** Two to ten pictures as one album, each with its caption. */
+  sendAlbum(chatId: number, images: { data: Buffer; name: string; caption?: string }[]): Promise<TgMessage> {
+    const form = new FormData()
+    form.append('chat_id', String(chatId))
+    form.append('media', JSON.stringify(images.map((im, i) => ({ type: 'photo', media: `attach://p${i}`, ...(im.caption ? { caption: im.caption.slice(0, 1024) } : {}) }))))
+    images.forEach((im, i) => form.append(`p${i}`, new Blob([new Uint8Array(im.data)]), im.name))
+    return this.upload('sendMediaGroup', form)
+  }
+
+  /** A file, kept as it is (a CSV, a picture too big for a photo). */
+  sendDocument(chatId: number, data: Buffer, name: string, caption?: string): Promise<TgMessage> {
+    const form = new FormData()
+    form.append('chat_id', String(chatId))
+    if (caption) form.append('caption', caption.slice(0, 1024))
+    form.append('document', new Blob([new Uint8Array(data)]), name)
+    return this.upload('sendDocument', form)
   }
 
   /** A voice note (OGG/Opus), with an optional caption. */

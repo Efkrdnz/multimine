@@ -34,6 +34,7 @@ export function telegramRule(waiting: WaitingItem[], voice: boolean): string {
   return [
     `[On Telegram with the user, on their phone${voice ? ' (they sent a voice note; this is what it said)' : ''}. Keep replies short and in plain text: no markdown headings or tables. Before you answer anything for them, read it back and wait for their yes.`,
     'A hard stop (push, publish, deleting history) they want allowed: call answer as usual; they then send their PIN, which never reaches you.',
+    'To show them a table or what a chat sees: share_table, share_screenshots (they arrive as pictures in this chat).',
     items.length ? `Waiting for them now:\n${list.join('\n')}]` : 'Nothing is waiting for them.]'
   ].join('\n')
 }

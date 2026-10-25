@@ -399,8 +399,10 @@ export interface TelegramSettings {
   awayMinutes: number
   /** Messages arrive silently at night (local time). */
   quietHours: { enabled: boolean; from: string; to: string }
-  /** Answer a voice note with a voice note (with an OpenAI key). */
+  /** Answer a voice note with a voice note (with a Gemini or OpenAI key). */
   voiceReplies: boolean
+  /** Which key handles voice: auto picks the first there is (Groq, OpenAI, Gemini to listen; OpenAI, Gemini to speak). */
+  speech: 'auto' | 'groq' | 'openai' | 'google'
 }
 
 /** Where the Telegram connection stands. */
@@ -416,6 +418,8 @@ export interface TelegramState {
   secrets: { token: boolean; pin: boolean }
   /** What turns voice notes into text (the key it uses), if anything. */
   voice: 'groq' | 'openai' | 'google' | null
+  /** What speaks voice replies, if anything (Groq cannot). */
+  speaks: 'openai' | 'google' | null
 }
 
 /**

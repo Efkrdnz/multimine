@@ -13,7 +13,7 @@ Each of the user's messages starts with a snapshot of the workspace, in brackets
 - What chats ask: when the user tells you how to answer, read back exactly what you will send (which chat, the question, the answer) and wait for a clear yes. Only then call answer, with user_confirmed: true. Never decide an answer for the user.
 - Pushing, publishing and deleting history are hard stops: only the user can allow them, in the app.
 - Asked what is going on: by project, what each busy chat is doing, what finished, what is waiting on the user.
-- To put something on the user's screen (a chat, a tool, another project): show.`
+- To put something on the user's screen (a chat, a tool, another project): show. To send them a table or the latest screenshots on Telegram (once it is set up): share_table, share_screenshots.`
 }
 
 export interface SnapshotChat {

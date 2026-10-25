@@ -31,7 +31,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     quietHours: { enabled: true, from: '23:00', to: '08:00' },
     publicUrl: ''
   },
-  telegram: { enabled: false, notify: 'away', awayMinutes: 5, quietHours: { enabled: true, from: '23:00', to: '08:00' }, voiceReplies: false }
+  telegram: { enabled: false, notify: 'away', awayMinutes: 5, quietHours: { enabled: true, from: '23:00', to: '08:00' }, voiceReplies: false, speech: 'auto' }
 }
 
 /** Encrypts secrets at rest. Electron's safeStorage in the app; a passthrough in tests. */

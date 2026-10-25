@@ -4,7 +4,12 @@ import type { AppConfig } from '../store/appConfig'
 import { inQuietHours, PIN_KEY } from '../phone/phone'
 import { TelegramApi, type TgCallback, type TgMessage, type TgUpdate } from './api'
 import { itemMessage } from './text'
-import { speak, transcribe, transcriber } from './voice'
+import { speak, transcribe, transcriber, voicer, type SpeechKey } from './voice'
+import { recentShots, tableCsv, tableHtml, tableText, type Shot } from './share'
+import type { Table } from '@shared/tables/model'
+import type { Workspace } from '../app'
+import { readFile, stat } from 'node:fs/promises'
+import { basename } from 'node:path'
 
 export const TOKEN_KEY = 'telegram-token'
 
@@ -20,6 +25,10 @@ export interface TelegramDeps {
   /** The workspace in a few lines, for /status (no model involved). */
   status: () => string
   name: () => string
+  /** The open projects: their tables, and the pictures their chats made. */
+  spaces: () => Workspace[]
+  /** A web page photographed (a table, for Telegram); without it tables go as text. */
+  renderImage?: (html: string, width: number) => Promise<Buffer>
   idleSeconds?: () => number
   fetcher?: typeof fetch
   now?: () => number
@@ -29,6 +38,9 @@ export interface TelegramDeps {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+const HELP = '/status: what every chat is doing\n/waiting: what is waiting for you\n/tables: see a project table\n/screens: the latest screenshots (/screens Spells for one chat)'
 
 /**
  * Tuesday on Telegram, through the user's own bot. It asks Telegram for news itself (long
@@ -38,7 +50,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
  * deleted at once and never reaches Tuesday.
  */
 export class Telegram {
-  private st: TelegramState = { status: 'off', secrets: { token: false, pin: false }, voice: null }
+  private st: TelegramState = { status: 'off', secrets: { token: false, pin: false }, voice: null, speaks: null }
   private api: TelegramApi | null = null
   private gen = 0
   private abort: AbortController | null = null
@@ -52,6 +64,9 @@ export class Telegram {
   private pendingPin: { itemId: string; title: string } | null = null
   /** Tuesday's turns from Telegram, one after another. */
   private chain: Promise<unknown> = Promise.resolve()
+  /** Tables offered by /tables, by the short key their button sends back. */
+  private picks = new Map<string, { dir: string; id: string }>()
+  private pickN = 0
 
   constructor(private readonly d: TelegramDeps) {}
 
@@ -70,7 +85,8 @@ export class Telegram {
       paired: this.settings.ownerChatId ? (this.settings.ownerName ?? 'you') : undefined,
       pairCode: this.settings.ownerChatId || this.st.status !== 'ready' ? undefined : this.pairCode,
       secrets: { token: !!key(TOKEN_KEY), pin: !!key(PIN_KEY) },
-      voice: transcriber((p) => key(p))
+      voice: transcriber((p) => key(p), this.settings.speech),
+      speaks: voicer((p) => key(p), this.settings.speech)
     }
   }
 
@@ -176,15 +192,21 @@ export class Telegram {
     if (!this.isOwner(m.chat.id)) return this.stranger(api, m)
     const text = (m.text ?? '').trim()
     if (this.pendingPin && text && !text.startsWith('/')) return this.pin(api, m, text)
-    if (/^\/start\b/.test(text)) return void (await api.sendMessage(m.chat.id, `Hi, it's ${this.d.name()}. Tell me what to do, or ask what's going on. Send a voice note if you'd rather talk.\n\n/status: what every chat is doing\n/waiting: what is waiting for you`))
+    if (/^\/start\b/.test(text)) return void (await api.sendMessage(m.chat.id, `Hi, it's ${this.d.name()}. Tell me what to do, or ask what's going on. Send a voice note if you'd rather talk.\n\n${HELP}`))
     if (/^\/status\b/.test(text)) return void (await api.sendMessage(m.chat.id, this.d.status()))
     if (/^\/waiting\b/.test(text)) return this.sendAll(api, m.chat.id)
+    if (/^\/tables\b/.test(text)) return this.offerTables(api, m.chat.id)
+    if (/^\/screens?(hots?)?\b/.test(text)) {
+      const chat = text.replace(/^\/\S+\s*/, '').trim()
+      void this.shareShots({ chat: chat || undefined }).then((said) => (said.startsWith('Sent') ? undefined : api.sendMessage(m.chat.id, said)))
+      return
+    }
     const voice = m.voice ?? m.audio
     if (voice) {
-      const key = (p: 'groq' | 'openai' | 'google') => this.d.config.getKey(p)
-      if (!transcriber(key)) return void (await api.sendMessage(m.chat.id, "I can't listen to voice notes yet: add a Groq, OpenAI or Gemini key in Multimine's Settings -> Providers (Groq and Gemini have free tiers). Or type it."))
+      const key = (p: SpeechKey) => this.d.config.getKey(p)
+      if (!transcriber(key, this.settings.speech)) return void (await api.sendMessage(m.chat.id, "I can't listen to voice notes yet: add a Groq, OpenAI or Gemini key in Multimine's Settings -> Providers (Groq and Gemini have free tiers). Or type it."))
       void api.chatAction(m.chat.id, 'typing').catch(() => undefined)
-      const heard = await transcribe(await api.download(voice.file_id), key, undefined, this.d.fetcher)
+      const heard = await transcribe(await api.download(voice.file_id), key, undefined, this.d.fetcher, this.settings.speech)
       if (!heard) return void (await api.sendMessage(m.chat.id, "I couldn't make out that voice note. Try again?"))
       await api.sendMessage(m.chat.id, `🎤 "${heard}"`)
       return this.converse(api, m.chat.id, heard, true)
@@ -200,7 +222,7 @@ export class Telegram {
       await this.d.config.update({ telegram: { ...this.settings, ownerChatId: m.chat.id, ownerName: name } })
       this.d.emit({ type: 'settings', settings: this.d.config.settings })
       this.set({})
-      await api.sendMessage(m.chat.id, `Paired. Hi ${name}, it's ${this.d.name()}. When a chat needs you I'll message you here. Ask me anything, by text or voice note.\n\n/status: what every chat is doing\n/waiting: what is waiting for you`)
+      await api.sendMessage(m.chat.id, `Paired. Hi ${name}, it's ${this.d.name()}. When a chat needs you I'll message you here. Ask me anything, by text or voice note.\n\n${HELP}`)
       return
     }
     await api.sendMessage(m.chat.id, 'This is a private assistant.')
@@ -219,10 +241,11 @@ export class Telegram {
       } finally {
         clearInterval(typing)
       }
-      const openai = this.d.config.getKey('openai')
-      if (voice && this.settings.voiceReplies && openai) {
+      const key = (p: SpeechKey) => this.d.config.getKey(p)
+      if (voice && this.settings.voiceReplies && voicer(key, this.settings.speech)) {
         try {
-          const ogg = await speak(reply, openai, this.d.fetcher)
+          void api.chatAction(chatId, 'record_voice').catch(() => undefined)
+          const ogg = await speak(reply, key, this.d.fetcher, this.settings.speech)
           await api.sendVoice(chatId, ogg, reply.length <= 1024 ? reply : undefined)
           if (reply.length > 1024) await api.sendMessage(chatId, reply)
         } catch {
@@ -261,6 +284,14 @@ export class Telegram {
     const chatId = c.message?.chat.id
     if (!chatId || !this.isOwner(chatId)) return void (await api.answerCallback(c.id).catch(() => undefined))
     const [kind, itemId, index] = (c.data ?? '').split(':')
+    if (kind === 't') {
+      const pick = this.picks.get(itemId)
+      const ws = pick && this.d.spaces().find((x) => x.dir === pick.dir)
+      const table = ws ? await ws.engine.tables.get(pick!.id) : null
+      await api.answerCallback(c.id, table ? undefined : 'That table is gone').catch(() => undefined)
+      if (ws && table) await this.shareTable(ws, table)
+      return
+    }
     const w = this.d.waiting().find((x) => x.item.id === itemId)
     if (!w) {
       await api.answerCallback(c.id, 'Already answered').catch(() => undefined)
@@ -298,6 +329,62 @@ export class Telegram {
     const chat = this.settings.ownerChatId
     this.sent.delete(itemId)
     if (s && chat) await api.editMessage(chat, s.messageId, `${s.text}\n\n${how}`).catch(() => undefined)
+  }
+
+  /** Whether there is someone to send things to. */
+  ready(): boolean {
+    return !!this.api && !!this.settings.ownerChatId && this.st.status === 'ready'
+  }
+
+  /** The tables of every open project, as buttons. */
+  private async offerTables(api: TelegramApi, chatId: number): Promise<void> {
+    const rows: { text: string; data: string }[][] = []
+    for (const ws of this.d.spaces())
+      for (const t of await ws.engine.tables.list()) {
+        if (rows.length >= 30) break
+        const key = String(++this.pickN)
+        this.picks.set(key, { dir: ws.dir, id: t.id })
+        rows.push([{ text: `📊 ${t.name} (${basename(ws.dir)}, ${t.rows.length} rows)`.slice(0, 64), data: `t:${key}` }])
+      }
+    if (!rows.length) return void (await api.sendMessage(chatId, 'No tables yet. A chat makes one with /table in Multimine (or ask me to have one made).'))
+    await api.sendMessage(chatId, 'Which table?', { buttons: rows })
+  }
+
+  /** A table to the user: a picture of its first rows (text, when pictures cannot be taken) and every row as CSV. */
+  async shareTable(ws: Workspace, t: Table): Promise<string> {
+    const api = this.api
+    const chat = this.settings.ownerChatId
+    if (!api || !chat) throw new Error('Telegram is not connected and paired.')
+    const project = basename(ws.dir)
+    const caption = `${t.name} · ${project} · ${t.rows.length} rows`
+    let pictured = false
+    if (this.d.renderImage) {
+      try {
+        await api.sendPhoto(chat, await this.d.renderImage(tableHtml(t, project), 1800), `${t.id}.png`, caption)
+        pictured = true
+      } catch {
+        // a table that will not render still goes, as text
+      }
+    }
+    if (!pictured) await api.sendMessage(chat, `<b>${escHtml(caption)}</b>\n<pre>${escHtml(tableText(t))}</pre>`, { html: true })
+    await api.sendDocument(chat, Buffer.from(tableCsv(t), 'utf8'), `${t.id}.csv`, 'Every row, for a spreadsheet')
+    return `Sent the table "${t.name}" (${t.rows.length} rows) to the user's Telegram, as a picture and a CSV.`
+  }
+
+  /** The latest pictures chats made or looked at, to the user (newest first, at most ten). */
+  async shareShots(o: { chat?: string; project?: string; limit?: number }): Promise<string> {
+    const api = this.api
+    const chat = this.settings.ownerChatId
+    if (!api || !chat) throw new Error('Telegram is not connected and paired.')
+    const shots = recentShots(this.d.spaces(), o)
+    if (!shots.length) return `No screenshots${o.chat ? ` from "${o.chat}"` : ''} yet: a chat has not saved or looked at any picture.`
+    const caption = (s: Shot) => `${s.chat} · ${s.project} · ${new Date(s.ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}${s.source === 'gallery' ? '' : s.source === 'changed' ? ' · saved' : ' · looked at'}\n${basename(s.path)}`
+    const files = await Promise.all(shots.map(async (s) => ({ s, size: (await stat(s.path)).size, data: await readFile(s.path) })))
+    const photos = files.filter((f) => f.size <= 10_000_000)
+    for (const f of files.filter((x) => x.size > 10_000_000)) await api.sendDocument(chat, f.data, basename(f.s.path), caption(f.s))
+    if (photos.length === 1) await api.sendPhoto(chat, photos[0].data, basename(photos[0].s.path), caption(photos[0].s))
+    else if (photos.length > 1) await api.sendAlbum(chat, photos.map((f) => ({ data: f.data, name: basename(f.s.path), caption: caption(f.s) })))
+    return `Sent ${shots.length} screenshot${shots.length === 1 ? '' : 's'} to the user's Telegram: ${shots.map((s) => `${s.chat} (${basename(s.path)})`).join(', ')}.`
   }
 
   private async sendItem(api: TelegramApi, chatId: number, w: WaitingItem, silent: boolean): Promise<void> {

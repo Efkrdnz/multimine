@@ -62,6 +62,8 @@ export interface AppOptions {
   phonePublicUrl?: ConstructorParameters<typeof Phone>[0]['publicUrl']
   /** How long a Telegram poll waits for news (tests keep it short). */
   telegramPollSeconds?: number
+  /** Photographs a web page (a table, sent to Telegram as a picture). */
+  renderImage?: (html: string, width: number) => Promise<Buffer>
 }
 
 /** One open project: its chats, run button, file watcher and terminals. */
@@ -188,6 +190,11 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
         },
         toolList: async (dir) => (await this.plugins.discover(dir)).plugins.map((p) => ({ id: p.manifest.id, name: p.manifest.name })),
         notify: (ws, e) => this.route(ws, e),
+        share: {
+          ready: () => this.telegram.ready(),
+          table: (ws, t) => this.telegram.shareTable(ws, t),
+          shots: (q) => this.telegram.shareShots(q)
+        },
         remote: {
           armHardStop: (itemId, title, approve) => (this.tuesday.currentVia === 'telegram' ? this.telegram.armHardStop(itemId, title) : this.tuesday.currentVia === 'phone' && this.phone.armHardStop(itemId, title, approve))
         }
@@ -234,6 +241,8 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
       },
       status: () => this.tuesday.snapshot().replace(/^\[|\]$/gm, ''),
       name: () => this.tuesday.spec().name,
+      spaces: () => [...this.spaces.values()],
+      renderImage: o.renderImage,
       idleSeconds: o.idleSeconds,
       fetcher: o.fetcher,
       pollSeconds: o.telegramPollSeconds

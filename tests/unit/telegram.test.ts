@@ -8,7 +8,10 @@ import type { MockScript } from '../../src/main/providers/mock'
 import type { TurnRequest } from '../../src/main/providers/types'
 import type { TgUpdate } from '../../src/main/telegram/api'
 import { itemMessage } from '../../src/main/telegram/text'
-import { transcriber } from '../../src/main/telegram/voice'
+import { transcriber, voicer } from '../../src/main/telegram/voice'
+import { encodeOggOpus, oggCrc } from '../../src/main/telegram/ogg'
+import { tableCsv } from '../../src/main/telegram/share'
+import { writeFile } from 'node:fs/promises'
 import { TUESDAY_ID } from '../../src/main/tuesday/tuesday'
 
 const cipher = { encrypt: (s: string) => s, decrypt: (s: string) => s }
@@ -18,6 +21,7 @@ const STRANGER = 777
 /** Telegram's Bot API (and Groq's transcription), as far as Tuesday uses them. */
 function fakeTelegram() {
   const calls: { method: string; body: Record<string, any> }[] = []
+  const gemini: string[] = []
   const queue: TgUpdate[] = []
   let nextId = 100
   let updateId = 1
@@ -25,6 +29,16 @@ function fakeTelegram() {
   const fetcher = (async (url: string | URL | Request, init?: RequestInit) => {
     const u = String(url)
     if (u.startsWith('https://api.groq.com/')) return new Response(JSON.stringify({ text: 'tell it snow' }), { headers: { 'content-type': 'application/json' } })
+    if (u.startsWith('https://generativelanguage.googleapis.com/')) {
+      const model = /models\/([^:]+):/.exec(u)![1]
+      gemini.push(model)
+      const speech = String(init?.body).includes('"AUDIO"')
+      if (speech && model === 'gemini-3.1-flash-tts-preview') return new Response(JSON.stringify({ error: { message: `models/${model} is not found` } }), { status: 404 })
+      if (!speech) return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'use the ice biome' }] } }] }))
+      const pcm = Buffer.alloc(4800)
+      for (let i = 0; i < 2400; i++) pcm.writeInt16LE(Math.round(Math.sin(i / 8) * 6000), i * 2)
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'audio/L16;codec=pcm;rate=24000', data: pcm.toString('base64') } }] } }] }))
+    }
     if (u.includes('/file/bot')) return new Response(Buffer.from('OggS-voice'))
     const method = u.split('/').pop()!
     const body = init?.body instanceof FormData ? Object.fromEntries(init.body.entries()) : init?.body ? JSON.parse(String(init.body)) : {}
@@ -48,6 +62,7 @@ function fakeTelegram() {
     queue.push({ update_id: updateId++, message: { message_id: nextId++, chat: { id: chat, type: 'private' }, from: { id: chat, first_name: chat === ME ? 'Efe' : 'Someone' }, date: Math.floor(Date.now() / 1000), ...patch } })
   return {
     calls,
+    gemini,
     fetcher,
     text: (chat: number, text: string) => message(chat, { text }),
     voice: (chat: number) => message(chat, { voice: { file_id: 'f1', duration: 2 } }),
@@ -75,10 +90,42 @@ describe('the pieces', () => {
     expect(itemMessage(w({ kind: 'approval', hardStop: true, permission: true, title: 'git push', planMd: 'git push origin main' })).buttons?.[0][0]).toEqual({ text: '🔑 Allow with PIN', data: 'y:q1' })
     expect(itemMessage(w({ kind: 'approval', planMd: '1. Add the bar' })).text).toContain('has a plan for you to approve:\n\n1. Add the bar')
   })
-  it('understands voice notes with whichever key there is', () => {
+  it('understands voice notes, and speaks, with whichever key there is or the one picked', () => {
     expect(transcriber(() => undefined)).toBeNull()
     expect(transcriber((p) => (p === 'google' ? 'g' : undefined))).toBe('google')
     expect(transcriber((p) => (p === 'openai' || p === 'groq' ? 'k' : undefined))).toBe('groq')
+    const all = () => 'k'
+    expect(transcriber(all, 'google')).toBe('google')
+    expect(voicer(all, 'google')).toBe('google')
+    expect(voicer(all, 'groq')).toBe('openai')
+    expect(voicer((p) => (p === 'google' ? 'g' : undefined))).toBe('google')
+    expect(voicer((p) => (p === 'groq' ? 'g' : undefined))).toBeNull()
+  })
+
+  it('packs speech into an Ogg Opus file, as Telegram plays voice notes', () => {
+    const ogg = encodeOggOpus(Buffer.alloc(24000 * 2), 24000)
+    expect(ogg.subarray(0, 4).toString()).toBe('OggS')
+    expect(ogg.includes(Buffer.from('OpusHead'))).toBe(true)
+    // every page's checksum holds
+    let off = 0
+    let pages = 0
+    while (off < ogg.length) {
+      const segs = ogg[off + 26]
+      const len = 27 + segs + [...ogg.subarray(off + 27, off + 27 + segs)].reduce((a, b) => a + b, 0)
+      const pageBuf = Buffer.from(ogg.subarray(off, off + len))
+      const crc = pageBuf.readUInt32LE(22)
+      pageBuf.writeUInt32LE(0, 22)
+      expect(oggCrc(pageBuf)).toBe(crc)
+      off += len
+      pages++
+    }
+    expect(pages).toBeGreaterThanOrEqual(3)
+    expect(() => encodeOggOpus(Buffer.alloc(10), 44100)).toThrow('44100')
+  })
+
+  it('writes a table as CSV a spreadsheet opens', () => {
+    const csv = tableCsv({ id: 't', name: 'Spells', context: false, updated: 0, columns: [{ key: 'name', label: 'Name', type: 'text' }, { key: 'mana', label: 'Mana', type: 'number' }], rows: [{ id: 'r', cells: { name: 'Fire, big "one"', mana: 12.5 } }] })
+    expect(csv).toBe('﻿Name,Mana\r\n"Fire, big ""one""",12.5\r\n')
   })
 })
 
@@ -89,6 +136,7 @@ describe('Tuesday on Telegram', () => {
   let script: MockScript
   let tg: ReturnType<typeof fakeTelegram>
   let idle = 0
+  let rendered: string[] = []
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'mm-telegram-'))
@@ -96,6 +144,7 @@ describe('Tuesday on Telegram', () => {
     script = (req) => (req.agent.id === TUESDAY_ID ? [{ text: 'Spells is working on the fireball.' }] : [{ text: 'ok' }])
     tg = fakeTelegram()
     idle = 0
+    rendered = []
     app = new MultimineApp({
       userDataDir: join(dir, 'u'),
       cipher,
@@ -105,7 +154,8 @@ describe('Tuesday on Telegram', () => {
       skipDetect: true,
       fetcher: tg.fetcher,
       idleSeconds: () => idle,
-      telegramPollSeconds: 0
+      telegramPollSeconds: 0,
+      renderImage: async (html) => (rendered.push(html), Buffer.from('PNG-of-the-table'))
     })
     await app.start()
     await mkdir(join(dir, 'forge'))
@@ -227,5 +277,61 @@ describe('Tuesday on Telegram', () => {
     expect(app.engine!.inbox.get(item.id)?.status).toBe('pending')
     tg.text(ME, '2468')
     expect(await push).toBe(true)
+  })
+
+  it('listens and answers with a Gemini key: a voice note back, from the first Gemini speech model that answers', async () => {
+    await pair()
+    await app.setKey('google', 'gm_test')
+    await app.updateSettings({ telegram: { ...app.config.settings.telegram, voiceReplies: true, speech: 'google' } })
+    expect(await app.telegramState()).toMatchObject({ voice: 'google', speaks: 'google' })
+    tg.voice(ME)
+    await until(() => tg.sentTexts().includes('🎤 "use the ice biome"'), 'the transcript')
+    const voice = await until(() => tg.calls.find((c) => c.method === 'sendVoice'), 'the voice reply')
+    const ogg = Buffer.from(await (voice.body.voice as Blob).arrayBuffer())
+    expect(ogg.subarray(0, 4).toString()).toBe('OggS')
+    expect(voice.body.caption).toBe('Spells is working on the fireball.')
+    expect(tg.gemini).toEqual(['gemini-flash-latest', 'gemini-3.1-flash-tts-preview', 'gemini-2.5-flash-preview-tts'])
+  })
+
+  it('/tables offers every table; a tap sends its picture and every row as CSV', async () => {
+    await pair()
+    await app.engine!.tables.save({ id: 'spells', name: 'Spells', context: false, updated: 1, columns: [{ key: 'name', label: 'Name', type: 'text' }, { key: 'element', label: 'Element', type: 'enum', values: ['fire'], colors: { fire: '#d95926' } }], rows: [{ id: 'r1', cells: { name: 'Fireball', element: 'fire' } }] })
+    tg.text(ME, '/tables')
+    const offer = await until(() => tg.calls.find((c) => c.method === 'sendMessage' && c.body.text === 'Which table?'), 'the offer')
+    const button = offer.body.reply_markup.inline_keyboard[0][0]
+    expect(button.text).toBe('📊 Spells (forge, 1 rows)')
+    tg.tap(ME, button.callback_data, 1)
+    const photo = await until(() => tg.calls.find((c) => c.method === 'sendPhoto'), 'the picture')
+    expect(photo.body.caption).toBe('Spells · forge · 1 rows')
+    expect(rendered[0]).toContain('<h1>Spells</h1>')
+    expect(rendered[0]).toContain('Fireball')
+    const doc = await until(() => tg.calls.find((c) => c.method === 'sendDocument'), 'the CSV')
+    expect(Buffer.from(await (doc.body.document as Blob).arrayBuffer()).toString()).toContain('Fireball,fire')
+  })
+
+  it('/screens sends the pictures chats looked at, and Tuesday can send them and tables when asked', async () => {
+    await pair()
+    const forge = app.project!.dir
+    await mkdir(join(forge, 'shots'))
+    await writeFile(join(forge, 'shots', 'game.png'), Buffer.from('fake png'))
+    await writeFile(join(forge, 'shots', 'menu.png'), Buffer.from('fake png 2'))
+    const chat = await app.createChat({ name: 'Builder', autoApprove: true })
+    script = (req) => (req.agent.id === TUESDAY_ID ? [{ text: 'ok' }] : [{ tool: { name: 'read_file', args: { path: 'shots/game.png' } } }, { tool: { name: 'run_command', args: { command: 'echo saved shots/menu.png' } } }, { text: 'Looks right.' }])
+    await app.engine!.send(chat.id, 'check the game')
+    tg.text(ME, '/screens builder')
+    const album = await until(() => tg.calls.find((c) => c.method === 'sendMediaGroup'), 'the album')
+    const media = JSON.parse(album.body.media)
+    expect(media).toHaveLength(2)
+    expect(media.map((m: { caption: string }) => m.caption.split('\n')[1]).sort()).toEqual(['game.png', 'menu.png'])
+    expect(media[0].caption).toContain('Builder · forge')
+
+    // Tuesday gets the tools once Telegram is paired, and uses them
+    const names = app.tuesday.tools().map((t) => t.name)
+    expect(names.slice(0, 2)).toEqual(['share_table', 'share_screenshots'])
+    const shots = await app.tuesday.tools().find((t) => t.name === 'share_screenshots')!.handler({ chat: 'Builder', count: 1 })
+    expect(shots.text).toMatch(/^Sent 1 screenshot to the user's Telegram: Builder \((game|menu)\.png\)\.$/)
+    const none = await app.tuesday.tools().find((t) => t.name === 'share_table')!.handler({ table: 'loot' })
+    expect(none).toMatchObject({ isError: true })
+    expect(none.text).toContain('No table "loot"')
   })
 })

@@ -114,8 +114,14 @@ Free, and set up in two minutes: Tuesday talks to you through your own Telegram 
 - **Talk to it** by text or voice note, as in its panel: "what's going on?", "tell Spells to use ice",
   "start a chat on the boss fight". It reads answers back and sends them on your yes. `/status`
   shows what every chat is doing and `/waiting` what waits on you.
-- **Voice notes** are turned into text with a Groq or Gemini key (both have free tiers) or an OpenAI
-  key, from Settings -> Providers. With an OpenAI key it can answer your voice notes with voice notes.
+- **Tables and screenshots on your phone.** `/tables` lists the open projects' tables: tap one and
+  it arrives as a picture, with every row as a CSV. `/screens` sends the latest screenshots chats
+  took or looked at while they worked (`/screens Spells` for one chat): pictures in their gallery,
+  images their turns saved, and images they opened to check the game. Or just ask Tuesday: "send me
+  the spell table", "what does the HUD look like now?".
+- **Voice notes** are turned into text with a Groq, Gemini or OpenAI key from Settings -> Providers
+  (Groq and Gemini have free tiers), and with a Gemini or OpenAI key Tuesday can answer them with
+  voice notes. Pick which key handles voice, or let it use whichever there is.
 - **Only you.** The bot answers only the Telegram account that sent it the pairing code. A push, a
   publish or deleting history needs your PIN, sent as a message Tuesday deletes at once; Tuesday
   itself never sees it. Nothing reaches this computer from outside: Multimine asks Telegram for

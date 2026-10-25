@@ -108,6 +108,20 @@ async function loadTest(url: string): Promise<string[]> {
   return [...new Set(errors)].slice(0, 12)
 }
 
+/** A web page photographed in a hidden window, cropped to what it shows: a table, sent to Telegram as a picture. */
+async function renderImage(html: string, maxWidth: number): Promise<Buffer> {
+  const w = new BrowserWindow({ show: false, width: maxWidth, height: 300, useContentSize: true, webPreferences: { offscreen: true, sandbox: true, javascript: true } })
+  try {
+    await w.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+    const size = (await w.webContents.executeJavaScript('[document.body.scrollWidth, document.body.scrollHeight]')) as [number, number]
+    w.setContentSize(Math.min(maxWidth, Math.max(360, Math.ceil(size[0]))), Math.min(6000, Math.max(80, Math.ceil(size[1]))))
+    await new Promise((r) => setTimeout(r, 300))
+    return (await w.webContents.capturePage()).toPNG()
+  } finally {
+    w.destroy()
+  }
+}
+
 const updater = new Updater((e) => emit(e))
 
 const mm = new MultimineApp({
@@ -115,6 +129,7 @@ const mm = new MultimineApp({
   cipher,
   emit,
   loadTest,
+  renderImage,
   // the projects in the background still notify: a question waiting, a turn done, the game crashing
   background: (e, dir) => notifier.handle(e, dir),
   // the phone calls when a chat waits on the user and the computer has been left alone

@@ -5,6 +5,7 @@ import { SHORT_PROVIDER } from '@shared/catalog'
 import type { ToolDef, ToolOutput } from '../providers/types'
 import type { Workspace } from '../app'
 import { suggestCommand } from '../run/runner'
+import type { Table } from '@shared/tables/model'
 
 /** What Tuesday's tools reach: the open projects, and the window. */
 export interface TuesdayHost {
@@ -17,6 +18,12 @@ export interface TuesdayHost {
   toolList(dir: string): Promise<{ id: string; name: string }[]>
   /** An event from a project, as if that project sent it (the window hears it when it is on screen). */
   notify(ws: Workspace, e: MainEvent): void
+  /** Sends things to the user's Telegram, once it is paired: a table, the latest screenshots. */
+  share?: {
+    ready(): boolean
+    table(ws: Workspace, t: Table): Promise<string>
+    shots(o: { chat?: string; project?: string; limit?: number }): Promise<string>
+  }
   /** On a phone call or Telegram: a hard stop the user wants allowed waits for their PIN there. */
   remote?: { armHardStop(itemId: string, title: string, approve: boolean): boolean }
 }
@@ -122,7 +129,36 @@ export function tuesdayTools(host: TuesdayHost): ToolDef[] {
     }
   const str = (v: unknown) => (typeof v === 'string' ? v : v == null ? '' : String(v))
 
+  const sharing: ToolDef[] = host.share?.ready()
+    ? [
+        {
+          name: 'share_table',
+          description: "Send one of a project's tables to the user's Telegram: a picture of it and every row as a CSV. For when they ask to see a table on their phone.",
+          shape: { table: z.string().describe('The table id or name'), project: z.string().optional() },
+          handler: safe(async (a) => {
+            const ws = findProject(host, str(a.project) || undefined)
+            const all = await ws.engine.tables.list()
+            const r = norm(str(a.table))
+            const t = all.find((x) => x.id === str(a.table) || norm(x.name) === r) ?? all.find((x) => norm(x.name).includes(r))
+            if (!t) throw new Error(`No table "${a.table}" in ${nameOf(ws)}. Tables: ${all.map((x) => x.name).join(', ') || 'none'}.`)
+            return host.share!.table(ws, t)
+          })
+        },
+        {
+          name: 'share_screenshots',
+          description: "Send the user's Telegram the latest screenshots chats took or looked at while working (and pictures in their galleries), newest first.",
+          shape: {
+            chat: z.string().optional().describe('Only this chat (name or id)'),
+            project: z.string().optional(),
+            count: z.number().optional().describe('How many, 1-10 (default 3)')
+          },
+          handler: safe((a) => host.share!.shots({ chat: str(a.chat) || undefined, project: str(a.project) || undefined, limit: Math.min(10, Math.max(1, Number(a.count) || 3)) }))
+        }
+      ]
+    : []
+
   return [
+    ...sharing,
     {
       name: 'overview',
       description: 'Every open project in detail: each chat with its id, model, what it is doing and the start of its last reply; the game; what waits on the user.',

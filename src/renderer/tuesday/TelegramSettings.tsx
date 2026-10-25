@@ -11,6 +11,7 @@ const STATUS = {
 } as const
 
 const VOICE = { groq: 'your Groq key', openai: 'your OpenAI key', google: 'your Gemini key' } as const
+const SPEECH = { auto: 'Whichever key there is', groq: 'Groq (listening only)', openai: 'OpenAI', google: 'Gemini' } as const
 
 /** Settings -> Tuesday -> Telegram: the user's own bot, pairing, and when Tuesday messages them. */
 export function TelegramSettings({ settings }: { settings: AppSettings }) {
@@ -161,10 +162,21 @@ export function TelegramSettings({ settings }: { settings: AppSettings }) {
         </label>
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={t.voiceReplies} onChange={(e) => save({ voiceReplies: e.target.checked })} data-testid="telegram-voice-replies" />
-          Answer my voice notes with voice notes <span className="text-[11px] text-indigo-300/60">(needs an OpenAI key)</span>
+          Answer my voice notes with voice notes <span className="text-[11px] text-indigo-300/60">(needs a Gemini or OpenAI key)</span>
+        </label>
+        <label className="flex items-center gap-2">
+          Voice uses
+          <select className="field !w-auto !py-0.5 text-xs" value={t.speech ?? 'auto'} onChange={(e) => save({ speech: e.target.value as Settings['speech'] })} data-testid="telegram-speech">
+            {(Object.keys(SPEECH) as (keyof typeof SPEECH)[]).map((k) => (
+              <option key={k} value={k}>
+                {SPEECH[k]}
+              </option>
+            ))}
+          </select>
         </label>
         <div className="text-[11px] text-indigo-300/60">
-          Voice notes: {state?.voice ? `understood with ${VOICE[state.voice]}.` : 'add a Groq, Gemini or OpenAI key in Providers to send them (Groq and Gemini have free tiers).'} A push, a publish or deleting history needs your PIN, sent as a message that {name} deletes at once.
+          Voice notes: {state?.voice ? `understood with ${VOICE[state.voice]}` : 'add a Groq, Gemini or OpenAI key in Providers to send them (Groq and Gemini have free tiers)'}
+          {state?.voice && (state.speaks ? `; replies spoken with ${VOICE[state.speaks]}.` : '; spoken replies need a Gemini or OpenAI key.')} A push, a publish or deleting history needs your PIN, sent as a message that {name} deletes at once.
         </div>
       </div>
     </section>

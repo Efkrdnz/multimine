@@ -103,8 +103,28 @@ project. Click it (or press **Ctrl+Shift+Space**) and talk to it:
   messages on, and the chats do the heavy work on their own models. Its lines when a chat finishes
   or asks cost nothing: no model is involved.
 
-Phone calls are next: call a number to talk to Tuesday while the PC is on, and get a call when a
-chat asks something while you are away.
+### Tuesday on the phone
+
+With a Twilio number, you can call Tuesday while the computer is on, and it calls you.
+
+- **Call in** from your own phone: Tuesday asks for your PIN, says what is going on ("two chats are
+  working, one thing is waiting for you") and you just talk, as in its panel. It answers in a few
+  spoken sentences; the conversation shows in its panel too, marked Phone.
+- **It calls you** when a chat asks something (or needs your OK) and the computer has been left
+  alone for a while (10 minutes by default): it reads the question out with its options, you
+  answer, it reads your answer back, and on your yes the chat gets it. Once per question, at most
+  every five minutes, never in the quiet hours (23:00-08:00 unless you change them).
+- **Safe by default.** Calls in come through only from your number and with your PIN; every webhook
+  must carry Twilio's signature. A push, a publish or deleting history is allowed on the phone only
+  with your PIN on the keypad, never on Tuesday's word. The auth token and PIN are stored encrypted.
+
+To set it up: make a Twilio account and get a number that takes voice calls (a trial account only
+calls numbers you have verified). In Settings -> Tuesday -> Phone, enter the Account SID, the auth
+token, the Twilio number, your own number and a PIN, then **Save & connect**. Multimine downloads
+Cloudflare's `cloudflared` once and opens a free tunnel so Twilio can reach this computer, and
+points your Twilio number at it (a new address each time it starts, set on the number for you). Or
+give it your own public URL that forwards to Multimine. **Call me now** tries it out. Twilio bills
+the number monthly and calls by the minute.
 
 ## Run the game
 

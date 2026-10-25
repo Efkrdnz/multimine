@@ -18,7 +18,19 @@ export const DEFAULT_SETTINGS: AppSettings = {
   catalog: { ...DEFAULT_CATALOG },
   mcpServers: [],
   recentProjects: [],
-  tuesday: { enabled: true, name: 'Tuesday' }
+  tuesday: { enabled: true, name: 'Tuesday' },
+  phone: {
+    enabled: false,
+    accountSid: '',
+    twilioNumber: '',
+    myNumber: '',
+    language: 'en-US',
+    voice: 'Polly.Joanna-Neural',
+    callWhenAway: true,
+    awayMinutes: 10,
+    quietHours: { enabled: true, from: '23:00', to: '08:00' },
+    publicUrl: ''
+  }
 }
 
 /** Encrypts secrets at rest. Electron's safeStorage in the app; a passthrough in tests. */
@@ -49,7 +61,8 @@ export class AppConfig {
       economy: { ...DEFAULT_SETTINGS.economy, ...(saved.economy ?? {}), tiers: { ...DEFAULT_TIERS, ...(saved.economy?.tiers ?? {}) } },
       catalog: { ...DEFAULT_CATALOG, ...(saved.catalog ?? {}) },
       baseUrls: { ...DEFAULT_SETTINGS.baseUrls, ...(saved.baseUrls ?? {}) },
-      tuesday: { ...DEFAULT_SETTINGS.tuesday, ...(saved.tuesday ?? {}) }
+      tuesday: { ...DEFAULT_SETTINGS.tuesday, ...(saved.tuesday ?? {}) },
+      phone: { ...DEFAULT_SETTINGS.phone, ...(saved.phone ?? {}), quietHours: { ...DEFAULT_SETTINGS.phone.quietHours, ...(saved.phone?.quietHours ?? {}) } }
     }
     this.keys = await readJson(join(this.dir, 'keys.json'), {})
   }

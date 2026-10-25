@@ -2,6 +2,9 @@ import { join, basename, resolve } from 'node:path'
 import type { Api } from '@shared/api'
 import type { AgentSpec, AgentStatus, AppSettings, ChatMessage, MainEvent, McpServerConfig, PlanWindow, ProjectTab, ProviderKind, TuesdayNotice, WaitingItem } from '@shared/types'
 import { Tuesday, TUESDAY_ID } from './tuesday/tuesday'
+import { Phone } from './phone/phone'
+import { phoneGreeting } from './phone/talk'
+import type { PhoneState } from '@shared/types'
 import { AppConfig, type Cipher } from './store/appConfig'
 import { ProjectStore } from './store/project'
 import { ChatStore } from './store/chats'
@@ -50,6 +53,12 @@ export interface AppOptions {
   loadTest?: (url: string) => Promise<string[]>
   /** An event from a project that is not on screen (for desktop notifications). */
   background?: (e: MainEvent, dir: string) => void
+  /** Seconds since the user last touched the computer: Tuesday calls when they are away. */
+  idleSeconds?: () => number
+  /** For the phone's calls to Twilio and the tunnel download (tests pass a stand-in). */
+  fetcher?: typeof fetch
+  /** The phone's public address (tests); default: the user's own URL or a Cloudflare tunnel. */
+  phonePublicUrl?: ConstructorParameters<typeof Phone>[0]['publicUrl']
 }
 
 /** One open project: its chats, run button, file watcher and terminals. */
@@ -83,6 +92,10 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
   private tabsTimer: ReturnType<typeof setTimeout> | null = null
   /** The assistant above every chat and project. */
   readonly tuesday: Tuesday
+  /** The phone line to Tuesday (Twilio). */
+  readonly phone: Phone
+  /** How the last call Tuesday placed opened: told to it with the caller's first words. */
+  private opener: string | null = null
   /** What Tuesday has already told the user about: questions it announced, each chat's last status. */
   private announced = new Set<string>()
   private lastStatus = new Map<string, AgentStatus>()
@@ -159,6 +172,7 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
       busUrl: (id) => this.bus.url(id),
       emit: o.emit,
       inboxChanged: () => this.tabsSoon(),
+      waiting: () => this.waiting(),
       host: {
         spaces: () => [...this.spaces.values()],
         current: () => this.current,
@@ -168,7 +182,36 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
           o.emit({ type: 'tuesday-show', ...target })
         },
         toolList: async (dir) => (await this.plugins.discover(dir)).plugins.map((p) => ({ id: p.manifest.id, name: p.manifest.name })),
-        notify: (ws, e) => this.route(ws, e)
+        notify: (ws, e) => this.route(ws, e),
+        phone: { armHardStop: (itemId, title, approve) => this.phone.armHardStop(itemId, title, approve) }
+      }
+    })
+    this.phone = new Phone({
+      config: this.config,
+      userDataDir: o.userDataDir,
+      emit: o.emit,
+      waiting: () => this.waiting(),
+      idleSeconds: o.idleSeconds,
+      fetcher: o.fetcher,
+      publicUrl: o.phonePublicUrl,
+      brain: {
+        greeting: (outbound) => {
+          const busy = [...this.spaces.values()].reduce((n, ws) => n + ws.project.list().filter((c) => ws.engine.busy(c.id)).length, 0)
+          const text = phoneGreeting(this.tuesday.spec().name, outbound, this.waiting(), busy)
+          this.opener = outbound ? text : null
+          return text
+        },
+        reply: async (heard, call) => {
+          const note = call.outbound && this.opener ? `[You called them because something waits on them, and opened with: "${this.opener}"]` : undefined
+          this.opener = null
+          const r = await this.tuesday.sendPhone(heard, note)
+          if (r.error) throw new Error(r.error)
+          return r.text
+        },
+        allowHardStop: (itemId, approve) => {
+          const item = this.inboxOf(itemId).decide(itemId, approve, 'Allowed on the phone with the PIN.')
+          return item ? `Done: ${item.title} is ${approve ? 'allowed' : 'turned down'}.` : 'That was already answered.'
+        }
       }
     })
   }
@@ -179,6 +222,8 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     if (Array.isArray(saved)) this.planLimits.restore(saved)
     await this.bus.start()
     await this.tuesday.start()
+    // the phone sets itself up in the background: a tunnel can take a while
+    if (this.config.settings.phone.enabled) void this.phone.apply()
   }
 
   async shutdown(): Promise<void> {
@@ -188,6 +233,7 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     this.spaces.clear()
     this.current = null
     await this.tuesday.stop()
+    await this.phone.stop()
     await this.hub.closeAll()
     await this.bus.stop()
   }
@@ -519,12 +565,31 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     await this.tuesday.clear()
   }
 
+  async phoneState(): Promise<PhoneState> {
+    return this.phone.state()
+  }
+
+  /** Saves the Twilio auth token and the PIN (null removes one; undefined leaves it as it is). */
+  async phoneSetSecrets(token?: string | null, pin?: string | null): Promise<PhoneState> {
+    return this.phone.setSecrets(token, pin)
+  }
+
+  /** Sets the phone up again now: the tunnel, and the Twilio number pointed at it. */
+  async phoneConnect(): Promise<PhoneState> {
+    return this.phone.apply(true)
+  }
+
+  async phoneCallMe(): Promise<void> {
+    await this.phone.callMe()
+  }
+
   async updateSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
     const before = this.config.settings.mcpServers
     // once the user picks new-chat defaults, start-up detection leaves them alone
     const settings = await this.config.update(patch.chatDefaults ? { ...patch, chatDefaultsChosen: true } : patch)
     if (patch.mcpServers) for (const s of before) await this.hub.drop(s.id)
     if (patch.tuesday || patch.chatDefaults) await this.tuesday.applySettings().catch(() => undefined)
+    if (patch.phone) void this.phone.apply()
     this.o.emit({ type: 'settings', settings })
     return settings
   }

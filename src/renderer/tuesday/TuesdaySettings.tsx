@@ -2,6 +2,7 @@ import { DEFAULT_CATALOG, PROVIDER_LABEL } from '@shared/catalog'
 import { SUPPORTED_EFFORTS, clampEffort } from '@shared/effort'
 import { PROVIDERS, type AppSettings, type ProviderKind, type TuesdaySettings as Settings } from '@shared/types'
 import { api } from '../state/store'
+import { PhoneSettings } from './PhoneSettings'
 
 /** Settings -> Tuesday: its name, and the provider and model it runs on. */
 export function TuesdaySettings({ settings }: { settings: AppSettings }) {
@@ -84,9 +85,7 @@ export function TuesdaySettings({ settings }: { settings: AppSettings }) {
         </div>
       </section>
 
-      <section className="rounded-xl border border-dashed border-white/15 p-3 text-xs text-indigo-200/70">
-        <span className="font-semibold text-indigo-100">Phone calls are next:</span> call a number to talk to {t.name || 'Tuesday'} while the PC is on, and get a call when a chat asks something while you are away.
-      </section>
+      <PhoneSettings settings={settings} />
     </div>
   )
 }

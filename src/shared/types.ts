@@ -155,6 +155,8 @@ export interface ChatMessage {
   usage?: Usage
   /** A slash command the user typed (`/table ...`, `/plugin ...`): the text stays as typed, the turn gets the command's prompt. */
   command?: 'table' | 'plugin' | 'idea'
+  /** Said on a phone call to Tuesday. */
+  via?: 'phone'
   /** `/plan`, `/coop` (or a tool asking for them): this message's own modes, over the chat's. */
   modes?: MessageModes
   /** A table a chat saved, shown as a card in the chat. */
@@ -379,6 +381,44 @@ export interface AppSettings {
   claudePath?: string
   codexPath?: string
   tuesday: TuesdaySettings
+  phone: PhoneSettings
+}
+
+/**
+ * Talking to Tuesday on the phone, through a Twilio number. The auth token and the PIN are kept
+ * with the API keys (encrypted), not here.
+ */
+export interface PhoneSettings {
+  enabled: boolean
+  /** The Twilio account (AC...). */
+  accountSid: string
+  /** The Twilio number calls come in on and go out from (+15551234567). */
+  twilioNumber: string
+  /** The user's own phone: the only one that may call in, and the one Tuesday calls. */
+  myNumber: string
+  /** For speech recognition: 'en-US', 'en-GB', 'tr-TR'... */
+  language: string
+  /** A Twilio voice ('Polly.Joanna-Neural'); empty for Twilio's default in that language. */
+  voice: string
+  /** Call when a chat waits on the user and the computer has been idle for `awayMinutes`. */
+  callWhenAway: boolean
+  awayMinutes: number
+  /** No calls at night (local time). */
+  quietHours: { enabled: boolean; from: string; to: string }
+  /** A public address the user runs themselves; empty: a free Cloudflare tunnel. */
+  publicUrl: string
+}
+
+/** Where the phone connection stands. */
+export interface PhoneState {
+  status: 'off' | 'starting' | 'ready' | 'error'
+  detail?: string
+  /** The public address Twilio reaches Multimine at. */
+  url?: string
+  /** A call going on now. */
+  call: { outbound: boolean; since: number } | null
+  /** Which secrets are saved (never the secrets themselves). */
+  secrets: { token: boolean; pin: boolean }
 }
 
 /**
@@ -589,3 +629,4 @@ export type MainEvent =
   | { type: 'tuesday-notice'; notice: TuesdayNotice }
   /** Tuesday put something on screen: a chat or a tool of the project now on screen. */
   | { type: 'tuesday-show'; chatId?: string; tool?: string }
+  | { type: 'phone'; state: PhoneState }

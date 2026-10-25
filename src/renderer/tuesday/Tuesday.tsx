@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, ArrowUp, CheckCircle2, MessageCircleQuestion, RotateCcw, Settings2, Square, X } from 'lucide-react'
+import { AlertTriangle, ArrowUp, CheckCircle2, MessageCircleQuestion, Phone, RotateCcw, Settings2, Square, X } from 'lucide-react'
 import { modelLabel } from '@shared/catalog'
 import type { TuesdayNotice } from '@shared/types'
 import { api, applyEvent, useStore } from '../state/store'
@@ -75,7 +75,7 @@ function Panel() {
 
   return (
     <div
-      className="glass tuesday-panel fixed bottom-[84px] right-4 z-[60] flex w-[min(430px,calc(100vw-32px))] flex-col overflow-hidden rounded-2xl"
+      className="glass tuesday-panel fixed bottom-[84px] right-4 z-30 flex w-[min(430px,calc(100vw-32px))] flex-col overflow-hidden rounded-2xl"
       style={{ height: 'min(660px, calc(100vh - 140px))', background: 'rgb(9 10 26 / 0.97)' }}
       // Esc closes what is on top: a dialog opened from here first
       onKeyDown={(e) => e.key === 'Escape' && !useStore.getState().modal && close()}
@@ -188,8 +188,13 @@ export function Tuesday() {
   const waiting = useStore((s) => s.waiting.length)
   const notices = useStore((s) => s.notices)
   const name = useStore((s) => s.settings?.tuesday.name || 'Tuesday')
+  const onCall = useStore((s) => !!s.phone?.call)
 
   useEffect(() => {
+    void api()
+      .phoneState()
+      .then((phone) => useStore.getState().set({ phone }))
+      .catch(() => undefined)
     void api()
       .tuesdayInit()
       .then((r) => useStore.getState().set({ tuesdayMessages: r.messages, tuesdayStatus: { status: r.status, activity: r.activity, detail: r.detail }, tuesdaySpec: r.spec, waiting: r.waiting }))
@@ -221,21 +226,26 @@ export function Tuesday() {
     <>
       {open && <Panel />}
       {!open && notices.length > 0 && (
-        <div className="fixed bottom-[84px] right-4 z-[60] flex flex-col items-end gap-1.5">
+        <div className="fixed bottom-[84px] right-4 z-30 flex flex-col items-end gap-1.5">
           {notices.map((n) => (
             <Notice key={n.id} n={n} />
           ))}
         </div>
       )}
       <button
-        className="fixed bottom-4 right-4 z-[60] rounded-full outline-none"
-        title={`${name} (Ctrl+Shift+Space)${waiting ? ` - ${waiting} waiting for you` : ''}`}
+        className="fixed bottom-4 right-4 z-30 rounded-full outline-none"
+        title={`${name} (Ctrl+Shift+Space)${onCall ? ' - on the phone with you' : ''}${waiting ? ` - ${waiting} waiting for you` : ''}`}
         aria-label={name}
         aria-expanded={open}
         onClick={() => useStore.getState().set({ tuesdayOpen: !open })}
         data-testid="tuesday-orb"
       >
-        <Orb size={52} busy={busyStatus(status)} />
+        <Orb size={52} busy={busyStatus(status) || onCall} />
+        {onCall && (
+          <span className="pop absolute -bottom-1 -left-1 flex h-5 w-5 items-center justify-center rounded-full bg-cyan-400 text-[#032] shadow" data-testid="tuesday-on-call">
+            <Phone size={11} />
+          </span>
+        )}
         {waiting > 0 && (
           <span className="pop absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-400 px-1 text-[11px] font-bold text-[#2a1a00] shadow" data-testid="tuesday-badge">
             {waiting}

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, net, Notification, protocol, safeStorage, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, net, Notification, powerMonitor, protocol, safeStorage, shell } from 'electron'
 import { execFileSync, spawn } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -117,6 +117,8 @@ const mm = new MultimineApp({
   loadTest,
   // the projects in the background still notify: a question waiting, a turn done, the game crashing
   background: (e, dir) => notifier.handle(e, dir),
+  // the phone calls when a chat waits on the user and the computer has been left alone
+  idleSeconds: () => powerMonitor.getSystemIdleTime(),
   mockDelayMs: process.env.MULTIMINE_MOCK_DELAY ? Number(process.env.MULTIMINE_MOCK_DELAY) : undefined,
   skipDetect: process.env.MULTIMINE_FORCE_MOCK === '1'
 })

@@ -1,4 +1,4 @@
-import type { AgentSpec, AgentStatus, ChatMessage, WaitingItem, ImageUpload, ProjectTab, RunState, UpdateState, AppSettings, CliStatus, GhItem, GitCommit, GitStatus, IdeEntry, IdeHit, MainEvent, McpServerConfig, ModelEntry, PlanWindow, PluginInfo, PluginManifest, PluginPermission, ProjectInfo, ProviderKind, TerminalInfo, TerminalKind } from './types'
+import type { AgentSpec, AgentStatus, ChatMessage, PhoneState, WaitingItem, ImageUpload, ProjectTab, RunState, UpdateState, AppSettings, CliStatus, GhItem, GitCommit, GitStatus, IdeEntry, IdeHit, MainEvent, McpServerConfig, ModelEntry, PlanWindow, PluginInfo, PluginManifest, PluginPermission, ProjectInfo, ProviderKind, TerminalInfo, TerminalKind } from './types'
 
 /** Everything the renderer can ask of the main process. One method, one IPC channel. */
 export interface Api {
@@ -43,6 +43,11 @@ export interface Api {
   /** A new conversation with Tuesday: the messages stay, it starts clean with a short recap. */
   tuesdayFresh(): Promise<boolean>
   tuesdayClear(): Promise<void>
+  /** The phone line to Tuesday: where it stands, its secrets (null removes, undefined keeps), set up again now, ring me now. */
+  phoneState(): Promise<PhoneState>
+  phoneSetSecrets(token?: string | null, pin?: string | null): Promise<PhoneState>
+  phoneConnect(): Promise<PhoneState>
+  phoneCallMe(): Promise<void>
 
   updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>
   setKey(provider: string, key: string | null): Promise<string[]>
@@ -118,6 +123,7 @@ export const API_METHODS: ApiMethod[] = [
   'send', 'stop', 'retry', 'clearChat', 'freshStart', 'turnDiff', 'turnUndo',
   'answer', 'decide',
   'tuesdayInit', 'tuesdaySend', 'tuesdayStop', 'tuesdayFresh', 'tuesdayClear',
+  'phoneState', 'phoneSetSecrets', 'phoneConnect', 'phoneCallMe',
   'updateSettings', 'setKey', 'detectClis', 'refreshModels', 'testMcp',
   'gitStatus', 'gitInit', 'gitDiff', 'gitStage', 'gitUnstage', 'gitCommit', 'gitLog', 'gitShow', 'gitBranches', 'gitCheckout', 'gitPull', 'gitPush',
   'ghInfo', 'ghList', 'ghCreatePr',

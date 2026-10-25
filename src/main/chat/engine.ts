@@ -54,7 +54,7 @@ export interface EngineDeps {
   tools?: (agent: AgentSpec) => ToolDef[]
   system?: (agent: AgentSpec) => string
   /** Adds to each turn's prompt as it goes out, not to the conversation (Tuesday's look at the workspace). */
-  decorate?: (agentId: string, prompt: string) => string | Promise<string>
+  decorate?: (agentId: string, prompt: string, msg: ChatMessage) => string | Promise<string>
 }
 
 /** What a chat that makes a tool can do with the app's plugins. */
@@ -89,6 +89,8 @@ export interface SendOptions {
   images?: ImageUpload[]
   /** Plan or coop for this message only (`/plan` and `/coop` typed at its start do the same). */
   modes?: MessageModes
+  /** Said on a phone call (to Tuesday). */
+  via?: 'phone'
 }
 
 const text = (t: string, isError = false): ToolOutput => ({ text: t, isError })
@@ -422,6 +424,7 @@ export class Engine {
       ts: Date.now(),
       ...(command ? { command } : {}),
       ...(Object.keys(modes).length ? { modes } : {}),
+      ...(opts.via ? { via: opts.via } : {}),
       ...(staged?.attachments.length ? { attachments: staged.attachments } : {})
     }
     if (staged) this.writing.set(userMsg.id, staged.written.catch(() => undefined))
@@ -595,7 +598,7 @@ export class Engine {
     const note = attachmentNote(userMsg.attachments)
     const withNote = note ? `${asked.trim() || 'See the attached image.'}\n\n${note}` : asked
     const told = undone?.length ? `${undoNote(undone)}\n\n${withNote}` : withNote
-    const prompt = this.d.decorate ? await this.d.decorate(agentId, told) : told
+    const prompt = this.d.decorate ? await this.d.decorate(agentId, told, userMsg) : told
     await this.writing.get(userMsg.id)
     this.writing.delete(userMsg.id)
     const images = await loadImages(this.d.project.dir, userMsg.attachments)

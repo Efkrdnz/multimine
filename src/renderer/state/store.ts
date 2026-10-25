@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { pushTerminalData } from '../ide/terminalBus'
-import type { AgentSpec, AgentStatus, AppSettings, CliStatus, PluginInfo, ChatMessage, InboxItem, MainEvent, MediaItem, ProjectInfo, ProjectTab, RunState, UpdateState, Usage, PlanWindow, TuesdayNotice, WaitingItem } from '@shared/types'
+import type { AgentSpec, AgentStatus, AppSettings, CliStatus, PluginInfo, ChatMessage, InboxItem, MainEvent, MediaItem, ProjectInfo, ProjectTab, RunState, UpdateState, Usage, PlanWindow, PhoneState, TuesdayNotice, WaitingItem } from '@shared/types'
 import { openTool } from '../tools/openTool'
 
 export type Panel = 'media' | 'instructions' | 'git' | 'run' | null
@@ -74,6 +74,8 @@ export interface State {
   waiting: WaitingItem[]
   /** Tuesday's lines by the orb: a chat finished, failed or asks. */
   notices: TuesdayNotice[]
+  /** The phone line to Tuesday. */
+  phone: PhoneState | null
   set: (patch: Partial<State>) => void
   /** Puts a chat on screen (closing any tool in front of it). */
   openChat: (id: string) => void
@@ -122,6 +124,7 @@ export const useStore = create<State>((set, get) => ({
   tuesdaySpec: null,
   waiting: [],
   notices: [],
+  phone: null,
   set: (patch) => set(patch),
   openChat: (id) => {
     set({ focused: id, activeTool: null })
@@ -306,6 +309,9 @@ export function applyEvent(e: MainEvent): void {
       setTimeout(() => useStore.getState().set({ notices: useStore.getState().notices.filter((n) => n.id !== e.notice.id) }), e.notice.kind === 'ask' ? 15_000 : 7000)
       break
     }
+    case 'phone':
+      s.set({ phone: e.state })
+      break
     case 'tuesday-show': {
       // the project is already on screen (Tuesday switched to it first)
       if (e.chatId && s.project?.agents.some((a) => a.id === e.chatId)) s.openChat(e.chatId)

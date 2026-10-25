@@ -12,6 +12,8 @@ import type { McpHub } from '../mcp/hub'
 import type { ToolDef } from '../providers/types'
 import { snapshot, tuesdaySystem, type SnapshotProject } from './prompt'
 import { tuesdayTools, type TuesdayHost } from './tools'
+import { phoneRule } from '../phone/talk'
+import type { WaitingItem } from '@shared/types'
 
 /** Tuesday's chat id: one conversation, app-wide. */
 export const TUESDAY_ID = 'tuesday'
@@ -29,6 +31,8 @@ export interface TuesdayDeps {
   host: TuesdayHost
   /** Tuesday's own questions and approvals changed (a paid fallback, a loop-guard pause). */
   inboxChanged: () => void
+  /** Everything waiting on the user (a phone turn is told about it, to save a tool call). */
+  waiting: () => WaitingItem[]
 }
 
 /**
@@ -40,6 +44,8 @@ export class Tuesday {
   engine: Engine | null = null
   private project: ProjectStore | null = null
   private status: { status: AgentStatus; activity?: string; detail?: string } = { status: 'idle' }
+  /** Said once with the next phone turn: how a call Tuesday placed opened. */
+  private phoneNote: string | null = null
 
   constructor(private readonly d: TuesdayDeps) {}
 
@@ -84,7 +90,12 @@ export class Tuesday {
       emit: (e) => this.relay(e),
       tools: () => this.tools(),
       system: (agent) => tuesdaySystem(agent.name),
-      decorate: (_id, prompt) => `${this.snapshot()}\n\n${prompt}`
+      decorate: (_id, prompt, msg) => {
+        if (msg.via !== 'phone') return `${this.snapshot()}\n\n${prompt}`
+        const note = this.phoneNote
+        this.phoneNote = null
+        return [this.snapshot(), phoneRule(this.d.waiting()), note ?? '', prompt].filter(Boolean).join('\n\n')
+      }
     })
     await this.engine.open()
   }
@@ -150,6 +161,13 @@ export class Tuesday {
     // a provider change it could not take mid-reply is taken now
     if (!this.engine.busy(TUESDAY_ID)) await this.applySettings().catch(() => undefined)
     return this.engine.send(TUESDAY_ID, text, 'user')
+  }
+
+  /** What the caller said on the phone; `note` (once) tells Tuesday how a call it placed opened. */
+  async sendPhone(text: string, note?: string): Promise<TurnResult> {
+    if (!this.engine) throw new Error(`${this.spec().name} is not running.`)
+    if (note) this.phoneNote = note
+    return this.engine.send(TUESDAY_ID, text, 'user', { via: 'phone' })
   }
 
   stopTurn(): void {

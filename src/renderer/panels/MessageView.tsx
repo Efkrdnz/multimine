@@ -2,7 +2,7 @@ import { usageLine } from '@shared/usage'
 import { memo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { AlertTriangle, Brain, CheckCircle2, ChevronRight, Hammer, ListChecks, Loader2, RotateCcw, Users, Wrench, XCircle } from 'lucide-react'
+import { AlertTriangle, Brain, CheckCircle2, ChevronRight, Hammer, ListChecks, Loader2, Phone, RotateCcw, Users, Wrench, XCircle } from 'lucide-react'
 import type { ChatMessage, ToolCallView } from '@shared/types'
 import { api, useStore } from '../state/store'
 import { MediaView } from './MediaView'
@@ -242,14 +242,19 @@ function MessageBody({ m, last }: { m: ChatMessage; last: boolean }) {
       <div className={`my-3 flex ${sender ? 'justify-start' : 'justify-end'}`}>
         <div className={`max-w-[88%] rounded-2xl px-3.5 py-2 ${sender ? 'border border-dashed border-violet-300/30 bg-violet-950/40' : 'bg-gradient-to-br from-indigo-600/70 to-violet-700/70'}`}>
           {sender && <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-violet-200">from {sender}</div>}
-          {(m.modes?.plan || m.modes?.coop) && (
+          {(m.modes?.plan || m.modes?.coop || m.via === 'phone') && (
             <div className="mb-1 flex gap-1" data-testid="message-modes">
-              {m.modes.plan && (
+              {m.via === 'phone' && (
+                <span className="inline-flex items-center gap-1 rounded bg-cyan-400/20 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wider text-cyan-100" title="Said on a phone call">
+                  <Phone size={10} /> Phone
+                </span>
+              )}
+              {m.modes?.plan && (
                 <span className="inline-flex items-center gap-1 rounded bg-sky-400/20 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wider text-sky-100" title="Plan first: it hands in a plan for you to approve before it changes anything">
                   <ListChecks size={10} /> Plan
                 </span>
               )}
-              {m.modes.coop && (
+              {m.modes?.coop && (
                 <span className="inline-flex items-center gap-1 rounded bg-amber-400/20 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wider text-amber-100" title="Coop: it works with you and asks about everything that shapes the result">
                   <Users size={10} /> Coop
                 </span>

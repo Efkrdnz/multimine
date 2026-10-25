@@ -187,7 +187,9 @@ app.whenReady().then(async () => {
       return r.canceled ? null : r.filePaths[0]
     },
     openPath: async (p: string) => {
-      await shell.openPath(p)
+      // a web link (the user's Telegram bot) opens in the browser; anything else is a file
+      if (/^https:\/\//.test(p)) await shell.openExternal(p)
+      else await shell.openPath(p)
     },
     mediaUrl: async (p: string) => `mm://media/${encodeURIComponent(p)}`,
     testNotification: async () => showNote({ title: 'Multimine notifications are on', body: 'You will see this when an agent has a question, needs a permission or is paused.' }),

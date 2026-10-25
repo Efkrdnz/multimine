@@ -3,6 +3,7 @@ import { SUPPORTED_EFFORTS, clampEffort } from '@shared/effort'
 import { PROVIDERS, type AppSettings, type ProviderKind, type TuesdaySettings as Settings } from '@shared/types'
 import { api } from '../state/store'
 import { PhoneSettings } from './PhoneSettings'
+import { TelegramSettings } from './TelegramSettings'
 
 /** Settings -> Tuesday: its name, and the provider and model it runs on. */
 export function TuesdaySettings({ settings }: { settings: AppSettings }) {
@@ -85,6 +86,7 @@ export function TuesdaySettings({ settings }: { settings: AppSettings }) {
         </div>
       </section>
 
+      <TelegramSettings settings={settings} />
       <PhoneSettings settings={settings} />
     </div>
   )

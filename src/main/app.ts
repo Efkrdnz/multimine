@@ -4,7 +4,8 @@ import type { AgentSpec, AgentStatus, AppSettings, ChatMessage, MainEvent, McpSe
 import { Tuesday, TUESDAY_ID } from './tuesday/tuesday'
 import { Phone } from './phone/phone'
 import { phoneGreeting } from './phone/talk'
-import type { PhoneState } from '@shared/types'
+import { Telegram } from './telegram/telegram'
+import type { PhoneState, TelegramState } from '@shared/types'
 import { AppConfig, type Cipher } from './store/appConfig'
 import { ProjectStore } from './store/project'
 import { ChatStore } from './store/chats'
@@ -59,6 +60,8 @@ export interface AppOptions {
   fetcher?: typeof fetch
   /** The phone's public address (tests); default: the user's own URL or a Cloudflare tunnel. */
   phonePublicUrl?: ConstructorParameters<typeof Phone>[0]['publicUrl']
+  /** How long a Telegram poll waits for news (tests keep it short). */
+  telegramPollSeconds?: number
 }
 
 /** One open project: its chats, run button, file watcher and terminals. */
@@ -94,6 +97,8 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
   readonly tuesday: Tuesday
   /** The phone line to Tuesday (Twilio). */
   readonly phone: Phone
+  /** Tuesday on Telegram, through the user's own bot. */
+  readonly telegram: Telegram
   /** How the last call Tuesday placed opened: told to it with the caller's first words. */
   private opener: string | null = null
   /** What Tuesday has already told the user about: questions it announced, each chat's last status. */
@@ -183,7 +188,9 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
         },
         toolList: async (dir) => (await this.plugins.discover(dir)).plugins.map((p) => ({ id: p.manifest.id, name: p.manifest.name })),
         notify: (ws, e) => this.route(ws, e),
-        phone: { armHardStop: (itemId, title, approve) => this.phone.armHardStop(itemId, title, approve) }
+        remote: {
+          armHardStop: (itemId, title, approve) => (this.tuesday.currentVia === 'telegram' ? this.telegram.armHardStop(itemId, title) : this.tuesday.currentVia === 'phone' && this.phone.armHardStop(itemId, title, approve))
+        }
       }
     })
     this.phone = new Phone({
@@ -214,6 +221,23 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
         }
       }
     })
+    this.telegram = new Telegram({
+      config: this.config,
+      emit: o.emit,
+      waiting: () => this.waiting(),
+      answer: (id, answers) => void this.inboxOf(id).answer(id, answers, 'Answered on Telegram.'),
+      decide: (id, approved, note) => void this.inboxOf(id).decide(id, approved, note ?? 'Answered on Telegram.'),
+      ask: async (text, voice) => {
+        const r = await this.tuesday.sendTelegram(text, voice)
+        if (r.error) throw new Error(r.error)
+        return r.text
+      },
+      status: () => this.tuesday.snapshot().replace(/^\[|\]$/gm, ''),
+      name: () => this.tuesday.spec().name,
+      idleSeconds: o.idleSeconds,
+      fetcher: o.fetcher,
+      pollSeconds: o.telegramPollSeconds
+    })
   }
 
   async start(): Promise<void> {
@@ -224,6 +248,7 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     await this.tuesday.start()
     // the phone sets itself up in the background: a tunnel can take a while
     if (this.config.settings.phone.enabled) void this.phone.apply()
+    if (this.config.settings.telegram.enabled) void this.telegram.apply()
   }
 
   async shutdown(): Promise<void> {
@@ -234,6 +259,7 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     this.current = null
     await this.tuesday.stop()
     await this.phone.stop()
+    await this.telegram.stop()
     await this.hub.closeAll()
     await this.bus.stop()
   }
@@ -583,6 +609,28 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     await this.phone.callMe()
   }
 
+  async telegramState(): Promise<TelegramState> {
+    return this.telegram.state()
+  }
+
+  /** Saves the bot token (null removes it) and connects with it. */
+  async telegramSetToken(token: string | null): Promise<TelegramState> {
+    await this.telegram.setToken(token)
+    return this.telegram.apply(true)
+  }
+
+  async telegramConnect(): Promise<TelegramState> {
+    return this.telegram.apply(true)
+  }
+
+  async telegramUnpair(): Promise<TelegramState> {
+    return this.telegram.unpair()
+  }
+
+  async telegramTest(): Promise<void> {
+    await this.telegram.test()
+  }
+
   async updateSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
     const before = this.config.settings.mcpServers
     // once the user picks new-chat defaults, start-up detection leaves them alone
@@ -590,6 +638,7 @@ export class MultimineApp implements Omit<Api, 'pickProject' | 'openPath' | 'med
     if (patch.mcpServers) for (const s of before) await this.hub.drop(s.id)
     if (patch.tuesday || patch.chatDefaults) await this.tuesday.applySettings().catch(() => undefined)
     if (patch.phone) void this.phone.apply()
+    if (patch.telegram) void this.telegram.apply()
     this.o.emit({ type: 'settings', settings })
     return settings
   }

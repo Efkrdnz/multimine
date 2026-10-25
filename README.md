@@ -103,6 +103,28 @@ project. Click it (or press **Ctrl+Shift+Space**) and talk to it:
   messages on, and the chats do the heavy work on their own models. Its lines when a chat finishes
   or asks cost nothing: no model is involved.
 
+### Tuesday on Telegram
+
+Free, and set up in two minutes: Tuesday talks to you through your own Telegram bot.
+
+- **When a chat needs you** while you are away from the computer (5 minutes by default, or always),
+  Tuesday messages you: the question with its options as buttons, a plan with Approve and Turn
+  down, a permission with Allow and Deny. One tap answers it; answer it in the app instead and the
+  message says so. Silent at night.
+- **Talk to it** by text or voice note, as in its panel: "what's going on?", "tell Spells to use ice",
+  "start a chat on the boss fight". It reads answers back and sends them on your yes. `/status`
+  shows what every chat is doing and `/waiting` what waits on you.
+- **Voice notes** are turned into text with a Groq or Gemini key (both have free tiers) or an OpenAI
+  key, from Settings -> Providers. With an OpenAI key it can answer your voice notes with voice notes.
+- **Only you.** The bot answers only the Telegram account that sent it the pairing code. A push, a
+  publish or deleting history needs your PIN, sent as a message Tuesday deletes at once; Tuesday
+  itself never sees it. Nothing reaches this computer from outside: Multimine asks Telegram for
+  messages itself, so there is no tunnel.
+
+To set it up: in Telegram, open @BotFather, send `/newbot` and pick a name; paste the token it gives
+you into Settings -> Tuesday -> Telegram and press **Save & connect**; send your bot the code shown
+there.
+
 ### Tuesday on the phone
 
 With a Twilio number, you can call Tuesday while the computer is on, and it calls you.

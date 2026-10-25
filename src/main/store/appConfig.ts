@@ -30,7 +30,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     awayMinutes: 10,
     quietHours: { enabled: true, from: '23:00', to: '08:00' },
     publicUrl: ''
-  }
+  },
+  telegram: { enabled: false, notify: 'away', awayMinutes: 5, quietHours: { enabled: true, from: '23:00', to: '08:00' }, voiceReplies: false }
 }
 
 /** Encrypts secrets at rest. Electron's safeStorage in the app; a passthrough in tests. */
@@ -62,7 +63,8 @@ export class AppConfig {
       catalog: { ...DEFAULT_CATALOG, ...(saved.catalog ?? {}) },
       baseUrls: { ...DEFAULT_SETTINGS.baseUrls, ...(saved.baseUrls ?? {}) },
       tuesday: { ...DEFAULT_SETTINGS.tuesday, ...(saved.tuesday ?? {}) },
-      phone: { ...DEFAULT_SETTINGS.phone, ...(saved.phone ?? {}), quietHours: { ...DEFAULT_SETTINGS.phone.quietHours, ...(saved.phone?.quietHours ?? {}) } }
+      phone: { ...DEFAULT_SETTINGS.phone, ...(saved.phone ?? {}), quietHours: { ...DEFAULT_SETTINGS.phone.quietHours, ...(saved.phone?.quietHours ?? {}) } },
+      telegram: { ...DEFAULT_SETTINGS.telegram, ...(saved.telegram ?? {}), quietHours: { ...DEFAULT_SETTINGS.telegram.quietHours, ...(saved.telegram?.quietHours ?? {}) } }
     }
     this.keys = await readJson(join(this.dir, 'keys.json'), {})
   }

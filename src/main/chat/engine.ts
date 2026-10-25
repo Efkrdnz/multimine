@@ -89,8 +89,8 @@ export interface SendOptions {
   images?: ImageUpload[]
   /** Plan or coop for this message only (`/plan` and `/coop` typed at its start do the same). */
   modes?: MessageModes
-  /** Said on a phone call (to Tuesday). */
-  via?: 'phone'
+  /** Said to Tuesday on a phone call, or on Telegram. */
+  via?: 'phone' | 'telegram'
 }
 
 const text = (t: string, isError = false): ToolOutput => ({ text: t, isError })

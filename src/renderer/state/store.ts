@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { pushTerminalData } from '../ide/terminalBus'
-import type { AgentSpec, AgentStatus, AppSettings, CliStatus, PluginInfo, ChatMessage, InboxItem, MainEvent, MediaItem, ProjectInfo, ProjectTab, RunState, UpdateState, Usage, PlanWindow, PhoneState, TuesdayNotice, WaitingItem } from '@shared/types'
+import type { AgentSpec, AgentStatus, AppSettings, CliStatus, PluginInfo, ChatMessage, InboxItem, MainEvent, MediaItem, ProjectInfo, ProjectTab, RunState, UpdateState, Usage, PlanWindow, PhoneState, TelegramState, TuesdayNotice, WaitingItem } from '@shared/types'
 import { openTool } from '../tools/openTool'
 
 export type Panel = 'media' | 'instructions' | 'git' | 'run' | null
@@ -76,6 +76,8 @@ export interface State {
   notices: TuesdayNotice[]
   /** The phone line to Tuesday. */
   phone: PhoneState | null
+  /** Tuesday on Telegram. */
+  telegram: TelegramState | null
   set: (patch: Partial<State>) => void
   /** Puts a chat on screen (closing any tool in front of it). */
   openChat: (id: string) => void
@@ -125,6 +127,7 @@ export const useStore = create<State>((set, get) => ({
   waiting: [],
   notices: [],
   phone: null,
+  telegram: null,
   set: (patch) => set(patch),
   openChat: (id) => {
     set({ focused: id, activeTool: null })
@@ -311,6 +314,9 @@ export function applyEvent(e: MainEvent): void {
     }
     case 'phone':
       s.set({ phone: e.state })
+      break
+    case 'telegram':
+      s.set({ telegram: e.state })
       break
     case 'tuesday-show': {
       // the project is already on screen (Tuesday switched to it first)

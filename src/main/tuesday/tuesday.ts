@@ -13,6 +13,7 @@ import type { ToolDef } from '../providers/types'
 import { snapshot, tuesdaySystem, type SnapshotProject } from './prompt'
 import { tuesdayTools, type TuesdayHost } from './tools'
 import { phoneRule } from '../phone/talk'
+import { telegramRule } from '../telegram/text'
 import type { WaitingItem } from '@shared/types'
 
 /** Tuesday's chat id: one conversation, app-wide. */
@@ -46,6 +47,10 @@ export class Tuesday {
   private status: { status: AgentStatus; activity?: string; detail?: string } = { status: 'idle' }
   /** Said once with the next phone turn: how a call Tuesday placed opened. */
   private phoneNote: string | null = null
+  /** The next Telegram turn came as a voice note. */
+  private voiceNote = false
+  /** Where the turn running now came from: a hard stop it passes on waits for the PIN there. */
+  currentVia: 'phone' | 'telegram' | null = null
 
   constructor(private readonly d: TuesdayDeps) {}
 
@@ -91,6 +96,12 @@ export class Tuesday {
       tools: () => this.tools(),
       system: (agent) => tuesdaySystem(agent.name),
       decorate: (_id, prompt, msg) => {
+        this.currentVia = msg.via ?? null
+        if (msg.via === 'telegram') {
+          const voice = this.voiceNote
+          this.voiceNote = false
+          return [this.snapshot(), telegramRule(this.d.waiting(), voice), prompt].join('\n\n')
+        }
         if (msg.via !== 'phone') return `${this.snapshot()}\n\n${prompt}`
         const note = this.phoneNote
         this.phoneNote = null
@@ -168,6 +179,13 @@ export class Tuesday {
     if (!this.engine) throw new Error(`${this.spec().name} is not running.`)
     if (note) this.phoneNote = note
     return this.engine.send(TUESDAY_ID, text, 'user', { via: 'phone' })
+  }
+
+  /** What the user wrote (or said in a voice note) on Telegram. */
+  async sendTelegram(text: string, voice = false): Promise<TurnResult> {
+    if (!this.engine) throw new Error(`${this.spec().name} is not running.`)
+    if (voice) this.voiceNote = true
+    return this.engine.send(TUESDAY_ID, text, 'user', { via: 'telegram' })
   }
 
   stopTurn(): void {

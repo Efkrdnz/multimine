@@ -155,8 +155,8 @@ export interface ChatMessage {
   usage?: Usage
   /** A slash command the user typed (`/table ...`, `/plugin ...`): the text stays as typed, the turn gets the command's prompt. */
   command?: 'table' | 'plugin' | 'idea'
-  /** Said on a phone call to Tuesday. */
-  via?: 'phone'
+  /** Said to Tuesday on a phone call, or on Telegram. */
+  via?: 'phone' | 'telegram'
   /** `/plan`, `/coop` (or a tool asking for them): this message's own modes, over the chat's. */
   modes?: MessageModes
   /** A table a chat saved, shown as a card in the chat. */
@@ -382,6 +382,40 @@ export interface AppSettings {
   codexPath?: string
   tuesday: TuesdaySettings
   phone: PhoneSettings
+  telegram: TelegramSettings
+}
+
+/**
+ * Talking to Tuesday on Telegram, through the user's own bot. The bot token is kept with the API
+ * keys (encrypted); the PIN for hard stops is the phone's.
+ */
+export interface TelegramSettings {
+  enabled: boolean
+  /** The user's own Telegram chat with the bot, once paired: nobody else is answered. */
+  ownerChatId?: number
+  ownerName?: string
+  /** When a chat waits on the user: message them when away from the computer, always, or never. */
+  notify: 'away' | 'always' | 'off'
+  awayMinutes: number
+  /** Messages arrive silently at night (local time). */
+  quietHours: { enabled: boolean; from: string; to: string }
+  /** Answer a voice note with a voice note (with an OpenAI key). */
+  voiceReplies: boolean
+}
+
+/** Where the Telegram connection stands. */
+export interface TelegramState {
+  status: 'off' | 'starting' | 'ready' | 'error'
+  detail?: string
+  /** The bot's @username. */
+  bot?: string
+  /** Who it is paired with. */
+  paired?: string
+  /** The code to send the bot to pair, while it is not paired. */
+  pairCode?: string
+  secrets: { token: boolean; pin: boolean }
+  /** What turns voice notes into text (the key it uses), if anything. */
+  voice: 'groq' | 'openai' | 'google' | null
 }
 
 /**
@@ -630,3 +664,4 @@ export type MainEvent =
   /** Tuesday put something on screen: a chat or a tool of the project now on screen. */
   | { type: 'tuesday-show'; chatId?: string; tool?: string }
   | { type: 'phone'; state: PhoneState }
+  | { type: 'telegram'; state: TelegramState }

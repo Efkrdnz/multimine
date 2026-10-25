@@ -17,8 +17,8 @@ export interface TuesdayHost {
   toolList(dir: string): Promise<{ id: string; name: string }[]>
   /** An event from a project, as if that project sent it (the window hears it when it is on screen). */
   notify(ws: Workspace, e: MainEvent): void
-  /** During a phone call: a hard stop the caller wants allowed waits for their PIN on the keypad. */
-  phone?: { armHardStop(itemId: string, title: string, approve: boolean): boolean }
+  /** On a phone call or Telegram: a hard stop the user wants allowed waits for their PIN there. */
+  remote?: { armHardStop(itemId: string, title: string, approve: boolean): boolean }
 }
 
 const text = (t: string, isError = false): ToolOutput => ({ text: t, isError })
@@ -239,9 +239,9 @@ export function tuesdayTools(host: TuesdayHost): ToolDef[] {
         }
         if (typeof a.approve !== 'boolean') throw new Error('Say approve: true or false.')
         if (item.hardStop) {
-          // on the phone the user's PIN on the keypad allows it; Tuesday never does on its own word
-          if (a.approve && host.phone?.armHardStop(item.id, item.title, true)) return `"${item.title}" needs the user's PIN: tell them to enter it on the keypad after you finish speaking. Nothing is allowed until they do.`
-          if (a.approve) throw new Error(`"${item.title}" is a hard stop: only the user can allow it, with Allow in the app (or their PIN on a phone call).`)
+          // on the phone or Telegram the user's PIN allows it (keypad, or a message deleted at once); never Tuesday's word
+          if (a.approve && host.remote?.armHardStop(item.id, item.title, true)) return `"${item.title}" needs the user's PIN: tell them you'll take it next (on a call they type it on the keypad; on Telegram they send it, and it never reaches you). Nothing is allowed until they do.`
+          if (a.approve) throw new Error(`"${item.title}" is a hard stop: only the user can allow it, with Allow in the app (or their PIN on a phone call or Telegram).`)
         }
         ws.engine.inbox.decide(item.id, a.approve, note)
         if (item.watchdog) return a.approve ? `"${chat}" continues.` : note ? `"${chat}" was told: ${note}` : `"${chat}" was stopped.`

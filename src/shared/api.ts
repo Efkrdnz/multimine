@@ -1,4 +1,4 @@
-import type { AgentSpec, AgentStatus, ChatMessage, PhoneState, WaitingItem, ImageUpload, ProjectTab, RunState, UpdateState, AppSettings, CliStatus, GhItem, GitCommit, GitStatus, IdeEntry, IdeHit, MainEvent, McpServerConfig, ModelEntry, PlanWindow, PluginInfo, PluginManifest, PluginPermission, ProjectInfo, ProviderKind, TerminalInfo, TerminalKind } from './types'
+import type { AgentSpec, AgentStatus, ChatMessage, PhoneState, TelegramState, WaitingItem, ImageUpload, ProjectTab, RunState, UpdateState, AppSettings, CliStatus, GhItem, GitCommit, GitStatus, IdeEntry, IdeHit, MainEvent, McpServerConfig, ModelEntry, PlanWindow, PluginInfo, PluginManifest, PluginPermission, ProjectInfo, ProviderKind, TerminalInfo, TerminalKind } from './types'
 
 /** Everything the renderer can ask of the main process. One method, one IPC channel. */
 export interface Api {
@@ -48,6 +48,12 @@ export interface Api {
   phoneSetSecrets(token?: string | null, pin?: string | null): Promise<PhoneState>
   phoneConnect(): Promise<PhoneState>
   phoneCallMe(): Promise<void>
+  /** Tuesday on Telegram: where it stands, the bot token (saved and connected), connect again, unpair, a test message. */
+  telegramState(): Promise<TelegramState>
+  telegramSetToken(token: string | null): Promise<TelegramState>
+  telegramConnect(): Promise<TelegramState>
+  telegramUnpair(): Promise<TelegramState>
+  telegramTest(): Promise<void>
 
   updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>
   setKey(provider: string, key: string | null): Promise<string[]>
@@ -124,6 +130,7 @@ export const API_METHODS: ApiMethod[] = [
   'answer', 'decide',
   'tuesdayInit', 'tuesdaySend', 'tuesdayStop', 'tuesdayFresh', 'tuesdayClear',
   'phoneState', 'phoneSetSecrets', 'phoneConnect', 'phoneCallMe',
+  'telegramState', 'telegramSetToken', 'telegramConnect', 'telegramUnpair', 'telegramTest',
   'updateSettings', 'setKey', 'detectClis', 'refreshModels', 'testMcp',
   'gitStatus', 'gitInit', 'gitDiff', 'gitStage', 'gitUnstage', 'gitCommit', 'gitLog', 'gitShow', 'gitBranches', 'gitCheckout', 'gitPull', 'gitPush',
   'ghInfo', 'ghList', 'ghCreatePr',

@@ -41,6 +41,8 @@ export class TwilioClient {
         ...(form ? { 'content-type': 'application/x-www-form-urlencoded' } : {})
       },
       body: form ? new URLSearchParams(form).toString() : undefined
+    }).catch((e: Error & { cause?: { code?: string } }) => {
+      throw new Error(`Could not reach Twilio${e.cause?.code ? ` (${e.cause.code})` : ''}. Is this computer online?`)
     })
     const body = (await res.json().catch(() => ({}))) as Record<string, unknown>
     if (!res.ok) {
